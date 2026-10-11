@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -40,7 +41,20 @@ import (
 	"github.com/T-Crypt/berth/internal/store"
 )
 
-var version = "0.1.0-dev" // set by the release build: -X main.version=
+// version is set by the release build (-X main.version=); otherwise it
+// comes from the module version Go records (go install ...@v0.1.0), and
+// a plain build from a checkout reads "dev".
+var version = ""
+
+func init() {
+	if version != "" {
+		return
+	}
+	version = "dev"
+	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		version = strings.TrimPrefix(bi.Main.Version, "v")
+	}
+}
 
 func defaultSocket() string {
 	if s := os.Getenv("BERTH_SOCKET"); s != "" {
