@@ -22,6 +22,19 @@ in one place. One Go binary, no cloud account, nothing else to install.
 > llama-swap, NInfer and Strata. *Capabilities* lists what works and has tests; the *Roadmap*
 > lists what does not exist yet.
 
+
+## Preview
+
+The harbor on an RTX 4090 running NInfer through llama-swap (real data, basic mode). The tide shows
+the card's memory by holder over six hours; the hatched stretch is a stowaway Berth reported while
+the model ran without a lease after a daemon restart.
+
+<p align="center"><img src="assets/preview-harbor.png" alt="Berth harbor: ticket counter, request KPIs, the tide of card memory by holder, and the model timeline" width="900"></p>
+
+The Engines & Requests tab: the token ledger, the per-model leaderboard and the request log.
+
+<p align="center"><img src="assets/preview-requests.png" alt="Berth harbor Engines and Requests tab: token ledger, leaderboard and recent requests" width="900"></p>
+
 ---
 
 ## Install
