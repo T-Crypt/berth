@@ -34,6 +34,15 @@ type Engine struct {
 	Metrics string            `toml:"metrics"` // path of Prometheus text; custom default /metrics when Map is set
 	Slots   string            `toml:"slots"`
 	Map     map[string]string `toml:"map"` // field -> metric name
+	// Gateway: how `berth gateway` starts this engine when a request names a
+	// model it serves and it is not running. Start is the engine's command;
+	// it runs under a lease exactly as `berth run` would.
+	Start        []string `toml:"start"`
+	Serves       []string `toml:"serves"`        // model names this engine answers for
+	Priority     string   `toml:"priority"`      // batch, interactive (default) or foreground
+	NeedsMiB     uint64   `toml:"needs_mib"`     // 0 = the whole card
+	DrainPost    string   `toml:"drain_post"`    // as berth run --drain-post
+	DrainComfyUI string   `toml:"drain_comfyui"` // as berth run --drain-comfyui
 }
 
 // Types are the engine readers that exist.
@@ -200,6 +209,14 @@ func (c *Config) Validate() error {
 		}
 		if e.Type == "custom" && len(e.Map) == 0 && e.Health == "" && e.Models == "" && e.Metrics == "" && e.Slots == "" {
 			errs = append(errs, fmt.Errorf("%s: a custom engine needs at least one of health, models, metrics, slots or [engine.map]", where))
+		}
+		if len(e.Start) > 0 && len(e.Serves) == 0 {
+			errs = append(errs, fmt.Errorf("%s: start needs serves, the models the gateway may start it for", where))
+		}
+		switch e.Priority {
+		case "", "batch", "interactive", "foreground":
+		default:
+			errs = append(errs, fmt.Errorf("%s: priority %q is not batch, interactive or foreground", where, e.Priority))
 		}
 		for k := range e.Map {
 			if !contains(MapFields, k) {
