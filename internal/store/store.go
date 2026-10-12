@@ -114,7 +114,8 @@ CREATE TABLE IF NOT EXISTS counters_1m (
 	stuck INTEGER NOT NULL,
 	squatters INTEGER NOT NULL,
 	contested INTEGER NOT NULL,
-	refused INTEGER NOT NULL
+	refused INTEGER NOT NULL,
+	juggles INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS meta (
 	key TEXT PRIMARY KEY,
@@ -200,6 +201,16 @@ func Open(path string, retention time.Duration) (*Store, error) {
 // the two sample tables where a v1 schema left it out. Both table names are
 // code literals, not input, so they are inlined in the pragma query.
 func migrate(db *sql.DB) error {
+	// counters_1m shipped without juggles; old rows read back as 0.
+	var have int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('counters_1m') WHERE name = 'juggles'`).Scan(&have); err != nil {
+		return err
+	}
+	if have == 0 {
+		if _, err := db.Exec(`ALTER TABLE counters_1m ADD COLUMN juggles INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
 	for _, table := range []string{"samples_1m", "samples_1h"} {
 		var have int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('` + table + `') WHERE name = 'kv'`).Scan(&have); err != nil {

@@ -243,3 +243,16 @@ start = ["x"]
 		}
 	}
 }
+
+func TestPriorityValidated(t *testing.T) {
+	c, err := Load(write(t, "[priority]\norder = [\"llama-swap\", \"strata\", \"comfyui\"]\njuggle_window = \"20s\"\n"))
+	if err != nil || len(c.Priority.Order) != 3 || c.Priority.JuggleWindow.Seconds() != 20 {
+		t.Fatalf("c=%+v err=%v", c.Priority, err)
+	}
+	_, err = Load(write(t, "[priority]\norder = [\"a\", \"\", \"a\"]\n"))
+	for _, want := range []string{"priority.order[1] is empty", `priority.order lists "a" twice`} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("error lacks %q: %v", want, err)
+		}
+	}
+}

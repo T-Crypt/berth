@@ -114,6 +114,7 @@ func WriteProm(w io.Writer, st proto.Status) {
 	p("Squatters seen.", "counter", "berth_squatters_caught_total", fmt.Sprintf("berth_squatters_caught_total %d", c.SquattersCaught))
 	p("Grants made while unleased processes held memory.", "counter", "berth_contested_grants_total", fmt.Sprintf("berth_contested_grants_total %d", c.ContestedGrants))
 	p("Requests refused.", "counter", "berth_refused_total", fmt.Sprintf("berth_refused_total %d", c.Refused))
+	p("Equal-priority handoffs the engine ranking decided instead of flipping the card.", "counter", "berth_juggles_stopped_total", fmt.Sprintf("berth_juggles_stopped_total %d", c.JugglesStopped))
 
 	var up, models, dec, pre, out, in []string
 	for _, e := range st.Engines {

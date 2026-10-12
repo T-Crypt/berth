@@ -33,6 +33,7 @@ const (
 type Msg struct {
 	Op       string    `json:"op"`
 	Engine   string    `json:"engine,omitempty"`
+	Group    string    `json:"group,omitempty"` // the engine family the lease counts for in juggles and usage
 	Priority string    `json:"priority,omitempty"`
 	Needs    uint64    `json:"needs,omitempty"` // bytes; 0 = the whole card
 	Wait     float64   `json:"wait,omitempty"`  // seconds to wait before refusing; 0 = server default
@@ -80,6 +81,7 @@ const (
 	EvProbeRecovered = "probe.recovered"
 	EvAlertRaised    = "alert.raised"
 	EvAlertCleared   = "alert.cleared"
+	EvJuggle         = "lease.juggle" // two engines at one priority fought over the card; the rank decided
 )
 
 // Counters are the collisions board. Every count is an event berthd can
@@ -90,13 +92,16 @@ type Counters struct {
 	CollisionsAvoided uint64 `json:"collisions_avoided"`
 	// VRAMHandedOff: peak measured bytes of every lease whose memory the card
 	// showed freed.
-	VRAMHandedOff   uint64    `json:"vram_handed_off"`
-	Drains          uint64    `json:"drains"`
-	StuckCaught     uint64    `json:"stuck_caught"`
-	SquattersCaught uint64    `json:"squatters_caught"`
-	ContestedGrants uint64    `json:"contested_grants"`
-	Refused         uint64    `json:"refused"`
-	Since           time.Time `json:"since"`
+	VRAMHandedOff   uint64 `json:"vram_handed_off"`
+	Drains          uint64 `json:"drains"`
+	StuckCaught     uint64 `json:"stuck_caught"`
+	SquattersCaught uint64 `json:"squatters_caught"`
+	ContestedGrants uint64 `json:"contested_grants"`
+	Refused         uint64 `json:"refused"`
+	// JugglesStopped: equal-priority handoffs inside the juggle window that
+	// the engine ranking decided instead of flipping the card.
+	JugglesStopped uint64    `json:"juggles_stopped"`
+	Since          time.Time `json:"since"`
 }
 
 // APIVersion is the schema version of Status. Fields are only added
@@ -106,20 +111,36 @@ const APIVersion = 1
 // Status is berthd's view: the body of the socket status reply and of
 // GET /v1/status. Memory is bytes, ages are seconds.
 type Status struct {
-	API         int        `json:"api"`
-	Version     string     `json:"version"`
-	GPUs        []GPU      `json:"gpus"`
-	Leases      []Lease    `json:"leases"`
-	Waiting     []Lease    `json:"waiting"`
-	Squatters   []Squatter `json:"squatters"`
-	Unprotected []Run      `json:"unprotected"`
-	Engines     []Engine   `json:"engines"`
-	Host        *Host      `json:"host,omitempty"`
-	Insights    *Insights  `json:"insights,omitempty"`
-	Counters    Counters   `json:"counters"`
-	LastEvent   uint64     `json:"last_event"`
-	ProbeErr    string     `json:"probe_error,omitempty"`
-	Alerts      *Alerts    `json:"alerts,omitempty"`
+	API         int             `json:"api"`
+	Version     string          `json:"version"`
+	GPUs        []GPU           `json:"gpus"`
+	Leases      []Lease         `json:"leases"`
+	Waiting     []Lease         `json:"waiting"`
+	Squatters   []Squatter      `json:"squatters"`
+	Unprotected []Run           `json:"unprotected"`
+	Engines     []Engine        `json:"engines"`
+	Host        *Host           `json:"host,omitempty"`
+	Insights    *Insights       `json:"insights,omitempty"`
+	Counters    Counters        `json:"counters"`
+	LastEvent   uint64          `json:"last_event"`
+	ProbeErr    string          `json:"probe_error,omitempty"`
+	Alerts      *Alerts         `json:"alerts,omitempty"`
+	Priority    *PriorityStatus `json:"priority,omitempty"`
+}
+
+// PriorityStatus is how the node ranks engines when two at one priority
+// juggle the card: the configured order, else card-hours over 7 days.
+type PriorityStatus struct {
+	Source       string       `json:"source"` // "order" or "usage"
+	Order        []string     `json:"order,omitempty"`
+	JuggleWindow float64      `json:"juggle_window"` // seconds; 0 = off
+	Engines      []EngineRank `json:"engines"`
+}
+
+type EngineRank struct {
+	Engine  string  `json:"engine"`
+	Rank    int     `json:"rank"`
+	Hours7d float64 `json:"hours_7d"`
 }
 
 // Threshold is one key's alert levels. Warn 0 = that level is not set.

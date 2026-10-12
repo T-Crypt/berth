@@ -47,7 +47,7 @@ func start(t *testing.T) string {
 	t.Helper()
 	sock := filepath.Join(t.TempDir(), "berth.sock")
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	b := broker.New(broker.Config{Poll: 20 * time.Millisecond, DefaultWait: 5 * time.Second, Log: log}, emptyCard{}, procs.System{})
+	b := broker.New(broker.Config{Poll: 20 * time.Millisecond, DefaultWait: 5 * time.Second, JuggleWindow: -1, Log: log}, emptyCard{}, procs.System{})
 	ln, err := server.Listen(sock)
 	if err != nil {
 		t.Fatal(err)
@@ -188,7 +188,7 @@ func TestSocketStatusIsVersioned(t *testing.T) {
 func TestRequestsSinceOverSocket(t *testing.T) {
 	sock := filepath.Join(t.TempDir(), "berth.sock")
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	b := broker.New(broker.Config{Poll: 20 * time.Millisecond, DefaultWait: 5 * time.Second, Log: log}, emptyCard{}, procs.System{})
+	b := broker.New(broker.Config{Poll: 20 * time.Millisecond, DefaultWait: 5 * time.Second, JuggleWindow: -1, Log: log}, emptyCard{}, procs.System{})
 	ln, err := server.Listen(sock)
 	if err != nil {
 		t.Fatal(err)
@@ -262,7 +262,7 @@ func TestStatusCarriesWindowsAndSlots(t *testing.T) {
 
 	sock := filepath.Join(t.TempDir(), "berth.sock")
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	b := broker.New(broker.Config{Poll: 20 * time.Millisecond, DefaultWait: 5 * time.Second, Log: log}, emptyCard{}, procs.System{})
+	b := broker.New(broker.Config{Poll: 20 * time.Millisecond, DefaultWait: 5 * time.Second, JuggleWindow: -1, Log: log}, emptyCard{}, procs.System{})
 	ln, err := server.Listen(sock)
 	if err != nil {
 		t.Fatal(err)

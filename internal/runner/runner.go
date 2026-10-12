@@ -27,6 +27,7 @@ import (
 type Options struct {
 	Socket    string
 	Engine    string
+	Group     string // the engine family for juggles and usage (llama-swap's models: "llama-swap")
 	Priority  string
 	Needs     uint64
 	Wait      time.Duration
@@ -59,7 +60,7 @@ func Run(o Options) int {
 	}
 	defer raw.Close()
 
-	if err := conn.Send(proto.Msg{Op: proto.OpAcquire, Engine: o.Engine, Priority: o.Priority, Needs: o.Needs, Wait: o.Wait.Seconds()}); err != nil {
+	if err := conn.Send(proto.Msg{Op: proto.OpAcquire, Engine: o.Engine, Group: o.Group, Priority: o.Priority, Needs: o.Needs, Wait: o.Wait.Seconds()}); err != nil {
 		say("acquire: %v", err)
 		return ExitRefused
 	}
@@ -163,7 +164,7 @@ func reattach(o Options, cmd *exec.Cmd, done <-chan struct{}) (*proto.Conn, net.
 		if err != nil {
 			continue
 		}
-		err = conn.Send(proto.Msg{Op: proto.OpReattach, Engine: o.Engine, Priority: o.Priority, Needs: o.Needs, PID: pid, PIDStart: start})
+		err = conn.Send(proto.Msg{Op: proto.OpReattach, Engine: o.Engine, Group: o.Group, Priority: o.Priority, Needs: o.Needs, PID: pid, PIDStart: start})
 		var m proto.Msg
 		if err == nil {
 			m, err = conn.Recv()

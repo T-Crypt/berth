@@ -15,6 +15,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -235,9 +236,45 @@ func (g *Gateway) models(w http.ResponseWriter, r *http.Request) {
 }
 
 func apiError(w http.ResponseWriter, code int, msg string) {
+	apiErrorCode(w, code, "", msg)
+}
+
+// apiErrorCode is an OpenAI-shaped error with a reason code a client can
+// branch on; a 503 also says when to try again.
+func apiErrorCode(w http.ResponseWriter, status int, code, msg string) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"message": msg, "type": "berth"}})
+	if status == http.StatusServiceUnavailable {
+		w.Header().Set("Retry-After", "30")
+	}
+	w.WriteHeader(status)
+	e := map[string]string{"message": msg, "type": "berth"}
+	if code != "" {
+		e["code"] = code
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"error": e})
+}
+
+// startError is why an engine could not be brought up for a request.
+type startError struct {
+	code string // no_start, outranked, drained_while_starting, no_berth, start_failed, not_ready
+	msg  string
+}
+
+func (e *startError) Error() string { return e.msg }
+
+// classify reads why a start ended before its engine answered from what the
+// in-process berth run printed.
+func classify(name string, exit int, stderr string) *startError {
+	last := lastLine(stderr)
+	switch {
+	case strings.Contains(stderr, "juggle:"):
+		return &startError{"outranked", fmt.Sprintf("%s lost a juggle for the card: %s", name, last)}
+	case strings.Contains(stderr, "berth: draining"):
+		return &startError{"drained_while_starting", fmt.Sprintf("%s was drained before it answered: %s", name, last)}
+	case exit == runner.ExitRefused:
+		return &startError{"no_berth", fmt.Sprintf("%s got no berth: %s", name, last)}
+	}
+	return &startError{"start_failed", fmt.Sprintf("%s did not start (exit %d): %s", name, exit, last)}
 }
 
 // forward reads the model from the body, makes sure its engine is up (under
@@ -262,7 +299,13 @@ func (g *Gateway) forward(w http.ResponseWriter, r *http.Request) {
 	}
 	if !t.live {
 		if err := g.ensure(r.Context(), t.engine); err != nil {
-			apiError(w, http.StatusServiceUnavailable, err.Error())
+			code := ""
+			var se *startError
+			if errors.As(err, &se) {
+				code = se.code
+			}
+			g.log().Warn("gateway start failed", "engine", t.engine.Name, "model", req.Model, "code", code, "err", err)
+			apiErrorCode(w, http.StatusServiceUnavailable, code, err.Error())
 			return
 		}
 	}
@@ -286,7 +329,7 @@ func (g *Gateway) ensure(ctx context.Context, e *config.Engine) error {
 		return nil // already up (started by hand or by its own manager)
 	}
 	if len(e.Start) == 0 {
-		return fmt.Errorf("%s is not answering at %s and has no start command in berth.toml", e.Name, e.URL)
+		return &startError{"no_start", fmt.Sprintf("%s is not answering at %s and has no start command in berth.toml", e.Name, e.URL)}
 	}
 	ready := g.ready()
 	g.mu.Lock()
@@ -308,13 +351,13 @@ func (g *Gateway) ensure(ctx context.Context, e *config.Engine) error {
 		}
 		select {
 		case <-s.exited:
-			return fmt.Errorf("%s did not start (exit %d): %s", e.Name, s.code, lastLine(s.stderr.String()))
+			return classify(e.Name, s.code, s.stderr.String())
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(250 * time.Millisecond):
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("%s did not answer within %s", e.Name, ready)
+			return &startError{"not_ready", fmt.Sprintf("%s did not answer within %s", e.Name, ready)}
 		}
 	}
 }

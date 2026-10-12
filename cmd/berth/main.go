@@ -137,6 +137,7 @@ func daemon(args []string) int {
 	webhook := fs.String("webhook", "", "POST squatter events here as JSON")
 	cfgPath := fs.String("config", config.DefaultPath(), "berth.toml: engines to read, /metrics listener ($BERTH_CONFIG); missing = none")
 	countersFile := fs.String("counters", defaultStateFile("counters.json"), "keeps the collisions board across restarts; \"\" = start at zero every time")
+	usageFile := fs.String("usage", defaultStateFile("usage.json"), "card-hours per engine, the default juggle ranking; \"\" = memory only")
 	fs.Parse(args)
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -151,6 +152,14 @@ func daemon(args []string) int {
 
 	probe := &gpu.Stream{Index: *index, Interval: *poll}
 	rep := server.Reporter{Notify: *notify, Webhook: *webhook, Log: log}
+	// The engine readers exist before the broker: a juggle asks them whether
+	// the holder is busy. They start reading below, once the card is known.
+	var watcher *engines.Watcher
+	discover := cfg.Engines.Discover == nil || *cfg.Engines.Discover
+	if len(cfg.Engine) > 0 || discover {
+		watcher = &engines.Watcher{Engines: cfg.Engine, Every: cfg.Engines.Every.Duration,
+			Discover: discover, Hosts: cfg.Engines.Hosts, Ports: cfg.Engines.Ports}
+	}
 	b := broker.New(broker.Config{
 		Poll:           *poll,
 		Reserve:        *reserve * gpu.MiB,
@@ -159,6 +168,10 @@ func daemon(args []string) int {
 		Allow:          splitList(*allow),
 		RunsDir:        runs.Dir(*sock),
 		CountersFile:   *countersFile,
+		UsageFile:      *usageFile,
+		Order:          cfg.Priority.Order,
+		JuggleWindow:   cfg.Priority.JuggleWindow.Duration,
+		Busy:           watcher.Busy,
 		ReattachWindow: *reattachWin,
 		Version:        version,
 		Reporter:       rep,
@@ -205,11 +218,7 @@ func daemon(args []string) int {
 	log.Info("berthd up", "version", version, "socket", *sock, "gpu", *index)
 	go probe.Run(ctx)
 	go b.Run(ctx)
-	var watcher *engines.Watcher
-	discover := cfg.Engines.Discover == nil || *cfg.Engines.Discover
-	if len(cfg.Engine) > 0 || discover {
-		watcher = &engines.Watcher{Engines: cfg.Engine, Every: cfg.Engines.Every.Duration,
-			Discover: discover, Hosts: cfg.Engines.Hosts, Ports: cfg.Engines.Ports}
+	if watcher != nil {
 		go watcher.Run(ctx)
 		for _, e := range cfg.Engine {
 			log.Info("reading engine", "name", e.Name, "type", e.Type, "url", e.URL)
@@ -274,6 +283,7 @@ func run(args []string) int {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	sock := fs.String("socket", defaultSocket(), "berthd socket ($BERTH_SOCKET)")
 	engine := fs.String("as", "", "engine name shown in status and drain messages (required)")
+	group := fs.String("group", "", "engine family for juggles and the usage ranking, e.g. llama-swap for each of its models (default: --as)")
 	prio := fs.String("priority", "interactive", "batch, interactive or foreground")
 	needs := fs.Uint64("needs-mib", 0, "memory this engine needs; 0 = the whole card")
 	wait := fs.Duration("wait", 0, "how long to wait for a berth; 0 = berthd's default")
@@ -292,7 +302,7 @@ func run(args []string) int {
 		return 2
 	}
 	return runner.Run(runner.Options{
-		Socket: *sock, Engine: *engine, Priority: *prio, Needs: *needs * gpu.MiB, Wait: *wait,
+		Socket: *sock, Engine: *engine, Group: *group, Priority: *prio, Needs: *needs * gpu.MiB, Wait: *wait,
 		DrainPost: *drainPost, DrainComfyUI: *drainComfy, Grace: *grace, FailClosed: *failClosed, Argv: fs.Args(), Stderr: os.Stderr,
 	})
 }
@@ -393,8 +403,19 @@ func status(args []string) int {
 		tw.Flush()
 	}
 	c := st.Counters
-	fmt.Printf("\nboard   %d collisions avoided, %s handed off, %d drains, %d stuck caught, %d squatters caught, %d contested grants, %d refused (since %s)\n",
-		c.CollisionsAvoided, server.MiB(c.VRAMHandedOff), c.Drains, c.StuckCaught, c.SquattersCaught, c.ContestedGrants, c.Refused, c.Since.Local().Format("Jan 2 15:04"))
+	fmt.Printf("\nboard   %d collisions avoided, %s handed off, %d drains, %d stuck caught, %d squatters caught, %d contested grants, %d refused, %d juggles stopped (since %s)\n",
+		c.CollisionsAvoided, server.MiB(c.VRAMHandedOff), c.Drains, c.StuckCaught, c.SquattersCaught, c.ContestedGrants, c.Refused, c.JugglesStopped, c.Since.Local().Format("Jan 2 15:04"))
+	if p := st.Priority; p != nil && len(p.Engines) > 0 {
+		parts := make([]string, 0, len(p.Engines))
+		for _, e := range p.Engines {
+			parts = append(parts, fmt.Sprintf("%d %s (%.1f h/7d)", e.Rank, e.Engine, e.Hours7d))
+		}
+		win := "off"
+		if p.JuggleWindow > 0 {
+			win = fmt.Sprintf("%gs", p.JuggleWindow)
+		}
+		fmt.Printf("juggles ranked by %s, window %s: %s\n", p.Source, win, strings.Join(parts, ", "))
+	}
 	if len(st.Leases)+len(st.Waiting)+len(st.Squatters)+len(st.Unprotected) == 0 {
 		fmt.Println("no leases, nobody waiting, no squatters")
 	}

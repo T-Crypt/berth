@@ -87,6 +87,19 @@ type Config struct {
 	// read at start, rewritten after any tick that changed a count. "" = the
 	// board starts at zero with every daemon, as before.
 	CountersFile string
+	// Order ranks engines (lease groups, else names) for juggles, first is
+	// best; empty = rank by card-hours over the last 7 days (UsageFile).
+	Order []string
+	// JuggleWindow: an equal-priority drain of a holder granted less than
+	// this ago is a juggle, decided by rank. 0 = DefaultJuggleWindow; < 0 = off.
+	JuggleWindow time.Duration
+	// UsageFile keeps the card-hours per engine across restarts; "" = memory only.
+	UsageFile string
+	// Busy reports whether a lease's engine is serving now (a request in
+	// flight, queued work, a model loading). Only a busy holder can be in a
+	// juggle; an idle one hands the card over at once. nil, or known=false,
+	// counts as busy.
+	Busy func(key string) (busy, known bool)
 	// ReattachWindow is how long a starting daemon holds new grants while
 	// engines that lost the previous daemon mid-run are still alive and
 	// due to re-attach.
@@ -98,6 +111,7 @@ type Config struct {
 
 type Request struct {
 	Engine   string
+	Group    string // the engine family a lease counts for (llama-swap's models); "" = Engine
 	Priority Priority
 	Needs    uint64 // bytes; 0 = the whole card
 	Wait     time.Duration
@@ -113,6 +127,10 @@ type ident struct {
 type lease struct {
 	id        string
 	engine    string
+	group     string
+	lostTo    string // a juggle this waiter lost: the winner's lease id; it waits, never drains it
+	lostWhy   string
+	reattach  bool // re-attached after a daemon restart: granted is the re-attach, not a fresh switch
 	prio      Priority
 	needs     uint64
 	state     state
@@ -171,6 +189,12 @@ type Broker struct {
 	saved      proto.Counters
 	saveMu     sync.Mutex
 	saveFailed bool
+
+	verdicts   map[string]verdict // loser engine key -> the juggle it lost
+	usage      usage
+	usageAt    time.Time // last tick credited to usage
+	usageSaved time.Time
+	usageDirty bool
 }
 
 // EventRing is how many events berthd keeps in memory.
@@ -265,6 +289,14 @@ func New(cfg Config, probe gpu.Probe, tree procs.Tree) *Broker {
 			log.Warn("collisions board not restored; starting at zero", "file", cfg.CountersFile, "err", err)
 		}
 	}
+	use := usage{}
+	if cfg.UsageFile != "" {
+		if u, err := loadUsage(cfg.UsageFile); err == nil {
+			use = u
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			log.Warn("engine usage not restored; the default ranking starts empty", "file", cfg.UsageFile, "err", err)
+		}
+	}
 	return &Broker{
 		cfg: cfg, probe: probe, tree: tree, log: log, runs: rs,
 		leases:    map[string]*lease{},
@@ -272,6 +304,8 @@ func New(cfg Config, probe gpu.Probe, tree procs.Tree) *Broker {
 		subs:      map[chan proto.Event]struct{}{},
 		counters:  counters,
 		saved:     counters,
+		verdicts:  map[string]verdict{},
+		usage:     use,
 		started:   time.Now(),
 	}
 }
@@ -350,6 +384,7 @@ func (b *Broker) Run(ctx context.Context) {
 	t := time.NewTicker(b.cfg.Poll)
 	defer t.Stop()
 	defer b.persist() // counts made after the last tick
+	defer func() { b.persistUsage(time.Now(), true) }()
 	for {
 		b.Tick(ctx)
 		select {
@@ -363,6 +398,7 @@ func (b *Broker) Run(ctx context.Context) {
 // Tick reads the card once, attributes every process, and reschedules.
 func (b *Broker) Tick(ctx context.Context) {
 	defer b.persist() // after the unlock below; also saves counts made between ticks
+	defer func() { b.persistUsage(time.Now(), false) }()
 	snap, err := b.probe.Read(ctx)
 	var rs []runs.Record
 	if b.cfg.RunsDir != "" {
@@ -373,6 +409,8 @@ func (b *Broker) Tick(ctx context.Context) {
 	defer b.mu.Unlock()
 	now := time.Now()
 	b.runs = rs
+	b.accountUsage(now)
+	b.pruneVerdicts(now)
 	if err != nil {
 		if b.probeErr == nil {
 			b.log.Warn("gpu probe failed; scheduling on the lease table alone", "err", err)
@@ -581,7 +619,7 @@ func (b *Broker) schedule(now time.Time) {
 				(b.cfg.ReattachWindow-now.Sub(b.started)).Round(time.Second), n))
 			return
 		}
-		ok, reason, victims := b.evaluate(w)
+		ok, reason, victims := b.evaluate(w, now)
 		if ok {
 			b.queue = b.queue[1:]
 			w.state = active
@@ -674,20 +712,27 @@ func (b *Broker) squatBytes() uint64 {
 
 // evaluate decides whether w fits now. If not, it returns why and which
 // holders to drain; no victims means draining would not help, so w waits.
-func (b *Broker) evaluate(w *lease) (bool, string, []*lease) {
+func (b *Broker) evaluate(w *lease, now time.Time) (bool, string, []*lease) {
 	hs := b.holders()
 	if len(hs) == 0 {
 		return true, "", nil
 	}
 	exclusive := w.needs == 0 || b.snap.Total == 0
 
-	var blockers, pending, drainable []*lease
+	var blockers, pending, drainable, kept []*lease
+	var keptWhy string
 	for _, h := range hs {
 		switch {
 		case h.state != active:
 			pending = append(pending, h)
 		case h.prio > w.prio:
 			blockers = append(blockers, h)
+		case h.prio == w.prio:
+			if keep, why := b.keeps(h, w, now); keep {
+				kept, keptWhy = append(kept, h), why
+				continue
+			}
+			drainable = append(drainable, h)
 		default:
 			drainable = append(drainable, h)
 		}
@@ -696,6 +741,9 @@ func (b *Broker) evaluate(w *lease) (bool, string, []*lease) {
 	if exclusive {
 		if len(blockers) > 0 {
 			return false, "held at higher priority by " + describe(blockers), nil
+		}
+		if len(kept) > 0 {
+			return false, keptWhy, nil
 		}
 		if len(drainable) > 0 {
 			return false, "draining " + describe(drainable), drainable
@@ -732,6 +780,9 @@ func (b *Broker) evaluate(w *lease) (bool, string, []*lease) {
 	reason := fmt.Sprintf("needs %d MiB; at most %d MiB can be freed", w.needs/gpu.MiB, freed/gpu.MiB)
 	if len(blockers) > 0 {
 		reason += "; held at higher priority by " + describe(blockers)
+	}
+	if len(kept) > 0 {
+		reason += "; " + keptWhy
 	}
 	if squat > 0 {
 		reason += fmt.Sprintf("; squatters hold %d MiB", squat/gpu.MiB)
@@ -815,9 +866,11 @@ func (b *Broker) Reattach(r Request, pid int, start uint64) (*Lease, error) {
 	l := &lease{
 		id:       fmt.Sprintf("%s-%d", r.Engine, b.nextID),
 		engine:   r.Engine,
+		group:    r.Group,
 		prio:     r.Priority,
 		needs:    r.Needs,
 		state:    active,
+		reattach: true,
 		pid:      pid,
 		pidStart: start,
 		gpu:      map[ident]gpu.Proc{},
@@ -855,6 +908,7 @@ func (b *Broker) Acquire(ctx context.Context, r Request, onWait func(string)) (*
 	l := &lease{
 		id:      fmt.Sprintf("%s-%d", r.Engine, b.nextID),
 		engine:  r.Engine,
+		group:   r.Group,
 		prio:    r.Priority,
 		needs:   r.Needs,
 		gpu:     map[ident]gpu.Proc{},
@@ -939,6 +993,7 @@ func (b *Broker) Status() proto.Status {
 		Unprotected: []proto.Run{},
 		Counters:    b.counters,
 		LastEvent:   b.seq,
+		Priority:    b.priorityStatus(now),
 	}
 	if b.probeErr != nil {
 		st.ProbeErr = b.probeErr.Error()

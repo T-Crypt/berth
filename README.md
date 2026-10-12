@@ -258,6 +258,26 @@ engine's figures are its own claims and are shown apart from what the driver mea
   so nothing is loaded onto a card an engine already holds.
 - **ComfyUI at a job boundary.** `--drain-comfyui` waits until ComfyUI's queue is empty
   before stopping it; a job in progress is never cut off.
+- **No juggling.** Two engines at the same priority drain each other: the last one asked for
+  wins, which is what you want when you switch models. When two clients want different
+  engines at once, that flips the card back and forth and every request fails. Berth calls it
+  a juggle when an engine is drained within `juggle_window` (15 s) of getting the card while it
+  is still busy (a request in flight, a ComfyUI job queued, a model loading). The engine ranking
+  decides a juggle: the winner keeps or takes the card, and the loser waits for it instead of
+  draining it back. An idle holder hands over at once, so chat, then an image, then chat again
+  is three clean handoffs.
+
+  ```toml
+  [priority]
+  order = ["llama-swap", "strata", "comfyui"]  # first is best; omit to rank by use
+  juggle_window = "15s"                        # a negative value turns it off
+  ```
+
+  Without an `order`, the engine with the most hours on the card through Berth over the last
+  7 days ranks first (kept in `~/.local/state/berth/usage.json`); a tie leaves the holder in
+  place. `berth run --group NAME` files a lease under an engine family: llama-swap runs each
+  model under its own name, so give each `--group llama-swap`. `berth status` shows the ranking
+  and a count of juggles stopped; the harbor log shows each one with the reason.
 
 ### Gateway (preview)
 - **One port for every engine.** `berth gateway` proxies OpenAI-style requests to the engine
@@ -270,7 +290,9 @@ engine's figures are its own claims and are shown apart from what the driver mea
   (`priority = "foreground"` next to a foreground llama-swap) and each side drains the other on
   demand. A lower priority waits behind the holder instead.
 - **Clear failures.** Unknown model: 404. A start the broker refuses or an engine that exits
-  before it answers: 503 with the reason and the engine's last log line. A model listed under
+  before it answers: 503 with the reason, the engine's last log line, a `Retry-After` and an
+  error `code` a client can branch on: `outranked` (lost a juggle), `drained_while_starting`,
+  `no_berth`, `not_ready`, `start_failed` or `no_start`. A model listed under
   `serves` by two engines fails `berth config check`.
 - **API key.** Bearer token on every route; `berth key` prints it (created on first use, mode
   600). Loopback only; browser origins and non-loopback Host names are refused.

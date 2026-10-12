@@ -151,6 +151,7 @@ func hold(ctx context.Context, conn *proto.Conn, req proto.Msg, b *broker.Broker
 
 	r := broker.Request{
 		Engine:   req.Engine,
+		Group:    req.Group,
 		Priority: prio,
 		Needs:    req.Needs,
 		Wait:     time.Duration(req.Wait * float64(time.Second)),

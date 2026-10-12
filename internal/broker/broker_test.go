@@ -73,6 +73,7 @@ func setup(t *testing.T, tree procs.Tree, allow ...string) (*Broker, *card, *rep
 		Allow:        allow,
 		ReleaseGrace: time.Hour,
 		DefaultWait:  2 * time.Second,
+		JuggleWindow: -1, // these tests are about drains; juggles have their own
 		Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}, c, tree)
 	b.Tick(context.Background())
@@ -467,7 +468,7 @@ func TestBoardSurvivesRestart(t *testing.T) {
 	tree := procs.Map{101: 100}
 	c := &card{total: 24 * GiB}
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
-	cfg := Config{Reporter: &reports{}, ReleaseGrace: time.Hour, DefaultWait: 2 * time.Second, CountersFile: file, Log: quiet}
+	cfg := Config{Reporter: &reports{}, ReleaseGrace: time.Hour, DefaultWait: 2 * time.Second, CountersFile: file, JuggleWindow: -1, Log: quiet}
 
 	b := New(cfg, c, tree)
 	b.Tick(context.Background())

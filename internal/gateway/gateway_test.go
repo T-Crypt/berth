@@ -318,3 +318,21 @@ func TestQueuedStartDoesNotOutliveTheRequest(t *testing.T) {
 		t.Fatal("the abandoned start ran the engine")
 	}
 }
+
+// A start that ended before its engine answered says why, as a code.
+func TestClassify(t *testing.T) {
+	for _, c := range []struct {
+		exit   int
+		stderr string
+		code   string
+	}{
+		{75, "berth: waiting: juggle: llama-swap keeps the card over strata (order: llama-swap > strata)\nberth: refused: gave up", "outranked"},
+		{143, "berth: granted strata-1\nberth: draining strata: NInfer (foreground) needs the card", "drained_while_starting"},
+		{runner.ExitRefused, "berth: refused: gave up after 10m0s", "no_berth"},
+		{1, "Traceback: boom", "start_failed"},
+	} {
+		if got := classify("strata", c.exit, c.stderr); got.code != c.code {
+			t.Errorf("classify(%d, %q) = %s, want %s", c.exit, c.stderr, got.code, c.code)
+		}
+	}
+}

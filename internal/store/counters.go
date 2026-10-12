@@ -12,10 +12,10 @@ func (s *Store) IngestCounters(now time.Time, c proto.Counters) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, err := s.db.Exec(`INSERT OR REPLACE INTO counters_1m
-		(minute, since, collisions, handed_off, drains, stuck, squatters, contested, refused)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		(minute, since, collisions, handed_off, drains, stuck, squatters, contested, refused, juggles)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		now.Truncate(time.Minute).Unix(), c.Since.Unix(), c.CollisionsAvoided, c.VRAMHandedOff,
-		c.Drains, c.StuckCaught, c.SquattersCaught, c.ContestedGrants, c.Refused)
+		c.Drains, c.StuckCaught, c.SquattersCaught, c.ContestedGrants, c.Refused, c.JugglesStopped)
 	return err
 }
 
@@ -38,7 +38,7 @@ func (s *Store) CountersOver(name string, d time.Duration, now time.Time, live p
 	w := CounterWindow{Range: name, From: now.Add(-d), To: now}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	rows, err := s.db.Query(`SELECT minute, since, collisions, handed_off, drains, stuck, squatters, contested, refused
+	rows, err := s.db.Query(`SELECT minute, since, collisions, handed_off, drains, stuck, squatters, contested, refused, juggles
 		FROM counters_1m
 		WHERE minute >= COALESCE((SELECT MAX(minute) FROM counters_1m WHERE minute <= ?), 0)
 		ORDER BY minute`, w.From.Unix())
@@ -52,7 +52,7 @@ func (s *Store) CountersOver(name string, d time.Duration, now time.Time, live p
 		var minute, since int64
 		var c proto.Counters
 		if err := rows.Scan(&minute, &since, &c.CollisionsAvoided, &c.VRAMHandedOff, &c.Drains,
-			&c.StuckCaught, &c.SquattersCaught, &c.ContestedGrants, &c.Refused); err != nil {
+			&c.StuckCaught, &c.SquattersCaught, &c.ContestedGrants, &c.Refused, &c.JugglesStopped); err != nil {
 			return w, err
 		}
 		if len(pts) == 0 {
@@ -89,6 +89,7 @@ func (s *Store) CountersOver(name string, d time.Duration, now time.Time, live p
 		sum.SquattersCaught += step(a.SquattersCaught, b.SquattersCaught, reset)
 		sum.ContestedGrants += step(a.ContestedGrants, b.ContestedGrants, reset)
 		sum.Refused += step(a.Refused, b.Refused, reset)
+		sum.JugglesStopped += step(a.JugglesStopped, b.JugglesStopped, reset)
 	}
 	sum.Since = w.From
 	w.Counts = sum

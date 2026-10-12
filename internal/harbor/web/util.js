@@ -93,6 +93,7 @@ export function kindWord(kind) {
     case "lease.stuck": return "AGROUND";
     case "lease.refused": return "REFUSED";
     case "lease.reattached": return "REBOARDED";
+    case "lease.juggle": return "JUGGLE";
     case "squatter.appeared": return "STOWAWAY";
     case "squatter.gone": return "STOWAWAY GONE";
     case "probe.failed": return "PROBE DOWN";

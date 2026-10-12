@@ -129,7 +129,7 @@ function main() {
   odometerReels = Array.from(document.querySelectorAll("#odometer .reel"));
   counterSince = $("counter-since");
   counterMeta = $("counter-meta");
-  ctiles = { vram: $("ctile-vram"), drains: $("ctile-drains"), stuck: $("ctile-stuck"), stowaways: $("ctile-stowaways"), contested: $("ctile-contested"), refused: $("ctile-refused") };
+  ctiles = { vram: $("ctile-vram"), drains: $("ctile-drains"), stuck: $("ctile-stuck"), stowaways: $("ctile-stowaways"), contested: $("ctile-contested"), refused: $("ctile-refused"), juggles: $("ctile-juggles") };
   logList = $("log");
   logNote = $("log-note");
   logMeta = $("log-meta");
@@ -258,7 +258,7 @@ function demoCounterWindow(r) {
   const scale = (v) => Math.round((v || 0) * f);
   return {
     range: r, partial: false, from: new Date(Date.now() - COUNTER_RANGES[r]).toISOString(),
-    counts: { collisions_avoided: scale(c.collisions_avoided), vram_handed_off: scale(c.vram_handed_off), drains: scale(c.drains), stuck_caught: scale(c.stuck_caught), squatters_caught: scale(c.squatters_caught), contested_grants: scale(c.contested_grants), refused: scale(c.refused) },
+    counts: { collisions_avoided: scale(c.collisions_avoided), vram_handed_off: scale(c.vram_handed_off), drains: scale(c.drains), stuck_caught: scale(c.stuck_caught), squatters_caught: scale(c.squatters_caught), contested_grants: scale(c.contested_grants), refused: scale(c.refused), juggles_stopped: scale(c.juggles_stopped) },
   };
 }
 function setRange(r, persist) {
@@ -1482,7 +1482,7 @@ function paintLog() {
 let prevOdo = -1;
 function renderCounters(c) {
   if (!c) {
-    for (const k of Object.keys(ctiles)) setCtile(ctiles[k], "—", { vram: "VRAM HANDED OFF", drains: "DRAINS", stuck: "AGROUND CAUGHT", stowaways: "STOWAWAYS CAUGHT", contested: "CONTESTED", refused: "REFUSED" }[k]);
+    for (const k of Object.keys(ctiles)) setCtile(ctiles[k], "—", { vram: "VRAM HANDED OFF", drains: "DRAINS", stuck: "AGROUND CAUGHT", stowaways: "STOWAWAYS CAUGHT", contested: "CONTESTED", refused: "REFUSED", juggles: "JUGGLES STOPPED" }[k]);
     return;
   }
   const all = c;
@@ -1518,6 +1518,7 @@ function renderCounters(c) {
   setCtile(ctiles.stowaways, String(c.squatters_caught || 0), "STOWAWAYS CAUGHT");
   setCtile(ctiles.contested, String(c.contested_grants || 0), "CONTESTED");
   setCtile(ctiles.refused, String(c.refused || 0), "REFUSED");
+  setCtile(ctiles.juggles, String(c.juggles_stopped || 0), "JUGGLES STOPPED");
 }
 function fmtClockOrDate(iso) {
   const d = new Date(iso);

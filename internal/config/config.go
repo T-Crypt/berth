@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -67,8 +68,21 @@ type Config struct {
 		Hosts    []string `toml:"discover_hosts"`
 		Ports    []int    `toml:"discover_ports"`
 	} `toml:"engines"`
-	Engine []Engine     `toml:"engine"`
-	Alerts AlertsConfig `toml:"alerts"`
+	Engine   []Engine       `toml:"engine"`
+	Alerts   AlertsConfig   `toml:"alerts"`
+	Priority PriorityConfig `toml:"priority"`
+}
+
+// PriorityConfig decides juggles: two engines at the same priority asking for
+// the card within JuggleWindow of each other while the holder is busy.
+type PriorityConfig struct {
+	// Order ranks engines, first is best: a lease's --group, else its
+	// engine name. Empty = the engine with the most card-hours over the
+	// last 7 days ranks first.
+	Order []string `toml:"order"`
+	// JuggleWindow: default 15s; "0s" keeps the default, a negative value
+	// turns juggle handling off (last switch always wins).
+	JuggleWindow Duration `toml:"juggle_window"`
 }
 
 // AlertsConfig is the threshold table the node evaluates on its sample cycle.
@@ -191,6 +205,16 @@ func (c *Config) Validate() error {
 				errs = append(errs, fmt.Errorf("alerts.%s: crit %g must be >= warn %g", k.name, k.thr.Crit, k.thr.Warn))
 			}
 		}
+	}
+	ordered := map[string]bool{}
+	for i, o := range c.Priority.Order {
+		switch {
+		case strings.TrimSpace(o) == "":
+			errs = append(errs, fmt.Errorf("priority.order[%d] is empty", i))
+		case ordered[o]:
+			errs = append(errs, fmt.Errorf("priority.order lists %q twice", o))
+		}
+		ordered[o] = true
 	}
 	seen := map[string]bool{}
 	served := map[string]string{} // model -> the engine that serves it
