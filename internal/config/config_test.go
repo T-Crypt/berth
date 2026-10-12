@@ -212,3 +212,34 @@ warn = 0.75
 		t.Errorf("KV = %+v", c.Alerts.KV)
 	}
 }
+
+func TestGatewayKeysValidated(t *testing.T) {
+	_, err := Load(write(t, `
+[[engine]]
+name   = "strata"
+type   = "llamacpp"
+url    = "http://127.0.0.1:8080"
+start  = ["strata-serve"]
+serves = ["router-strata"]
+[[engine]]
+name     = "other"
+type     = "llamacpp"
+url      = "http://127.0.0.1:8081"
+start    = ["other-serve"]
+serves   = ["router-strata"]
+priority = "urgent"
+[[engine]]
+name  = "nomodels"
+type  = "llamacpp"
+url   = "http://127.0.0.1:8082"
+start = ["x"]
+`))
+	if err == nil {
+		t.Fatal("invalid gateway keys accepted")
+	}
+	for _, want := range []string{`serves "router-strata", which "strata" already serves`, `priority "urgent"`, "start needs serves"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error lacks %q:\n%v", want, err)
+		}
+	}
+}

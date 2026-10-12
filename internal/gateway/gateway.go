@@ -4,6 +4,11 @@
 // (draining the holder like any other request), waits until it answers, and
 // proxies the request to it, streaming. Engines keep their own ports, and
 // stay leased when called directly.
+//
+// The gateway can load models, so every request must carry the node's API
+// key as a bearer token, name a loopback Host (DNS rebinding) and come from no
+// browser origin (a page cannot forge the key, and is refused before it is
+// even asked for).
 package gateway
 
 import (
@@ -13,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -22,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/T-Crypt/berth/internal/apikey"
 	"github.com/T-Crypt/berth/internal/config"
 	"github.com/T-Crypt/berth/internal/proto"
 	"github.com/T-Crypt/berth/internal/runner"
@@ -31,7 +38,8 @@ import (
 type Gateway struct {
 	Socket  string          // the node's berthd socket
 	Engines []config.Engine // configured engines; those with Start can be started on demand
-	Ready   time.Duration   // how long a started engine may take to answer; 0 = 10 min
+	Ready   time.Duration   // how long a start may wait for a berth and then to answer; 0 = 10 min
+	Key     string          // the node's API key; required on every request
 	Log     *slog.Logger
 	Client  *http.Client
 
@@ -72,7 +80,37 @@ func (g *Gateway) Handler() http.Handler {
 	for _, p := range []string{"/v1/chat/completions", "/v1/completions", "/v1/embeddings"} {
 		mux.HandleFunc("POST "+p, g.forward)
 	}
-	return mux
+	return g.guard(mux)
+}
+
+// guard admits a request only with the key, a loopback Host and no Origin.
+// OpenAI clients send no Origin; browsers always do on a cross-site POST.
+func (g *Gateway) guard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case !loopbackHost(r.Host):
+			apiError(w, http.StatusForbidden, "call the gateway at 127.0.0.1 or localhost")
+		case r.Header.Get("Origin") != "":
+			apiError(w, http.StatusForbidden, "the gateway does not answer browser pages")
+		case !apikey.Bearer(r.Header.Get("Authorization"), g.Key):
+			w.Header().Set("WWW-Authenticate", `Bearer realm="berth"`)
+			apiError(w, http.StatusUnauthorized, "send the node's API key as a bearer token (`berth key` prints it)")
+		default:
+			next.ServeHTTP(w, r)
+		}
+	})
+}
+
+func loopbackHost(host string) bool {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // target is where a model's requests go, and how to start it if it is down.
@@ -250,6 +288,7 @@ func (g *Gateway) ensure(ctx context.Context, e *config.Engine) error {
 	if len(e.Start) == 0 {
 		return fmt.Errorf("%s is not answering at %s and has no start command in berth.toml", e.Name, e.URL)
 	}
+	ready := g.ready()
 	g.mu.Lock()
 	if g.running == nil {
 		g.running = map[string]*started{}
@@ -258,14 +297,10 @@ func (g *Gateway) ensure(ctx context.Context, e *config.Engine) error {
 	if !ok {
 		s = &started{exited: make(chan struct{}), stderr: &lockedBuf{}}
 		g.running[e.Name] = s
-		go g.run(e, s)
+		go g.run(e, s, ready)
 	}
 	g.mu.Unlock()
 
-	ready := g.Ready
-	if ready <= 0 {
-		ready = 10 * time.Minute
-	}
 	deadline := time.Now().Add(ready)
 	for {
 		if g.answers(ctx, e.URL) {
@@ -284,9 +319,18 @@ func (g *Gateway) ensure(ctx context.Context, e *config.Engine) error {
 	}
 }
 
+func (g *Gateway) ready() time.Duration {
+	if g.Ready > 0 {
+		return g.Ready
+	}
+	return 10 * time.Minute
+}
+
 // run is one `berth run` of e, in process: it waits for a berth, starts the
-// engine, and hands the berth back when the engine exits or is drained.
-func (g *Gateway) run(e *config.Engine, s *started) {
+// engine, and hands the berth back when the engine exits or is drained. It
+// waits for the berth no longer than the request that asked for it, so a start
+// the client gave up on cannot fire hours later and take the card.
+func (g *Gateway) run(e *config.Engine, s *started, wait time.Duration) {
 	prio := e.Priority
 	if prio == "" {
 		prio = "interactive"
@@ -294,7 +338,7 @@ func (g *Gateway) run(e *config.Engine, s *started) {
 	g.log().Info("gateway starting engine", "engine", e.Name, "priority", prio)
 	s.code = runner.Run(runner.Options{
 		Socket: g.Socket, Engine: e.Name, Priority: prio, Needs: e.NeedsMiB << 20,
-		Wait: 24 * time.Hour, DrainPost: e.DrainPost, DrainComfyUI: e.DrainComfyUI,
+		Wait: wait, DrainPost: e.DrainPost, DrainComfyUI: e.DrainComfyUI,
 		Grace: 30 * time.Second, Argv: e.Start, Stderr: s.stderr,
 	})
 	g.log().Info("gateway engine exited", "engine", e.Name, "code", s.code)

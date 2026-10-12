@@ -59,7 +59,15 @@ priority = "foreground"   # equal to the engine it replaces, so the last model y
 ```
 
 Run `berth gateway` (loopback `127.0.0.1:9799`; a user unit is in `contrib/berth-gateway.service`) and send
-your requests there. For each request the gateway:
+your requests there with the node's API key as the bearer token. The gateway creates the key on first start
+(`~/.config/berth/api.key`, mode 600) and `berth key` prints it, so a client that runs commands for its key
+never has the secret written into its config:
+
+```json
+{ "baseUrl": "http://127.0.0.1:9799/v1", "apiKey": "!berth key" }
+```
+
+For each request the gateway:
 
 1. reads the model name from the body;
 2. hands the request straight to an engine that is up and lists that model (llama-swap and Ollama load
@@ -70,7 +78,9 @@ your requests there. For each request the gateway:
 4. proxies the request and streams tokens as the engine sends them.
 
 Requests that arrive during a start wait on that one start. A model no engine serves gets a 404, and a
-start the broker refuses comes back as a 503 with the broker's reason. Asking llama-swap for one of its
+start the broker refuses comes back as a 503 with the broker's reason. A start waits for the card no longer
+than `--ready` (10 minutes); if the holder has not left by then, the request fails and the start is
+dropped, so it cannot take the card hours later. Asking llama-swap for one of its
 models later drains the gateway's engine the same way, so either side can take the card back.
 
 Measured on the reference RTX 4090 with an agent harness switching models between NInfer (through
@@ -83,8 +93,9 @@ llama-swap) and Strata (262K context):
 | NInfer to Strata | NInfer released in 0.6 s | 110 s |
 
 At no point did the two engines hold the card at the same time. The gateway serves `/v1/chat/completions`,
-`/v1/completions`, `/v1/embeddings` and a merged `/v1/models`. It listens on loopback only until the API has
-authentication. ComfyUI already hands off at a job boundary under a lease (`--drain-comfyui`); starting
+`/v1/completions`, `/v1/embeddings` and a merged `/v1/models`. Every route needs the key. The gateway listens
+on loopback only, refuses a Host that is not a loopback name (DNS rebinding) and refuses any request that
+carries a browser `Origin`, so a web page cannot start an engine. ComfyUI already hands off at a job boundary under a lease (`--drain-comfyui`); starting
 ComfyUI on demand from its own API through the gateway comes next.
 
 ---
@@ -259,7 +270,10 @@ engine's figures are its own claims and are shown apart from what the driver mea
   (`priority = "foreground"` next to a foreground llama-swap) and each side drains the other on
   demand. A lower priority waits behind the holder instead.
 - **Clear failures.** Unknown model: 404. A start the broker refuses or an engine that exits
-  before it answers: 503 with the reason and the engine's last log line.
+  before it answers: 503 with the reason and the engine's last log line. A model listed under
+  `serves` by two engines fails `berth config check`.
+- **API key.** Bearer token on every route; `berth key` prints it (created on first use, mode
+  600). Loopback only; browser origins and non-loopback Host names are refused.
 
 ### Visibility
 - **Stowaways:** every process holding VRAM without a lease, with memory, identity and
@@ -308,7 +322,7 @@ engine's figures are its own claims and are shown apart from what the driver mea
   measures.
 
 ### Interfaces
-- **CLI:** `berth status`, `berth events -f`, `berth run`, `berth gateway`, `berth config check`,
+- **CLI:** `berth status`, `berth events -f`, `berth run`, `berth gateway`, `berth key`, `berth config check`,
   `berth export`.
   Berth runs fully headless.
 - **Harbor web UI** (`berth harbor`): a departures board of every lease, a boat ticket

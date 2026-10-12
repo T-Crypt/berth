@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/T-Crypt/berth/internal/alerts"
+	"github.com/T-Crypt/berth/internal/apikey"
 	"github.com/T-Crypt/berth/internal/broker"
 	"github.com/T-Crypt/berth/internal/config"
 	"github.com/T-Crypt/berth/internal/engines"
@@ -83,7 +84,9 @@ func usage() {
                                        requests and the samples, CSV or JSON
   berth gateway [flags]                (preview) one OpenAI-compatible port for
                                        every engine; starts cold engines under
-                                       a lease; loopback only
+                                       a lease; loopback only, needs the API key
+  berth key [--file PATH]              print the node's API key, creating it on
+                                       first use (clients: apiKey "!berth key")
 
 Run "berth <command> -h" for flags.
 `)
@@ -111,6 +114,8 @@ func main() {
 		os.Exit(exportCmd(os.Args[2:]))
 	case "gateway":
 		os.Exit(gatewayCmd(os.Args[2:]))
+	case "key":
+		os.Exit(keyCmd(os.Args[2:]))
 	case "version", "--version":
 		fmt.Println(version)
 	default:
@@ -402,7 +407,8 @@ func gatewayCmd(args []string) int {
 	sock := fs.String("socket", defaultSocket(), "the node's berthd socket ($BERTH_SOCKET)")
 	listen := fs.String("listen", "127.0.0.1:9799", "listen address; loopback only in this release")
 	cfgPath := fs.String("config", config.DefaultPath(), "berth.toml: engines with start/serves can be started on demand ($BERTH_CONFIG)")
-	ready := fs.Duration("ready", 10*time.Minute, "how long a started engine may take to answer")
+	ready := fs.Duration("ready", 10*time.Minute, "how long a start may wait for a berth and then to answer")
+	keyFile := fs.String("key-file", apikey.DefaultPath(), "the node's API key, created on first start ($BERTH_API_KEY_FILE)")
 	fs.Parse(args)
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	if err := config.Loopback(*listen); err != nil {
@@ -414,16 +420,35 @@ func gatewayCmd(args []string) int {
 		log.Error("config", "err", err)
 		return 1
 	}
-	g := &gateway.Gateway{Socket: *sock, Engines: cfg.Engine, Ready: *ready, Log: log}
+	key, err := apikey.LoadOrCreate(*keyFile)
+	if err != nil {
+		log.Error("api key", "err", err)
+		return 1
+	}
+	g := &gateway.Gateway{Socket: *sock, Engines: cfg.Engine, Ready: *ready, Key: key, Log: log}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	srv := &http.Server{Addr: *listen, Handler: g.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() { <-ctx.Done(); _ = srv.Close() }()
-	log.Info("gateway up", "listen", "http://"+*listen+"/v1", "startable", len(cfg.Engine))
+	log.Info("gateway up", "listen", "http://"+*listen+"/v1", "startable", len(cfg.Engine), "key_file", *keyFile)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Error("gateway", "err", err)
 		return 1
 	}
+	return 0
+}
+
+// keyCmd prints the node's API key for a client to send as its bearer token.
+func keyCmd(args []string) int {
+	fs := flag.NewFlagSet("key", flag.ExitOnError)
+	file := fs.String("file", apikey.DefaultPath(), "the key file ($BERTH_API_KEY_FILE)")
+	fs.Parse(args)
+	key, err := apikey.LoadOrCreate(*file)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "berth key:", err)
+		return 1
+	}
+	fmt.Println(key)
 	return 0
 }
 

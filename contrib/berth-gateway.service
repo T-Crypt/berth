@@ -2,7 +2,8 @@
 # Install: cp contrib/berth-gateway.service ~/.config/systemd/user/ && systemctl --user enable --now berth-gateway
 # Undo:    systemctl --user disable --now berth-gateway && rm ~/.config/systemd/user/berth-gateway.service
 # Engines it starts are its children: stopping this unit stops them. Set WorkingDirectory if an engine's
-# start command uses relative paths.
+# start command uses relative paths. Clients send the API key the gateway creates on first start
+# (`berth key` prints it; ~/.config/berth/api.key, mode 600) as their bearer token.
 [Unit]
 Description=berth gateway - one port that starts engines on demand under a lease (loopback :9799)
 After=berthd.service

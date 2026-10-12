@@ -193,6 +193,7 @@ func (c *Config) Validate() error {
 		}
 	}
 	seen := map[string]bool{}
+	served := map[string]string{} // model -> the engine that serves it
 	for i, e := range c.Engine {
 		where := fmt.Sprintf("engine[%d] %q", i, e.Name)
 		if e.Name == "" {
@@ -209,6 +210,13 @@ func (c *Config) Validate() error {
 		}
 		if e.Type == "custom" && len(e.Map) == 0 && e.Health == "" && e.Models == "" && e.Metrics == "" && e.Slots == "" {
 			errs = append(errs, fmt.Errorf("%s: a custom engine needs at least one of health, models, metrics, slots or [engine.map]", where))
+		}
+		for _, m := range e.Serves {
+			if other, ok := served[m]; ok {
+				errs = append(errs, fmt.Errorf("%s: serves %q, which %q already serves; the gateway would never pick this one", where, m, other))
+			} else {
+				served[m] = e.Name
+			}
 		}
 		if len(e.Start) > 0 && len(e.Serves) == 0 {
 			errs = append(errs, fmt.Errorf("%s: start needs serves, the models the gateway may start it for", where))
