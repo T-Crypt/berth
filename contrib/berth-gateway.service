@@ -1,0 +1,17 @@
+# systemd user unit: berth gateway, one OpenAI-compatible port that starts engines on demand under a lease.
+# Install: cp contrib/berth-gateway.service ~/.config/systemd/user/ && systemctl --user enable --now berth-gateway
+# Undo:    systemctl --user disable --now berth-gateway && rm ~/.config/systemd/user/berth-gateway.service
+# Engines it starts are its children: stopping this unit stops them. Set WorkingDirectory if an engine's
+# start command uses relative paths.
+[Unit]
+Description=berth gateway - one port that starts engines on demand under a lease (loopback :9799)
+After=berthd.service
+Wants=berthd.service
+
+[Service]
+ExecStart=%h/.local/bin/berth gateway --listen 127.0.0.1:9799
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
