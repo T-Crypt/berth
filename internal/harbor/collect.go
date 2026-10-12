@@ -171,6 +171,13 @@ func (h *Harbor) RunCollector(ctx context.Context) {
 					}
 				}
 			}
+			// The board's running totals, one reading a minute, so the
+			// harbor can say what it counted over any window.
+			if st, err := h.nodeStatus(); err == nil {
+				if err := h.Store.IngestCounters(time.Now(), st.Counters); err != nil {
+					h.Log.Warn("harbor: store counters", "err", err)
+				}
+			}
 			// A no-op until the hour the tick ran in has closed.
 			if err := h.Store.RollupHours(time.Now()); err != nil {
 				h.Log.Warn("harbor: rollup hours", "err", err)

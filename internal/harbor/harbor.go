@@ -8,6 +8,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -95,6 +96,7 @@ func (h *Harbor) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/events", h.events)
 	mux.HandleFunc("GET /v1/history", h.history)
 	mux.HandleFunc("GET /v1/insights", h.insights)
+	mux.HandleFunc("GET /v1/counters", h.counters)
 	mux.HandleFunc("GET /v1/spans", h.spans)
 	mux.HandleFunc("GET /v1/storage", h.storage)
 	mux.HandleFunc("GET /v1/mode", h.mode)
@@ -175,21 +177,28 @@ func apiError(w http.ResponseWriter, status int, code, msg string) {
 	json.NewEncoder(w).Encode(map[string]string{"code": code, "message": msg})
 }
 
-func (h *Harbor) status(w http.ResponseWriter, r *http.Request) {
+// nodeStatus is one status read off the node's socket.
+func (h *Harbor) nodeStatus() (*proto.Status, error) {
 	conn, raw, err := server.Dial(h.Socket)
 	if err != nil {
-		apiError(w, http.StatusBadGateway, "node_unreachable", fmt.Sprintf("berthd is not answering on %s", h.Socket))
-		return
+		return nil, fmt.Errorf("berthd is not answering on %s", h.Socket)
 	}
 	defer raw.Close()
 	raw.SetDeadline(time.Now().Add(5 * time.Second))
 	if err := conn.Send(proto.Msg{Op: proto.OpStatus}); err != nil {
-		apiError(w, http.StatusBadGateway, "node_unreachable", err.Error())
-		return
+		return nil, err
 	}
 	m, err := conn.Recv()
 	if err != nil || m.Status == nil {
-		apiError(w, http.StatusBadGateway, "node_unreachable", "no status from berthd")
+		return nil, errors.New("no status from berthd")
+	}
+	return m.Status, nil
+}
+
+func (h *Harbor) status(w http.ResponseWriter, r *http.Request) {
+	st, err := h.nodeStatus()
+	if err != nil {
+		apiError(w, http.StatusBadGateway, "node_unreachable", err.Error())
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -197,7 +206,36 @@ func (h *Harbor) status(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(struct {
 		*proto.Status
 		Harbor string `json:"harbor_version"`
-	}{m.Status, h.Version})
+	}{st, h.Version})
+}
+
+// counters is the collisions board over one window (5m, 15m, 1h, 24h, 7d):
+// the node's live totals against the totals the store kept at the window's
+// start. The node's own board (all time) is in /v1/status.
+func (h *Harbor) counters(w http.ResponseWriter, r *http.Request) {
+	if h.Store == nil {
+		apiError(w, http.StatusServiceUnavailable, "no_store", "the harbor has no history store")
+		return
+	}
+	name := r.URL.Query().Get("range")
+	d, ok := store.ParseCounterRange(name)
+	if !ok {
+		apiError(w, http.StatusBadRequest, "bad_range", "range must be 5m, 15m, 1h, 24h or 7d")
+		return
+	}
+	st, err := h.nodeStatus()
+	if err != nil {
+		apiError(w, http.StatusBadGateway, "node_unreachable", err.Error())
+		return
+	}
+	cw, err := h.Store.CountersOver(name, d, time.Now(), st.Counters)
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, "store_error", err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	json.NewEncoder(w).Encode(cw)
 }
 
 // history is the graphs' data. The default (no range) and 1h read the node's

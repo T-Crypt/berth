@@ -27,6 +27,12 @@ const RANGE_KEY = "berth-harbor-range";
 const LB_RANGES = ["24h", "7d", "30d"];
 const LBRANGE_KEY = "berth-harbor-lbrange";
 const RANGE_POLL_MS = 60000;
+// The ticket counter's windows: "all" is the node's own board (kept across
+// restarts); the rest read /v1/counters, the live totals minus the totals
+// the store kept at the window's start (exact to the minute).
+const COUNTER_RANGES = { "5m": 3e5, "15m": 9e5, "1h": 36e5, "24h": 864e5, "7d": 6048e5, all: 0 };
+const COUNTER_WORDS = { "5m": "5 min", "15m": "15 min", "1h": "hour", "24h": "24 h", "7d": "7 days" };
+const CRANGE_KEY = "berth-harbor-crange";
 // the 1 h live window is re-fetched on this gate; the node samples every 5 s
 const LIVE_POLL_MS = 10000;
 
@@ -41,6 +47,9 @@ const state = {
   mode: initialMode(),
   range: initialRange(),
   lbrange: initialLbRange(),
+  crange: initialCounterRange(),
+  cwindow: null, // /v1/counters for crange, when it is not "all"
+  lastCw: 0,
   status: null,
   alerts: null, // the last s.alerts from status: the node's threshold table + sticky levels
   history: null,
@@ -76,6 +85,14 @@ function initialRange() {
   } catch (e) { /* private mode */ }
   return "1h";
 }
+function initialCounterRange() {
+  try {
+    const stored = localStorage.getItem(CRANGE_KEY);
+    if (stored && stored in COUNTER_RANGES) return stored;
+  } catch (e) { /* private mode */ }
+  return "all";
+}
+
 function initialLbRange() {
   try {
     const stored = localStorage.getItem(LBRANGE_KEY);
@@ -193,6 +210,56 @@ function wireRangePickers() {
   for (const b of document.querySelectorAll("#lb-range .mode-btn")) {
     b.addEventListener("click", () => setLbRange(b.dataset.range, true));
   }
+  for (const b of document.querySelectorAll("#counter-range .mode-btn")) {
+    b.addEventListener("click", () => setCounterRange(b.dataset.range, true));
+  }
+  paintCounterRange();
+}
+function setCounterRange(r, persist) {
+  if (!(r in COUNTER_RANGES)) return;
+  state.crange = r;
+  state.cwindow = null;
+  if (persist) {
+    try { localStorage.setItem(CRANGE_KEY, r); } catch (e) { /* ignore */ }
+  }
+  paintCounterRange();
+  if (state.status) renderCounters(state.status.counters);
+  state.lastCw = 0;
+  fetchCounterWindow();
+}
+function paintCounterRange() {
+  for (const b of document.querySelectorAll("#counter-range .mode-btn")) {
+    b.setAttribute("aria-pressed", String(b.dataset.range === state.crange));
+  }
+}
+async function fetchCounterWindow() {
+  if (state.crange === "all") return;
+  const r = state.crange;
+  if (state.demo) {
+    state.cwindow = demoCounterWindow(r);
+  } else {
+    try {
+      const res = await fetch("/v1/counters?range=" + r, { headers: { accept: "application/json" } });
+      if (!res.ok) return; // the panel keeps its last view
+      const w = await res.json();
+      if (r !== state.crange) return; // the picker moved on while this was in flight
+      state.cwindow = w;
+    } catch (e) { return; }
+  }
+  state.lastCw = Date.now();
+  if (state.status) renderCounters(state.status.counters);
+}
+// ?demo: a window is the fixture board scaled to the share of its age the
+// window covers, so the picker visibly moves without a store.
+function demoCounterWindow(r) {
+  const c = (state.status && state.status.counters) || {};
+  const age = Math.max(1, Date.now() - new Date(c.since).getTime());
+  const f = Math.min(1, COUNTER_RANGES[r] / age);
+  const scale = (v) => Math.round((v || 0) * f);
+  return {
+    range: r, partial: false, from: new Date(Date.now() - COUNTER_RANGES[r]).toISOString(),
+    counts: { collisions_avoided: scale(c.collisions_avoided), vram_handed_off: scale(c.vram_handed_off), drains: scale(c.drains), stuck_caught: scale(c.stuck_caught), squatters_caught: scale(c.squatters_caught), contested_grants: scale(c.contested_grants), refused: scale(c.refused) },
+  };
 }
 function setRange(r, persist) {
   if (!RANGE_MS[r]) return;
@@ -681,6 +748,7 @@ function onStatus(s) {
     openTicket(key);
   }
   for (const e of s.engines || []) engineView.sample(e.name, e.decode_tps, e.prefill_tps);
+  if (state.crange !== "all" && Date.now() - state.lastCw >= LIVE_POLL_MS) fetchCounterWindow();
   if (state.lbrange !== "24h") {
     // the stored range's view needs the status only as a "the store exists"
     // signal; it then refreshes on the one-minute gate, not every poll
@@ -1417,6 +1485,16 @@ function renderCounters(c) {
     for (const k of Object.keys(ctiles)) setCtile(ctiles[k], "—", { vram: "VRAM HANDED OFF", drains: "DRAINS", stuck: "AGROUND CAUGHT", stowaways: "STOWAWAYS CAUGHT", contested: "CONTESTED", refused: "REFUSED" }[k]);
     return;
   }
+  const all = c;
+  if (state.crange !== "all") {
+    const w = state.cwindow;
+    if (!w || w.range !== state.crange) {
+      // the window has not arrived yet: say so rather than show the all-time board under a window's name
+      counterMeta.textContent = "reading the last " + COUNTER_WORDS[state.crange] + "...";
+      return;
+    }
+    c = w.counts;
+  }
   const target = Math.min(999999, Math.max(0, Math.floor(c.collisions_avoided || 0)));
   const str = pad(target, 6);
   if (target !== prevOdo) {
@@ -1425,14 +1503,26 @@ function renderCounters(c) {
     odometerReels.forEach((reel, i) => { reel.style.transform = "translateY(-" + (parseInt(str[i], 10) * 10) + "%)"; });
     prevOdo = target;
   }
-  counterSince.textContent = "since " + fmtDate(c.since);
-  counterMeta.textContent = "counts the collisions the broker has caught since " + fmtDate(c.since);
+  if (state.crange === "all") {
+    counterSince.textContent = "since " + fmtDate(all.since);
+    counterMeta.textContent = "counts the collisions the broker has caught since " + fmtDate(all.since);
+  } else {
+    const w = state.cwindow;
+    const words = "the last " + COUNTER_WORDS[state.crange];
+    counterSince.textContent = w.partial ? "since " + fmtClockOrDate(w.from) : words;
+    counterMeta.textContent = "caught in " + words + (w.partial ? " (the harbor has kept readings since " + fmtClockOrDate(w.from) + ")" : "");
+  }
   setCtile(ctiles.vram, fmtGiB(c.vram_handed_off) + " GiB", "VRAM HANDED OFF");
   setCtile(ctiles.drains, String(c.drains || 0), "DRAINS");
   setCtile(ctiles.stuck, String(c.stuck_caught || 0), "AGROUND CAUGHT");
   setCtile(ctiles.stowaways, String(c.squatters_caught || 0), "STOWAWAYS CAUGHT");
   setCtile(ctiles.contested, String(c.contested_grants || 0), "CONTESTED");
   setCtile(ctiles.refused, String(c.refused || 0), "REFUSED");
+}
+function fmtClockOrDate(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  return Date.now() - d.getTime() < 864e5 ? fmtClock(d) : fmtDate(iso);
 }
 function setCtile(tile, value, label) {
   if (!tile) return;

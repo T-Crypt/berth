@@ -136,6 +136,7 @@ func daemon(args []string) int {
 	notify := fs.Bool("notify", false, "desktop notification (notify-send) when a squatter appears")
 	webhook := fs.String("webhook", "", "POST squatter events here as JSON")
 	cfgPath := fs.String("config", config.DefaultPath(), "berth.toml: engines to read, /metrics listener ($BERTH_CONFIG); missing = none")
+	countersFile := fs.String("counters", defaultStateFile("counters.json"), "keeps the collisions board across restarts; \"\" = start at zero every time")
 	fs.Parse(args)
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -157,6 +158,7 @@ func daemon(args []string) int {
 		DefaultWait:    *wait,
 		Allow:          splitList(*allow),
 		RunsDir:        runs.Dir(*sock),
+		CountersFile:   *countersFile,
 		ReattachWindow: *reattachWin,
 		Version:        version,
 		Reporter:       rep,
@@ -577,13 +579,19 @@ func exportCmd(args []string) int {
 // defaultHarborDB is $XDG_STATE_HOME/berth/harbor.db, falling back to
 // ~/.local/state/berth/harbor.db.
 func defaultHarborDB() string {
+	return defaultStateFile("harbor.db")
+}
+
+// defaultStateFile is $XDG_STATE_HOME/berth/NAME, falling back to
+// ~/.local/state/berth/NAME: kept across reboots, unlike the runtime dir.
+func defaultStateFile(name string) string {
 	if d := os.Getenv("XDG_STATE_HOME"); d != "" {
-		return filepath.Join(d, "berth", "harbor.db")
+		return filepath.Join(d, "berth", name)
 	}
 	if h, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(h, ".local", "state", "berth", "harbor.db")
+		return filepath.Join(h, ".local", "state", "berth", name)
 	}
-	return filepath.Join(os.TempDir(), "berth", "harbor.db")
+	return filepath.Join(os.TempDir(), "berth", name)
 }
 
 func configCmd(args []string) int {

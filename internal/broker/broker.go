@@ -5,9 +5,13 @@ package broker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -79,6 +83,10 @@ type Config struct {
 	DefaultWait  time.Duration // how long Acquire waits when the request names no limit
 	Allow        []string      // process-name substrings that are never squatters
 	RunsDir      string        // where berth run records unprotected runs; "" = none
+	// CountersFile keeps the collisions board across restarts and reboots:
+	// read at start, rewritten after any tick that changed a count. "" = the
+	// board starts at zero with every daemon, as before.
+	CountersFile string
 	// ReattachWindow is how long a starting daemon holds new grants while
 	// engines that lost the previous daemon mid-run are still alive and
 	// due to re-attach.
@@ -158,6 +166,11 @@ type Broker struct {
 	seq      uint64
 	subs     map[chan proto.Event]struct{}
 	counters proto.Counters
+	// saved is the board as last written to cfg.CountersFile; saveMu keeps
+	// two writers off the file, saveFailed logs a failing write once.
+	saved      proto.Counters
+	saveMu     sync.Mutex
+	saveFailed bool
 }
 
 // EventRing is how many events berthd keeps in memory.
@@ -242,20 +255,101 @@ func New(cfg Config, probe gpu.Probe, tree procs.Tree) *Broker {
 	if cfg.RunsDir != "" {
 		rs = runs.List(cfg.RunsDir, tree.StartTime)
 	}
+	counters := proto.Counters{Since: time.Now()}
+	if cfg.CountersFile != "" {
+		switch c, err := loadCounters(cfg.CountersFile); {
+		case err == nil:
+			counters = c
+			log.Info("collisions board restored", "file", cfg.CountersFile, "since", c.Since.Format(time.RFC3339), "collisions_avoided", c.CollisionsAvoided)
+		case !errors.Is(err, fs.ErrNotExist):
+			log.Warn("collisions board not restored; starting at zero", "file", cfg.CountersFile, "err", err)
+		}
+	}
 	return &Broker{
 		cfg: cfg, probe: probe, tree: tree, log: log, runs: rs,
 		leases:    map[string]*lease{},
 		squatters: map[ident]*squatter{},
 		subs:      map[chan proto.Event]struct{}{},
-		counters:  proto.Counters{Since: time.Now()},
+		counters:  counters,
+		saved:     counters,
 		started:   time.Now(),
 	}
+}
+
+func loadCounters(path string) (proto.Counters, error) {
+	var c proto.Counters
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return c, err
+	}
+	if err := json.Unmarshal(b, &c); err != nil {
+		return c, err
+	}
+	if c.Since.IsZero() {
+		return c, errors.New("no since time in the file")
+	}
+	return c, nil
+}
+
+// persist writes the board when a count changed since the last write. The
+// write is a temp file renamed over the old one, so a crash mid-write leaves
+// the previous board, never a torn one. It runs outside b.mu.
+func (b *Broker) persist() {
+	if b.cfg.CountersFile == "" {
+		return
+	}
+	b.saveMu.Lock()
+	defer b.saveMu.Unlock()
+	b.mu.Lock()
+	c := b.counters
+	b.mu.Unlock()
+	if c == b.saved {
+		return
+	}
+	data, err := json.Marshal(c)
+	if err == nil {
+		err = writeFileAtomic(b.cfg.CountersFile, data)
+	}
+	if err != nil {
+		if !b.saveFailed {
+			b.log.Warn("collisions board not saved; it will not survive a restart", "file", b.cfg.CountersFile, "err", err)
+			b.saveFailed = true
+		}
+		return
+	}
+	b.saveFailed = false
+	b.saved = c
+}
+
+func writeFileAtomic(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer os.Remove(tmp) // a no-op after the rename
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 // Run reads the card every Poll until ctx ends.
 func (b *Broker) Run(ctx context.Context) {
 	t := time.NewTicker(b.cfg.Poll)
 	defer t.Stop()
+	defer b.persist() // counts made after the last tick
 	for {
 		b.Tick(ctx)
 		select {
@@ -268,6 +362,7 @@ func (b *Broker) Run(ctx context.Context) {
 
 // Tick reads the card once, attributes every process, and reschedules.
 func (b *Broker) Tick(ctx context.Context) {
+	defer b.persist() // after the unlock below; also saves counts made between ticks
 	snap, err := b.probe.Read(ctx)
 	var rs []runs.Record
 	if b.cfg.RunsDir != "" {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -456,5 +457,65 @@ func TestEventRingAndSlowWatcher(t *testing.T) {
 	}
 	if n != 256 {
 		t.Fatalf("slow watcher got %d before being cut off, want 256", n)
+	}
+}
+
+// The board survives a restart: a second broker on the same counters file
+// starts from the first one's counts and its since time, and keeps counting.
+func TestBoardSurvivesRestart(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "state", "counters.json")
+	tree := procs.Map{101: 100}
+	c := &card{total: 24 * GiB}
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := Config{Reporter: &reports{}, ReleaseGrace: time.Hour, DefaultWait: 2 * time.Second, CountersFile: file, Log: quiet}
+
+	b := New(cfg, c, tree)
+	b.Tick(context.Background())
+	ninfer := must(t, acquire(b, Request{Engine: "ninfer"}))
+	ninfer.Attach(100)
+	c.set(gpu.Proc{PID: 101, Name: "ninfer-serve", Used: 22 * GiB})
+	b.Tick(context.Background())
+	strata := acquire(b, Request{Engine: "strata"})
+	pending(t, strata)
+	drained(t, ninfer)
+	ninfer.Release()
+	c.set()
+	b.Tick(context.Background())
+	must(t, strata).Release()
+	b.Tick(context.Background())
+	first := b.Status().Counters
+	if first.CollisionsAvoided != 1 || first.Drains != 1 {
+		t.Fatalf("first daemon counters = %+v", first)
+	}
+	if st, err := os.Stat(file); err != nil || st.Mode().Perm() != 0o600 {
+		t.Fatalf("counters file: %v %v", st, err)
+	}
+
+	c.set()
+	b2 := New(cfg, c, tree)
+	got := b2.Status().Counters
+	if got.CollisionsAvoided != 1 || got.Drains != 1 || got.VRAMHandedOff != first.VRAMHandedOff || !got.Since.Equal(first.Since) {
+		t.Fatalf("restored counters = %+v, want %+v", got, first)
+	}
+	b2.Tick(context.Background())
+	if _, err := b2.Acquire(context.Background(), Request{Engine: "x", Needs: 48 * GiB, Wait: time.Millisecond}, nil); err == nil {
+		t.Fatal("a request larger than the card was granted")
+	}
+	b2.Tick(context.Background())
+	if b3 := New(cfg, c, tree); b3.Status().Counters.Refused != got.Refused+1 {
+		t.Fatalf("a count made after the restore was not saved: %+v", b3.Status().Counters)
+	}
+}
+
+// A board file that does not parse is reported and the board starts at zero;
+// the daemon still starts.
+func TestBadBoardFileStartsAtZero(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "counters.json")
+	if err := os.WriteFile(file, []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	b := New(Config{CountersFile: file, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}, &card{total: 24 * GiB}, procs.Map{})
+	if c := b.Status().Counters; c.CollisionsAvoided != 0 || c.Since.IsZero() {
+		t.Fatalf("counters = %+v", c)
 	}
 }

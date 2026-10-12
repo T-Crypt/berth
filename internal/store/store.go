@@ -36,7 +36,8 @@ const (
 	// hourRetention keeps the one-hour rollups far longer than the 1 m rows.
 	hourRetention = 400 * 24 * time.Hour
 	// schemaVersion is recorded in meta; the only migration from v1 is the
-	// additive kv column added by migrate() in Open - never a rewrite.
+	// additive kv column added by migrate() in Open - never a rewrite. The
+	// counters_1m table is new in place too (CREATE IF NOT EXISTS).
 	schemaVersion = 2
 	// spanGapSplit is the largest hole between two sightings of a model at
 	// which its span stays one interval. The node samples at 5 s and the
@@ -104,6 +105,17 @@ CREATE TABLE IF NOT EXISTS model_spans (
 );
 CREATE INDEX IF NOT EXISTS ix_model_spans_end ON model_spans (end);
 CREATE INDEX IF NOT EXISTS ix_model_spans_start ON model_spans (start);
+CREATE TABLE IF NOT EXISTS counters_1m (
+	minute INTEGER PRIMARY KEY,   -- unix second at the minute's start
+	since INTEGER NOT NULL,       -- the node's board start (unix s); a new value = a board reset
+	collisions INTEGER NOT NULL,  -- the node's running totals at that minute
+	handed_off INTEGER NOT NULL,
+	drains INTEGER NOT NULL,
+	stuck INTEGER NOT NULL,
+	squatters INTEGER NOT NULL,
+	contested INTEGER NOT NULL,
+	refused INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS meta (
 	key TEXT PRIMARY KEY,
 	value TEXT NOT NULL
@@ -647,6 +659,9 @@ func (s *Store) Prune(now time.Time, retention time.Duration) error {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM samples_1h WHERE hour < ?`, cutH); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM counters_1m WHERE minute < ?`, cut); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM requests WHERE t < ?`, cut); err != nil {

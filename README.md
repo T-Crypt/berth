@@ -283,7 +283,10 @@ engine's figures are its own claims and are shown apart from what the driver mea
   probe change, with gap-free sequence numbers; `berth events -f` follows it live.
 - **The collisions board:** collisions avoided, VRAM handed off, drains, stuck releases
   caught, stowaways caught, contested grants, refusals. Each count links back to a
-  recorded event.
+  recorded event. berthd keeps the board in `~/.local/state/berth/counters.json`
+  (`--counters`), so a restart or a reboot carries the counts on. The harbor stores a
+  reading a minute and its ticket counter shows the last 5 min, 15 min, hour, 24 h or
+  7 days next to the all-time board (`GET /v1/counters?range=5m|15m|1h|24h|7d`).
 - **Alerts:** one threshold table in `berth.toml` (`[alerts]`): warn and crit per key
   (`queue`, `ttft`, `tpot`, `p95`, `cache`, `reingest`, `vram`, `temp`, `power`, `kv`).
   The node evaluates it on its 5 s sample cycle, fires a desktop notification and webhook

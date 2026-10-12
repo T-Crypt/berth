@@ -42,6 +42,14 @@
       <section class="ticket-counter" aria-label="the ticket counter">
         <div class="panel-head">
           <h2 class="panel-title">THE TICKET COUNTER</h2>
+          <div class="mode range-group" role="group" aria-label="counter range" id="counter-range">
+            <button class="mode-btn" type="button" data-range="5m" aria-pressed="false" title="stored, last five minutes">5M</button>
+            <button class="mode-btn" type="button" data-range="15m" aria-pressed="false" title="stored, last fifteen minutes">15M</button>
+            <button class="mode-btn" type="button" data-range="1h" aria-pressed="false" title="stored, last hour">1H</button>
+            <button class="mode-btn" type="button" data-range="24h" aria-pressed="false" title="stored, last day">24H</button>
+            <button class="mode-btn" type="button" data-range="7d" aria-pressed="false" title="stored, last week">7D</button>
+            <button class="mode-btn" type="button" data-range="all" aria-pressed="true" title="the node's own board, kept across restarts">ALL</button>
+          </div>
           <span class="panel-meta" id="counter-meta">counts the collisions the broker has caught</span>
         </div>
         <div class="counter-row">
