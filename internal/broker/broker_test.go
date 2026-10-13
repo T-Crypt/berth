@@ -318,6 +318,49 @@ func TestContestedGrantIsFlagged(t *testing.T) {
 	}
 }
 
+// Item 2: a sized grant on a card already full of squatters must wait,
+// not grant. Nobody holds a lease, so there is nothing to drain and no
+// victims: the waiter blocks head-of-queue until the memory shows free.
+func TestEmptyHoldersBigSquatWaits(t *testing.T) {
+	b, c, _ := setup(t, procs.Map{})
+	c.set(gpu.Proc{PID: 9, Name: "orphan", Used: 22 * GiB})
+	b.Tick(context.Background())
+
+	reasons := make(chan string, 8)
+	ch := make(chan result, 1)
+	go func() {
+		l, err := b.Acquire(context.Background(), Request{Engine: "big", Needs: 4 * GiB}, func(s string) { reasons <- s })
+		ch <- result{l, err}
+	}()
+	pending(t, ch)
+	select {
+	case why := <-reasons:
+		if !strings.Contains(why, "squatters hold 22528 MiB") {
+			t.Fatalf("wait reason %q does not name the squatters", why)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("waiter heard no reason")
+	}
+	if st := b.Status(); len(st.Leases) != 0 {
+		t.Fatalf("leases = %+v, want none: a contested card must not grant", st.Leases)
+	}
+}
+
+// Item 2: a sized grant that still fits despite squatters grants, and the
+// contested counter records the residual fit.
+func TestEmptyHoldersSmallSquatStillGrants(t *testing.T) {
+	b, c, _ := setup(t, procs.Map{})
+	c.set(gpu.Proc{PID: 9, Name: "orphan", Used: 2 * GiB})
+	b.Tick(context.Background())
+	l := must(t, acquire(b, Request{Engine: "small", Needs: 4 * GiB}))
+	if l.Contested() != 2*GiB {
+		t.Fatalf("contested = %d, want 2 GiB", l.Contested())
+	}
+	if b.counters.ContestedGrants != 1 {
+		t.Fatalf("ContestedGrants = %d, want 1", b.counters.ContestedGrants)
+	}
+}
+
 // Gap d: an engine started without a lease is listed, and its GPU
 // processes say which unprotected run they belong to.
 func TestUnprotectedRunsAreListed(t *testing.T) {

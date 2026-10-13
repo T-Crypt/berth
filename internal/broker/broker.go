@@ -672,11 +672,51 @@ func (b *Broker) squatBytes() uint64 {
 	return n
 }
 
+// cardBudget is one schedule/evaluate pass's view of the card: what the
+// card holds in total, what is already spoken for, and what is left for
+// the waiter's needs. evaluate branches on this, not on scattered uint64s.
+type cardBudget struct {
+	total    uint64
+	reserve  uint64
+	baseline uint64
+	squat    uint64
+	held     uint64
+}
+
+// ceiling is what the card can ever hand out: the total minus everything
+// no lease can give up (the reserve floor, driver baseline, squatters).
+// avail is what is free for a new grant right now.
+func (c cardBudget) ceiling() uint64 { return sat(c.total, c.reserve+c.baseline+c.squat) }
+func (c cardBudget) avail() uint64   { return sat(c.ceiling(), c.held) }
+
 // evaluate decides whether w fits now. If not, it returns why and which
 // holders to drain; no victims means draining would not help, so w waits.
 func (b *Broker) evaluate(w *lease) (bool, string, []*lease) {
 	hs := b.holders()
+	budget := cardBudget{
+		total:    b.snap.Total,
+		reserve:  b.cfg.Reserve,
+		baseline: b.snap.Baseline(),
+		squat:    b.squatBytes(),
+	}
+	for _, h := range hs {
+		budget.held += b.budget(h)
+	}
 	if len(hs) == 0 {
+		// Nobody holds a lease, so draining helps nothing and there
+		// are no victims: a sized request that does not fit the
+		// unleased remainder waits head-of-queue (nobody jumps a
+		// blocked waiter) until the driver shows the memory free.
+		// Whole-card requests still grant; squatters are report-only
+		// and the contested counter flags the fit.
+		if w.needs > 0 && budget.avail() < w.needs {
+			reason := fmt.Sprintf("needs %d MiB; at most %d MiB can be freed",
+				w.needs/gpu.MiB, budget.avail()/gpu.MiB)
+			if budget.squat > 0 {
+				reason += fmt.Sprintf("; squatters hold %d MiB", budget.squat/gpu.MiB)
+			}
+			return false, reason, nil
+		}
 		return true, "", nil
 	}
 	exclusive := w.needs == 0 || b.snap.Total == 0
@@ -703,13 +743,8 @@ func (b *Broker) evaluate(w *lease) (bool, string, []*lease) {
 		return false, "waiting for " + describe(pending) + " to free memory", nil
 	}
 
-	squat := b.squatBytes()
-	var held uint64
-	for _, h := range hs {
-		held += b.budget(h)
-	}
-	ceiling := sat(b.snap.Total, b.cfg.Reserve+b.snap.Baseline()+squat)
-	avail := sat(ceiling, held)
+	squat := budget.squat
+	avail := budget.avail()
 	if avail >= w.needs {
 		return true, "", nil
 	}
