@@ -30,6 +30,7 @@ import (
 
 	"github.com/T-Crypt/berth/internal/apikey"
 	"github.com/T-Crypt/berth/internal/config"
+	"github.com/T-Crypt/berth/internal/host"
 	"github.com/T-Crypt/berth/internal/proto"
 	"github.com/T-Crypt/berth/internal/runner"
 	"github.com/T-Crypt/berth/internal/server"
@@ -42,6 +43,12 @@ type Gateway struct {
 	Key     string          // the node's API key; required on every request
 	Log     *slog.Logger
 	Client  *http.Client
+	// HeadroomFloor is the RAM kept for the rest of the machine on a cold
+	// start; 0 = defaultHeadroomFloor.
+	HeadroomFloor uint64
+	// MemAvailable is RAM available in bytes plus whether the box reports
+	// it; nil reads the live machine. Tests inject a fake here.
+	MemAvailable func() (avail uint64, ok bool)
 
 	mu      sync.Mutex
 	running map[string]*started // engines this gateway started, by name
@@ -52,6 +59,43 @@ type started struct {
 	exited chan struct{}
 	code   int
 	stderr *lockedBuf
+}
+
+// defaultHeadroomFloor is the RAM the gateway keeps for the rest of the
+// machine when an engine cold-starts: a start that would leave less than
+// this available is refused instead of risking system-oomd. Tunable per
+// gateway via HeadroomFloor.
+const defaultHeadroomFloor = 2 << 30
+
+// guardDecision is what the cold-start headroom guard decided, and why.
+// The handler only maps allow/deny to HTTP; the reason lives here.
+type guardDecision struct {
+	allow bool
+	code  string // set on deny, e.g. "no_headroom"
+	msg   string
+	avail uint64 // RAM available when decided
+	need  uint64 // engine estimate plus the floor
+}
+
+// decideGuard is pure: deny when starting an engine estimated at estimate
+// would leave less than floor available. A zero estimate (an engine with
+// no configured footprint) allows: refusing on unknown data strands users.
+func decideGuard(avail, floor, estimate uint64) guardDecision {
+	if estimate == 0 {
+		return guardDecision{allow: true, avail: avail}
+	}
+	need := estimate + floor
+	if avail < need {
+		return guardDecision{
+			allow: false,
+			code:  "no_headroom",
+			msg: fmt.Sprintf("only %s RAM available, the engine needs %s plus a %s floor",
+				server.MiB(avail), server.MiB(estimate), server.MiB(floor)),
+			avail: avail,
+			need:  need,
+		}
+	}
+	return guardDecision{allow: true, avail: avail, need: need}
 }
 
 type cached struct {
@@ -279,6 +323,15 @@ func (g *Gateway) forward(w http.ResponseWriter, r *http.Request) {
 	p.ServeHTTP(w, r)
 }
 
+// startError is a start the gateway refused without spawning anything:
+// forward() answers it with a 503, the same as any other failed start.
+type startError struct {
+	code string // e.g. "no_headroom"
+	msg  string
+}
+
+func (e *startError) Error() string { return e.code + ": " + e.msg }
+
 // ensure starts e under a lease unless this gateway already has, then waits
 // until it answers. A start the broker refuses comes back as the reason.
 func (g *Gateway) ensure(ctx context.Context, e *config.Engine) error {
@@ -287,6 +340,10 @@ func (g *Gateway) ensure(ctx context.Context, e *config.Engine) error {
 	}
 	if len(e.Start) == 0 {
 		return fmt.Errorf("%s is not answering at %s and has no start command in berth.toml", e.Name, e.URL)
+	}
+	if err := g.checkHeadroom(e); err != nil {
+		g.log().Warn("gateway start refused", "engine", e.Name, "err", err)
+		return err
 	}
 	ready := g.ready()
 	g.mu.Lock()
@@ -324,6 +381,44 @@ func (g *Gateway) ready() time.Duration {
 		return g.Ready
 	}
 	return 10 * time.Minute
+}
+
+// checkHeadroom refuses a cold start that would leave the machine without
+// its RAM floor. It never caps, throttles or nices an engine: it only
+// refuses to start one. Unknown footprints (no estimate) and boxes that do
+// not report memory fail open toward starting.
+func (g *Gateway) checkHeadroom(e *config.Engine) error {
+	estimate := e.NeedsRAMMiB << 20
+	if estimate == 0 {
+		return nil
+	}
+	avail, ok := g.memAvailable()
+	if !ok {
+		return nil
+	}
+	d := decideGuard(avail, g.headroomFloor(), estimate)
+	if !d.allow {
+		return &startError{code: d.code, msg: d.msg}
+	}
+	return nil
+}
+
+func (g *Gateway) headroomFloor() uint64 {
+	if g.HeadroomFloor > 0 {
+		return g.HeadroomFloor
+	}
+	return defaultHeadroomFloor
+}
+
+func (g *Gateway) memAvailable() (uint64, bool) {
+	if g.MemAvailable != nil {
+		return g.MemAvailable()
+	}
+	s := new(host.Reader).Read()
+	if !s.Supported {
+		return 0, false
+	}
+	return s.RAMTotal - s.RAMUsed, true
 }
 
 // run is one `berth run` of e, in process: it waits for a berth, starts the

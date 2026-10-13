@@ -37,12 +37,15 @@ type Engine struct {
 	// Gateway: how `berth gateway` starts this engine when a request names a
 	// model it serves and it is not running. Start is the engine's command;
 	// it runs under a lease exactly as `berth run` would.
-	Start        []string `toml:"start"`
-	Serves       []string `toml:"serves"`        // model names this engine answers for
-	Priority     string   `toml:"priority"`      // batch, interactive (default) or foreground
-	NeedsMiB     uint64   `toml:"needs_mib"`     // 0 = the whole card
-	DrainPost    string   `toml:"drain_post"`    // as berth run --drain-post
-	DrainComfyUI string   `toml:"drain_comfyui"` // as berth run --drain-comfyui
+	Start    []string `toml:"start"`
+	Serves   []string `toml:"serves"`    // model names this engine answers for
+	Priority string   `toml:"priority"`  // batch, interactive (default) or foreground
+	NeedsMiB uint64   `toml:"needs_mib"` // 0 = the whole card
+	// NeedsRAMMiB estimates the engine's host RAM spike at cold start, for
+	// the gateway headroom guard. 0 = unknown, and the guard fails open.
+	NeedsRAMMiB  uint64 `toml:"needs_ram_mib"`
+	DrainPost    string `toml:"drain_post"`    // as berth run --drain-post
+	DrainComfyUI string `toml:"drain_comfyui"` // as berth run --drain-comfyui
 }
 
 // Types are the engine readers that exist.

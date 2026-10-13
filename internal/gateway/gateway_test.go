@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -276,6 +277,114 @@ func TestGuard(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("with the key: status %d", resp.StatusCode)
+	}
+}
+
+func TestDecideGuard(t *testing.T) {
+	const GiB = uint64(1 << 30)
+	cases := []struct {
+		name      string
+		avail     uint64
+		floor     uint64
+		estimate  uint64
+		wantAllow bool
+		wantCode  string
+	}{
+		{"plenty allows", 32 * GiB, 2 * GiB, 8 * GiB, true, ""},
+		{"exact need allows", 10 * GiB, 2 * GiB, 8 * GiB, true, ""},
+		{"one byte short denies", 10*GiB - 1, 2 * GiB, 8 * GiB, false, "no_headroom"},
+		{"spike footprint denies", 20 * GiB, 2 * GiB, 30 * GiB, false, "no_headroom"},
+		{"unknown estimate allows even when tight", GiB / 2, 2 * GiB, 0, true, ""},
+		{"nothing free denies a real estimate", 0, 2 * GiB, 8 * GiB, false, "no_headroom"},
+	}
+	for _, c := range cases {
+		d := decideGuard(c.avail, c.floor, c.estimate)
+		if d.allow != c.wantAllow || d.code != c.wantCode {
+			t.Errorf("%s: allow=%v code=%q, want %v %q", c.name, d.allow, d.code, c.wantAllow, c.wantCode)
+		}
+		if !c.wantAllow && d.msg == "" {
+			t.Errorf("%s: deny carries no message", c.name)
+		}
+		if d.avail != c.avail {
+			t.Errorf("%s: avail=%d, want %d", c.name, d.avail, c.avail)
+		}
+	}
+	// A deny names the numbers so the operator sees what to tune.
+	d := decideGuard(5*GiB, 2*GiB, 8*GiB)
+	if !strings.Contains(d.msg, "MiB") {
+		t.Errorf("deny message names no sizes: %q", d.msg)
+	}
+}
+
+func postModel(t *testing.T, g *Gateway, model string) (int, string) {
+	t.Helper()
+	gw := httptest.NewServer(g.Handler())
+	defer gw.Close()
+	resp := call(t, "POST", gw.URL+"/v1/chat/completions", `{"model":`+strconv.Quote(model)+`}`)
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	return resp.StatusCode, string(body)
+}
+
+func guardGateway(t *testing.T, avail uint64, ok bool, needsRAMMiB uint64, marker string) *Gateway {
+	t.Helper()
+	return &Gateway{
+		Socket: filepath.Join(t.TempDir(), "no-daemon.sock"),
+		Ready:  10 * time.Second, Key: testKey, Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		MemAvailable: func() (uint64, bool) { return avail, ok },
+		Engines: []config.Engine{{Name: "strata", Type: "strata",
+			URL:   "http://127.0.0.1:1", // nothing answers here
+			Start: []string{"touch", marker}, Serves: []string{"big-model"},
+			NeedsRAMMiB: needsRAMMiB}},
+	}
+}
+
+// A cold start that would leave the machine without its RAM floor is refused
+// before anything spawns: a 503 naming no_headroom, and the start command
+// never runs.
+func TestColdStartRefusedWithoutHeadroom(t *testing.T) {
+	const GiB = uint64(1 << 30)
+	marker := filepath.Join(t.TempDir(), "started")
+	g := guardGateway(t, 4*GiB, true, 8<<10, marker)
+	status, body := postModel(t, g, "big-model")
+	if status != http.StatusServiceUnavailable {
+		t.Fatalf("status %d, want 503: %s", status, body)
+	}
+	if !strings.Contains(body, "no_headroom") {
+		t.Fatalf("body names no code: %s", body)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("the refused start ran anyway")
+	}
+}
+
+// An engine with no configured footprint, or a box that does not report
+// memory, fails open toward starting: the guard never strands a request on
+// unknown data. Here the start runs (fail-open `berth run` touches the
+// marker) and the failure, if any, names something other than no_headroom.
+func TestColdStartFailsOpenOnUnknownData(t *testing.T) {
+	const GiB = uint64(1 << 30)
+	for _, c := range []struct {
+		name        string
+		avail       uint64
+		ok          bool
+		needsRAMMiB uint64
+	}{
+		{"no estimate", GiB / 2, true, 0},
+		{"no memory readings", 0, false, 8 << 10},
+	} {
+		marker := filepath.Join(t.TempDir(), "started")
+		g := guardGateway(t, c.avail, c.ok, c.needsRAMMiB, marker)
+		status, body := postModel(t, g, "big-model")
+		if status != http.StatusServiceUnavailable {
+			t.Fatalf("%s: status %d, want 503: %s", c.name, status, body)
+		}
+		if strings.Contains(body, "no_headroom") {
+			t.Fatalf("%s: refused on unknown data: %s", c.name, body)
+		}
+		if _, err := os.Stat(marker); err != nil {
+			t.Fatalf("%s: the allowed start never ran: %v", c.name, err)
+		}
 	}
 }
 

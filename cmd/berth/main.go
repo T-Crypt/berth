@@ -410,6 +410,7 @@ func gatewayCmd(args []string) int {
 	listen := fs.String("listen", "127.0.0.1:9799", "listen address; loopback only in this release")
 	cfgPath := fs.String("config", config.DefaultPath(), "berth.toml: engines with start/serves can be started on demand ($BERTH_CONFIG)")
 	ready := fs.Duration("ready", 10*time.Minute, "how long a start may wait for a berth and then to answer")
+	headroomMiB := fs.Uint64("headroom-mib", 2048, "RAM kept for the machine on a cold start; a start leaving less available is refused")
 	keyFile := fs.String("key-file", apikey.DefaultPath(), "the node's API key, created on first start ($BERTH_API_KEY_FILE)")
 	fs.Parse(args)
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -427,7 +428,7 @@ func gatewayCmd(args []string) int {
 		log.Error("api key", "err", err)
 		return 1
 	}
-	g := &gateway.Gateway{Socket: *sock, Engines: cfg.Engine, Ready: *ready, Key: key, Log: log}
+	g := &gateway.Gateway{Socket: *sock, Engines: cfg.Engine, Ready: *ready, Key: key, Log: log, HeadroomFloor: *headroomMiB << 20}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	srv := &http.Server{Addr: *listen, Handler: g.Handler(), ReadHeaderTimeout: 10 * time.Second}
