@@ -100,8 +100,16 @@ type Counters struct {
 	Refused         uint64 `json:"refused"`
 	// JugglesStopped: equal-priority handoffs inside the juggle window that
 	// the engine ranking decided instead of flipping the card.
-	JugglesStopped uint64    `json:"juggles_stopped"`
-	Since          time.Time `json:"since"`
+	JugglesStopped uint64 `json:"juggles_stopped"`
+	// SendTimeouts: fan-out writes that hit the per-message write
+	// deadline on the socket. The server keeps this count, not the
+	// broker: it stamps it into Status before each status reply.
+	SendTimeouts uint64 `json:"send_timeouts"`
+	// DroppedConsumers: socket consumers the server dropped for slow
+	// reads. Stamped the same way; the harbor store keeps no column
+	// for either field and ignores them.
+	DroppedConsumers uint64    `json:"dropped_consumers"`
+	Since            time.Time `json:"since"`
 }
 
 // APIVersion is the schema version of Status. Fields are only added
@@ -414,6 +422,18 @@ func (c *Conn) Send(m Msg) error {
 	}
 	_, err = c.w.Write(append(b, '\n'))
 	return err
+}
+
+// SendWithDeadline writes one message, giving a slow reader d to take it.
+// A writer that supports write deadlines (a net.Conn does) gets one per
+// message; any other writer sends exactly like Send. NewConn stays the
+// only constructor: callers that need the slow-reader policy use this
+// method instead of Send.
+func (c *Conn) SendWithDeadline(m Msg, d time.Duration) error {
+	if wd, ok := c.w.(interface{ SetWriteDeadline(time.Time) error }); ok {
+		_ = wd.SetWriteDeadline(time.Now().Add(d))
+	}
+	return c.Send(m)
 }
 
 func (c *Conn) Recv() (Msg, error) {

@@ -30,6 +30,8 @@ func ServeMetrics(ctx context.Context, addr string, b *broker.Broker, engines fu
 		}
 		st := b.Status()
 		st.Engines = engines()
+		st.Counters.SendTimeouts = sendTimeouts.Load()
+		st.Counters.DroppedConsumers = droppedConsumers.Load()
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 		WriteProm(w, st)
 	})
@@ -115,6 +117,8 @@ func WriteProm(w io.Writer, st proto.Status) {
 	p("Grants made while unleased processes held memory.", "counter", "berth_contested_grants_total", fmt.Sprintf("berth_contested_grants_total %d", c.ContestedGrants))
 	p("Requests refused.", "counter", "berth_refused_total", fmt.Sprintf("berth_refused_total %d", c.Refused))
 	p("Equal-priority handoffs the engine ranking decided instead of flipping the card.", "counter", "berth_juggles_stopped_total", fmt.Sprintf("berth_juggles_stopped_total %d", c.JugglesStopped))
+	p("Fan-out writes that hit the per-message deadline.", "counter", "berth_send_timeouts_total", fmt.Sprintf("berth_send_timeouts_total %d", c.SendTimeouts))
+	p("Socket consumers dropped for slow reads.", "counter", "berth_dropped_consumers_total", fmt.Sprintf("berth_dropped_consumers_total %d", c.DroppedConsumers))
 
 	var up, models, dec, pre, out, in []string
 	for _, e := range st.Engines {

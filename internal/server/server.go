@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/T-Crypt/berth/internal/broker"
@@ -34,6 +35,56 @@ func Listen(path string) (net.Listener, error) {
 		return nil, err
 	}
 	return ln, nil
+}
+
+// writeDeadline bounds one fan-out write to a socket consumer. It
+// mirrors the harbor collector's 5 s roundtrip deadline, the other
+// side of the same socket: a reader slower than that is gone. A var
+// so tests can shrink it.
+var writeDeadline = 5 * time.Second
+
+// sendTimeouts counts fan-out writes that hit writeDeadline;
+// droppedConsumers counts consumers dropped for slow reads. Both are
+// stamped into Status.Counters before status replies and rendered in
+// /metrics; the harbor store keeps no column for them.
+var (
+	sendTimeouts     atomic.Uint64
+	droppedConsumers atomic.Uint64
+)
+
+// consumer is one socket client under the slow-reader policy: every
+// write carries a deadline, and the first failed write drops that
+// consumer only. send reports false after a drop, so the caller stops
+// serving it; the rest keep their stream.
+type consumer struct {
+	conn    *proto.Conn
+	log     *slog.Logger
+	dropped atomic.Bool
+}
+
+func (u *consumer) send(m proto.Msg) bool {
+	if u.dropped.Load() {
+		return false
+	}
+	if err := u.conn.SendWithDeadline(m, writeDeadline); err != nil {
+		if u.dropped.CompareAndSwap(false, true) {
+			var nerr net.Error
+			if errors.As(err, &nerr) && nerr.Timeout() {
+				sendTimeouts.Add(1)
+				droppedConsumers.Add(1)
+				u.log.Warn("server: dropping slow consumer", "err", err)
+			}
+		}
+		return false
+	}
+	return true
+}
+
+// reply is a one-shot answer on a connection that reads nothing more:
+// a slow reader still gets its deadline, then the handler returns and
+// the deferred close drops it.
+func reply(conn *proto.Conn, log *slog.Logger, m proto.Msg) {
+	(&consumer{conn: conn, log: log}).send(m)
 }
 
 // Extras are the node's readings beyond the lease table; any may be nil.
@@ -100,32 +151,35 @@ func handle(ctx context.Context, c net.Conn, b *broker.Broker, x Extras, log *sl
 		st := b.Status()
 		st.Engines, st.Host, st.Insights = x.Engines(), x.Host(), x.Insights()
 		st.Alerts = x.Alerts()
-		_ = conn.Send(proto.Msg{Op: proto.OpStatus, Status: &st})
+		st.Counters.SendTimeouts = sendTimeouts.Load()
+		st.Counters.DroppedConsumers = droppedConsumers.Load()
+		reply(conn, log, proto.Msg{Op: proto.OpStatus, Status: &st})
 	case proto.OpHistory:
 		h := x.History()
-		_ = conn.Send(proto.Msg{Op: proto.OpHistory, History: &h})
+		reply(conn, log, proto.Msg{Op: proto.OpHistory, History: &h})
 	case proto.OpRequests:
 		rs := x.Requests(first.SinceT)
 		if rs == nil {
 			rs = []proto.Request{}
 		}
-		_ = conn.Send(proto.Msg{Op: proto.OpRequests, Requests: rs})
+		reply(conn, log, proto.Msg{Op: proto.OpRequests, Requests: rs})
 	case proto.OpAcquire, proto.OpReattach:
 		hold(ctx, conn, first, b, log)
 	case proto.OpEvents:
-		events(ctx, c, conn, first, b)
+		events(ctx, c, conn, first, b, log)
 	default:
-		_ = conn.Send(proto.Msg{Op: proto.OpRefused, Reason: fmt.Sprintf("unknown op %q", first.Op)})
+		reply(conn, log, proto.Msg{Op: proto.OpRefused, Reason: fmt.Sprintf("unknown op %q", first.Op)})
 	}
 }
 
 func hold(ctx context.Context, conn *proto.Conn, req proto.Msg, b *broker.Broker, log *slog.Logger) {
+	u := &consumer{conn: conn, log: log}
 	prio, err := broker.ParsePriority(req.Priority)
 	if err != nil || req.Engine == "" {
 		if err == nil {
 			err = errors.New("engine name is required")
 		}
-		_ = conn.Send(proto.Msg{Op: proto.OpRefused, Reason: err.Error()})
+		reply(conn, log, proto.Msg{Op: proto.OpRefused, Reason: err.Error()})
 		return
 	}
 
@@ -161,11 +215,16 @@ func hold(ctx context.Context, conn *proto.Conn, req proto.Msg, b *broker.Broker
 		lease, err = b.Reattach(r, req.PID, req.PIDStart)
 	} else {
 		lease, err = b.Acquire(ctx, r, func(reason string) {
-			_ = conn.Send(proto.Msg{Op: proto.OpWaiting, Reason: reason})
+			// A slow reader must not wedge the wait for everyone
+			// behind it: drop this consumer and abandon its queue
+			// seat, the same as a disconnect.
+			if !u.send(proto.Msg{Op: proto.OpWaiting, Reason: reason}) {
+				cancel()
+			}
 		})
 	}
 	if err != nil {
-		_ = conn.Send(proto.Msg{Op: proto.OpRefused, Reason: strings.TrimPrefix(err.Error(), broker.ErrRefused.Error()+": ")})
+		u.send(proto.Msg{Op: proto.OpRefused, Reason: strings.TrimPrefix(err.Error(), broker.ErrRefused.Error()+": ")})
 		return
 	}
 	defer lease.Release()
@@ -173,7 +232,7 @@ func hold(ctx context.Context, conn *proto.Conn, req proto.Msg, b *broker.Broker
 	if c := lease.Contested(); c > 0 {
 		granted.Reason = fmt.Sprintf("card contested: processes without a lease hold %d MiB", c/gpu.MiB)
 	}
-	if err := conn.Send(granted); err != nil {
+	if !u.send(granted) {
 		return
 	}
 	for {
@@ -181,7 +240,9 @@ func hold(ctx context.Context, conn *proto.Conn, req proto.Msg, b *broker.Broker
 		case <-ctx.Done():
 			return
 		case why := <-lease.Drains():
-			_ = conn.Send(proto.Msg{Op: proto.OpDrain, Reason: why})
+			if !u.send(proto.Msg{Op: proto.OpDrain, Reason: why}) {
+				return
+			}
 		case m := <-incoming:
 			if m.Op == proto.OpAttach && m.PID > 0 {
 				lease.Attach(m.PID)
@@ -193,11 +254,12 @@ func hold(ctx context.Context, conn *proto.Conn, req proto.Msg, b *broker.Broker
 
 // events replays the ring after Since, then, with Watch, streams new events
 // until the client goes away or falls too far behind.
-func events(ctx context.Context, c net.Conn, conn *proto.Conn, req proto.Msg, b *broker.Broker) {
+func events(ctx context.Context, c net.Conn, conn *proto.Conn, req proto.Msg, b *broker.Broker, log *slog.Logger) {
+	u := &consumer{conn: conn, log: log}
 	backlog, live, stop := b.Events(req.Since, req.Watch)
 	defer stop()
 	for i := range backlog {
-		if conn.Send(proto.Msg{Op: proto.OpEvent, Event: &backlog[i]}) != nil {
+		if !u.send(proto.Msg{Op: proto.OpEvent, Event: &backlog[i]}) {
 			return
 		}
 	}
@@ -219,10 +281,10 @@ func events(ctx context.Context, c net.Conn, conn *proto.Conn, req proto.Msg, b 
 			return
 		case e, ok := <-live:
 			if !ok {
-				_ = conn.Send(proto.Msg{Op: proto.OpRefused, Reason: "fell behind; reconnect with since"})
+				reply(conn, log, proto.Msg{Op: proto.OpRefused, Reason: "fell behind; reconnect with since"})
 				return
 			}
-			if conn.Send(proto.Msg{Op: proto.OpEvent, Event: &e}) != nil {
+			if !u.send(proto.Msg{Op: proto.OpEvent, Event: &e}) {
 				return
 			}
 		}
