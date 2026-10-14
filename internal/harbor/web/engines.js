@@ -18,11 +18,11 @@ function stepNote(every) {
 }
 
 function makeCard(eng) {
-  const card = el("div", "engine-card" + (eng.up ? "" : " down"));
+  const card = el("div", "engine-card" + (eng.up ? "" : " offline"));
   const top = el("div", "engine-top");
   const name = el("span", "engine-name", eng.name || "?");
   const type = el("span", "engine-type", (eng.type || "").toUpperCase());
-  const updown = el("span", "engine-state", eng.up ? "UP" : "DOWN");
+  const updown = el("span", "engine-state", eng.up ? "UP" : "OFFLINE");
   top.append(name, type, updown);
   card.append(top);
   const error = el("div", "engine-error", eng.error || "");
@@ -131,11 +131,11 @@ export class EngineView {
       c.name.textContent = eng.name || "?";
       c.type.textContent = (eng.type || "").toUpperCase();
       // the node latches the state: up answers, latched was up and stopped
-      // answering, down was never confirmed up. Old nodes send no state:
+      // answering, offline was never confirmed up. Old nodes send no state:
       // derive it.
       const st = eng.state || (eng.up ? "up" : "down");
-      c.updown.textContent = { up: "UP", latched: "UNRESPONSIVE", down: "DOWN" }[st] || "DOWN";
-      c.card.className = "engine-card" + (st === "up" ? "" : st === "latched" ? " latched" : " down");
+      c.updown.textContent = { up: "UP", latched: "UNRESPONSIVE", down: "OFFLINE", offline: "OFFLINE" }[st] || "OFFLINE";
+      c.card.className = "engine-card" + (st === "up" ? "" : st === "latched" ? " latched" : " offline");
       c.card.title = st === "latched" ? "was up; readings stale" : "";
       c.error.textContent = st === "up" ? "" : eng.error || "";
       c.error.hidden = st === "up";

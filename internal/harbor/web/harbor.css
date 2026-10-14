@@ -579,7 +579,7 @@ body.mode-basic .adv-only { display: none !important; }
   flex-direction: column;
   gap: var(--s3);
 }
-.engine-card.down { border-color: var(--magenta-dim); }
+.engine-card.offline { border-color: var(--hair); }
 .engine-top { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
 .engine-name { font-family: var(--mono); font-size: 15px; color: var(--ink-strong); }
 .engine-type { font-family: var(--mono); font-size: 10px; letter-spacing: 1px; color: var(--dim-2); }
@@ -593,8 +593,9 @@ body.mode-basic .adv-only { display: none !important; }
   padding: 2px 8px;
   color: var(--green);
 }
-.engine-card.down .engine-state { color: var(--magenta); border-color: var(--magenta-dim); }
+.engine-card.offline .engine-state { color: var(--dim-2); border-color: var(--hair-2); }
 .engine-error { color: var(--magenta); font-family: var(--mono); font-size: 11px; word-break: break-word; }
+.engine-card.offline .engine-error { color: var(--dim-2); }
 .engine-models { display: flex; flex-direction: column; gap: 2px; }
 .engine-model { font-family: var(--mono); font-size: 11px; color: var(--dim); display: flex; gap: var(--s2); }
 .engine-model .ms { color: var(--dim-2); }
@@ -1121,7 +1122,7 @@ dialog#ticket::backdrop { background: rgba(4, 6, 10, 0.78); }
 .conn.state.state-degraded .dot { background: var(--amber); }
 .conn.state.state-offline { color: #ffd7e0; border-color: var(--magenta-dim); }
 .conn.state.state-offline .dot { background: var(--magenta); }
-/* an engine that was up and stopped answering, distinct from down */
+/* an engine that was up and stopped answering, distinct from offline (never started) */
 .engine-card.latched { border-color: var(--amber-dim); }
 .engine-card.latched .engine-state { color: var(--amber); border-color: var(--amber-dim); }
 /* alert events in the harbor log */

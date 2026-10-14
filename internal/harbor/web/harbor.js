@@ -668,7 +668,7 @@ function demoSpans() {
   const F = (f) => t0 + f * range;
   out.push(span("ollama", "qwen3:8b", F(0.1), F(0.35), false));
   out.push(span("ollama", "qwen3:8b", F(0.8), t1, true)); // loaded now, like the demo status
-  out.push(span("strata", "strata", F(0.55), F(0.75), false)); // ran earlier, down now
+  out.push(span("strata", "strata", F(0.55), F(0.75), false)); // ran earlier, offline now
   return {
     from: new Date(t0).toISOString(),
     to: new Date(t1).toISOString(),
