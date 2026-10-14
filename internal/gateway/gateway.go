@@ -300,7 +300,7 @@ func apiErrorCode(w http.ResponseWriter, status int, code, msg string) {
 
 // startError is why an engine could not be brought up for a request.
 type startError struct {
-	code string // no_start, outranked, drained_while_starting, no_berth, start_failed, not_ready
+	code string // no_start, outranked, drained_while_starting, no_berth, start_failed, not_ready, no_headroom
 	msg  string
 }
 
@@ -365,15 +365,6 @@ func (g *Gateway) forward(w http.ResponseWriter, r *http.Request) {
 	r.Host = u.Host
 	p.ServeHTTP(w, r)
 }
-
-// startError is a start the gateway refused without spawning anything:
-// forward() answers it with a 503, the same as any other failed start.
-type startError struct {
-	code string // e.g. "no_headroom"
-	msg  string
-}
-
-func (e *startError) Error() string { return e.code + ": " + e.msg }
 
 // ensure starts e under a lease unless this gateway already has, then waits
 // until it answers. A start the broker refuses comes back as the reason.
