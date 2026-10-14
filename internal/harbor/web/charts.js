@@ -82,6 +82,34 @@ function showTip(tip, wrap, ev, html) {
 function hideTip(tip) {
   tip.hidden = true;
 }
+let pinnedTip = null;
+export function isPinned(tip) {
+  return pinnedTip !== null && pinnedTip.tip === tip;
+}
+export function pinTip(tip, wrap) {
+  if (pinnedTip && pinnedTip.tip !== tip) pinnedTip.tip.hidden = true;
+  pinnedTip = { tip, wrap };
+}
+export function unpinTip(tip) {
+  if (pinnedTip && (!tip || pinnedTip.tip === tip)) pinnedTip = null;
+}
+let tapAwayArmed = false;
+export function armTapTip(wrap, tip, show) {
+  wrap.addEventListener("click", (ev) => {
+    if (show) show(ev);
+    if (tip.hidden) unpinTip(tip);
+    else pinTip(tip, wrap);
+  });
+  if (!tapAwayArmed) {
+    tapAwayArmed = true;
+    document.addEventListener("click", (ev) => {
+      if (pinnedTip && !pinnedTip.wrap.contains(ev.target)) {
+        pinnedTip.tip.hidden = true;
+        pinnedTip = null;
+      }
+    });
+  }
+}
 
 // ---------------- sparkline ----------------
 // sparkline(series, opts) -> { el, set(series) }
@@ -210,7 +238,7 @@ export function lineChart(series, opts = {}) {
     set(data) { paint(data); },
   };
   if (o.interactive) {
-    el.addEventListener("pointermove", (ev) => {
+    const inspect = (ev) => {
       const rect = el.getBoundingClientRect();
       const vx = (ev.clientX - rect.left) / rect.width * w;
       if (vx < padL || vx > padL + plotW) return hideTip(tip);
@@ -226,8 +254,10 @@ export function lineChart(series, opts = {}) {
         html.append(tipRow(s.name, v == null ? "n/a" : (Math.round(v * 10) / 10) + (s.unit != null ? s.unit : o.unit), s.color));
       }
       showTip(tip, wrap, ev, html);
-    });
-    el.addEventListener("pointerleave", () => { hideTip(tip); if (cross) cross.setAttribute("visibility", "hidden"); });
+    };
+    el.addEventListener("pointermove", inspect);
+    el.addEventListener("pointerleave", () => { if (!isPinned(tip)) hideTip(tip); if (cross) cross.setAttribute("visibility", "hidden"); });
+    armTapTip(wrap, tip, inspect);
   }
   ctl.set = (data) => { ctl._series = data; paint(data); };
   ctl.set(series);
@@ -364,16 +394,18 @@ export function stackedArea(data, opts = {}) {
       gEvents.append(dot);
       const hitline = S("line", { x1: ex - 4, x2: ex + 4, y1: padT, y2: padT + plotH, stroke: "transparent", "stroke-width": "8" });
       hitline.style.cursor = "pointer";
-      hitline.addEventListener("pointerenter", (e) => {
+      const showEv = (e) => {
         const html = tipBox(tipRow(new Date(ev.t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }), ev.kind + (ev.engine ? " " + ev.engine : ""), color));
         if (ev.detail) html.append(tipRow("", ev.detail, null));
         showTip(tip, wrap, e, html);
-      });
-      hitline.addEventListener("pointerleave", () => hideTip(tip));
+      };
+      hitline.addEventListener("pointerenter", showEv);
+      hitline.addEventListener("pointerleave", () => { if (!isPinned(tip)) hideTip(tip); });
+      hitline.addEventListener("click", (e) => { e.stopPropagation(); showEv(e); pinTip(tip, wrap); });
       gEvents.append(hitline);
     }
     // crosshair over the whole plot
-    hit.onpointermove = (ev) => {
+    const inspect = (ev) => {
       if (!state) return;
       const rect = el.getBoundingClientRect();
       const vx = (ev.clientX - rect.left) / rect.width * w;
@@ -396,7 +428,13 @@ export function stackedArea(data, opts = {}) {
       html.append(tipRow("free", Math.max(0, total - used).toFixed(1) + "G", "#42566e"));
       showTip(tip, wrap, ev, html);
     };
-    hit.onpointerleave = () => { hideTip(tip); cross.setAttribute("visibility", "hidden"); };
+    hit.onpointermove = inspect;
+    hit.onpointerleave = () => { if (!isPinned(tip)) hideTip(tip); cross.setAttribute("visibility", "hidden"); };
+    wrap._inspect = inspect;
+    if (!wrap._tapArmed) {
+      wrap._tapArmed = true;
+      armTapTip(wrap, tip, (ev) => { if (wrap._inspect) wrap._inspect(ev); });
+    }
   }
   const ctl = { el: wrap, set: paint };
   ctl.set(data);
@@ -430,6 +468,7 @@ export function timelineChart(data, opts = {}) {
   el.append(gGrid, gLabels, gRows);
   const tip = makeTip();
   wrap.append(el, tip);
+  armTapTip(wrap, tip, null);
   const xOf = (t, t0, t1) => padL + ((t1 <= t0 ? 0 : (t - t0) / (t1 - t0)) * (w - padL - padR));
   const trunc = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 
@@ -490,7 +529,8 @@ export function timelineChart(data, opts = {}) {
         };
         hit.addEventListener("pointerenter", show);
         hit.addEventListener("pointermove", show);
-        hit.addEventListener("pointerleave", () => hideTip(tip));
+        hit.addEventListener("pointerleave", () => { if (!isPinned(tip)) hideTip(tip); });
+        hit.addEventListener("click", (ev) => { ev.stopPropagation(); show(ev); pinTip(tip, wrap); });
         gRows.append(hit);
       }
     });

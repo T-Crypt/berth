@@ -1,6 +1,6 @@
 // The departures board: split-flap tiles, one tile per character.
 // Rows are real buttons so Tab reaches every voyage and Enter opens its ticket.
-import { el, isReducedMotion } from "./util.js";
+import { el, fmtBytes, isReducedMotion } from "./util.js";
 const COLS = ["ticket", "vessel", "berth", "cls", "hold", "status", "time"];
 
 // Characters per column. Every cell always shows exactly this many tiles
@@ -137,6 +137,8 @@ export class Board {
       syncContest(c.status, l.contested);
       updateCell(c.time, fit(ageText(l.age_seconds), WIDTH.time), "");
       row.setAttribute("aria-label", "open ticket " + l.id + ", " + l.engine + ", " + statusText(st).toLowerCase());
+      if (l.contested > 0) row.title = "granted while holders without a lease kept " + fmtBytes(l.contested) + " on this card";
+      else row.removeAttribute("title");
       this.root.append(row); // keeps DOM order = display order
       i += 1;
     }
@@ -179,9 +181,9 @@ function syncContest(statusCell, contested) {
   const show = contested != null && contested > 0;
   if (show && !flag) {
     flag = el("span", "flag", "CONTESTED");
-    flag.title = "granted while processes without a lease held memory on this card";
     row.append(flag);
   } else if (!show && flag) {
     flag.remove();
   }
+  if (show) flag.title = "granted while holders without a lease kept " + fmtBytes(contested) + " on this card";
 }

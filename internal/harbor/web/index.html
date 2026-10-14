@@ -130,6 +130,7 @@
               </div>
               <button class="log-pause" id="log-pause" type="button" aria-pressed="false" title="pause new entries on the board; the harbor keeps working">PAUSE</button>
             </div>
+            <div class="refusal-tally" id="refusal-tally" role="status"></div>
             <div class="log" id="log" role="log" aria-live="polite"></div>
             <div class="log-note" id="log-note">events stream in as they happen; the page resumes where it left off</div>
           </section>
@@ -149,6 +150,7 @@
             </div>
             <div id="machine" class="machine"></div>
             <div id="machine-charts" class="machine-charts adv-only"></div>
+            <div class="socket-line" id="socket-line" role="status"></div>
           </section>
           <section class="panel stowaways-section" aria-label="stowaways">
             <div class="panel-head">
@@ -177,6 +179,14 @@
           <span class="panel-meta" id="engines-meta">self-reported</span>
         </div>
         <div class="engine-grid" id="engine-grid"></div>
+      </section>
+
+      <section class="panel" aria-label="card ranking" id="priority-panel">
+        <div class="panel-head">
+          <h2 class="panel-title">CARD RANKING</h2>
+          <span class="panel-meta" id="priority-meta">card ranking</span>
+        </div>
+        <div id="priority"></div>
       </section>
 
       <section class="panel" aria-label="kv pool">
@@ -264,7 +274,7 @@
           <dt>ADRIFT</dt><dd>the lease is being released and the memory is on its way out</dd>
           <dt>AGROUND</dt><dd>the release stalled; the memory is not coming back on its own</dd>
         </dl>
-        <p>A magenta CONTESTED flag on a docked row means the driver saw other VRAM holders on the card at grant time, so the measured hold and the free space disagree.</p>
+        <p>A magenta CONTESTED flag on a docked row means the driver saw other VRAM holders on the card at grant time, so the measured hold and the free space disagree. The row title and the ticket stamp carry how much they held. CARD RANKING on the engines tab shows how the node orders engines when two at one priority ask for the card inside the juggle window: the config order, or card hours over the last seven days.</p>
 
         <h2 class="section-title">THE REQUEST KPIs</h2>
         <dl class="about-dl">
@@ -297,7 +307,7 @@
         <p>Context residency draws the engine's own per-request token figures - cached, fresh prefill and generated - as columns against the model's context window, so a request that would not fit its window is visible at a glance; below the columns sit the engines' live KV sessions. The KV pool is each engine's live KV slots (the llama.cpp family's <code>/slots</code>): how many context tokens each session holds against its window, with 75 and 90 percent marks. Stored ranges show the per-minute peak slot fill the harbor folded from the node's samples; the live slots stay live, whatever the range says. An engine without these endpoints reports no window and no slots, and the panels say so rather than guess.</p>
 
         <h2 class="section-title">GPU TELEMETRY AND THE MACHINE</h2>
-        <p>The scheduled card reports its power draw against its power limit, temperature, utilisation, and in advanced mode its SM and memory clocks, fan, and PCIe generation and width. A reading of n/a means the driver did not report it, not zero. The machine panel is the host itself: CPU, cores, used and total memory, swap, and the one, five and fifteen minute load averages.</p>
+        <p>The scheduled card reports its power draw against its power limit, temperature, utilisation, and in advanced mode its SM and memory clocks, fan, and PCIe generation and width. A reading of n/a means the driver did not report it, not zero. The machine panel is the host itself: CPU, cores, used and total memory, swap, and the one, five and fifteen minute load averages. Its socket line counts event-stream write timeouts and dropped slow readers, so a stalled log on a live node starts there.</p>
 
         <h2 class="section-title">STOWAWAYS AND NO TICKET</h2>
         <p>A stowaway is any process holding VRAM without a lease. Berth reports it and never kills it. A "no ticket" run is an engine started while the node was down, so it holds the card outside any lease. Both show here read only.</p>

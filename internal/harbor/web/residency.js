@@ -4,6 +4,7 @@
 // KV sessions. One hand-rolled SVG surface, like the rest of the charts; no
 // library.
 import { el, fmtClock, fmtTok, fmtMS, na } from "./util.js";
+import { armTapTip, isPinned } from "./charts.js";
 
 const SVGNS = "http://www.w3.org/2000/svg";
 const W = 1200; // logical width; the surface scales to its container
@@ -46,7 +47,8 @@ export class ResidencyView {
     this.tip.hidden = true;
     wrap.append(this.tip);
     wrap.addEventListener("pointermove", (ev) => this._hover(ev));
-    wrap.addEventListener("pointerleave", () => { this.tip.hidden = true; });
+    wrap.addEventListener("pointerleave", () => { if (!isPinned(this.tip)) this.tip.hidden = true; });
+    armTapTip(wrap, this.tip, (ev) => this._hover(ev));
   }
 
   _hover(ev) {

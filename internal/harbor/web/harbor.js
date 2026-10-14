@@ -7,6 +7,7 @@ import {
   kindWord, kindGroup, kindCss, berthLabel,
 } from "./util.js";
 import { Board } from "./board.js";
+import { PriorityView } from "./priority.js";
 import { Ticket } from "./ticket.js";
 import { EngineView } from "./engines.js";
 import { ResidencyView } from "./residency.js";
@@ -49,6 +50,8 @@ const state = {
   lbrange: initialLbRange(),
   crange: initialCounterRange(),
   cwindow: null, // /v1/counters for crange, when it is not "all"
+  insightsStaleSince: 0, // last stored-insights fetch failure, 0 = fresh
+  counterStaleSince: 0, // last counter-window fetch failure, 0 = fresh
   lastCw: 0,
   status: null,
   alerts: null, // the last s.alerts from status: the node's threshold table + sticky levels
@@ -57,6 +60,7 @@ const state = {
   storage: null,  // /v1/storage, or the demo fixture
   spans: null,    // /v1/spans: { from, to, spans: [{engine, model, start, end (null = open)}] }
   lastGood: 0,
+  lastHeavy: 0, // the KPIs, ledger, recent and residency repaint on the 10 s live gate, not every 3 s poll
   lastHist: 0, lastIns: 0, lastStorage: 0, lastSpans: 0, // the long ranges refresh at most once a minute
   nodeDown: null,
   fetchFailing: false,
@@ -101,12 +105,12 @@ function initialLbRange() {
   return "24h";
 }
 
-let board, ticket, engineView, residency;
+let board, ticket, engineView, residency, priorityView;
 let connPill, statePill, nodeVersion, lastUpdate, demoStrip, alertStripEl;
 let odometerReels, counterSince, counterMeta;
 let ctiles;
-let logList, logNote, logMeta;
-let berthsRoot, stowRoot, notickRoot, machineRoot, machineCharts, machineMeta;
+let logList, logNote, logMeta, refusalTallyEl;
+let berthsRoot, stowRoot, notickRoot, machineRoot, machineCharts, machineMeta, socketLine;
 let kpiStripEl, tideEl, tideLegend, tideMeta;
 let boardMeta, berthsMeta, stowMeta, noticketMeta, enginesMeta;
 let throughputMeta, throughputDecode, throughputRpm;
@@ -133,12 +137,14 @@ function main() {
   logList = $("log");
   logNote = $("log-note");
   logMeta = $("log-meta");
+  refusalTallyEl = $("refusal-tally");
   berthsRoot = $("berths");
   stowRoot = $("stowaways");
   notickRoot = $("noticket");
   machineRoot = $("machine");
   machineCharts = $("machine-charts");
   machineMeta = $("machine-meta");
+  socketLine = $("socket-line");
   kpiStripEl = $("kpi-strip");
   tideEl = $("tide");
   tideLegend = $("tide-legend");
@@ -158,6 +164,7 @@ function main() {
   lbMeta = $("lb-meta");
   board = new Board($("board"), (key) => openTicket(key));
   ticket = new Ticket($("ticket"), board);
+  priorityView = new PriorityView($("priority"), $("priority-meta"));
   engineView = new EngineView($("engine-grid"), $("ledger"), $("leaderboard"), $("recent"), $("recent-meta"), lbMeta, $("kv-pool"), $("pool-chart"), $("pool-meta"));
   // the pool panel colors its cells like the tide colors its bands
   engineView.colorOf = (name) => engineColor(name);
@@ -240,11 +247,12 @@ async function fetchCounterWindow() {
   } else {
     try {
       const res = await fetch("/v1/counters?range=" + r, { headers: { accept: "application/json" } });
-      if (!res.ok) return; // the panel keeps its last view
+      if (!res.ok) { noteCounterStale(); return; }
       const w = await res.json();
       if (r !== state.crange) return; // the picker moved on while this was in flight
       state.cwindow = w;
-    } catch (e) { return; }
+      state.counterStaleSince = 0;
+    } catch (e) { noteCounterStale(); return; }
   }
   state.lastCw = Date.now();
   if (state.status) renderCounters(state.status.counters);
@@ -291,6 +299,8 @@ function setLbRange(r, persist) {
     // back on the live node's own 24 h view; the stored view is stale, so
     // the ledger, leaderboard and recent list repaint from the status
     state.insights = null;
+    state.insightsStaleSince = 0;
+    engineView.clearStale();
     if (state.status) {
       engineView.render(state.status);
       residency.render(state.status);
@@ -300,6 +310,8 @@ function setLbRange(r, persist) {
   if (state.demo) {
     state.insights = demoInsights(r);
     state.lastIns = Date.now();
+    state.insightsStaleSince = 0;
+    engineView.clearStale();
     renderLbViews();
     return;
   }
@@ -325,9 +337,21 @@ async function fetchInsights() {
     if (res.ok) {
       state.insights = await res.json();
       state.lastIns = Date.now();
+      state.insightsStaleSince = 0;
+      engineView.clearStale();
       renderLbViews();
+    } else {
+      noteInsightsStale();
     }
-  } catch (e) { /* the store may be empty; the panel keeps its last view */ }
+  } catch (e) { noteInsightsStale(); }
+}
+function noteCounterStale() {
+  state.counterStaleSince = Date.now();
+  if (state.status) renderCounters(state.status.counters);
+}
+function noteInsightsStale() {
+  state.insightsStaleSince = Date.now();
+  engineView.markStale("stale since " + fmtClock(new Date(state.insightsStaleSince)));
 }
 function pollInsights() {
   if (state.demo || state.lbrange === "24h" || !state.status) return;
@@ -1344,9 +1368,19 @@ function updateBerthCharts(s) {
 }
 
 // ---------------- the machine ----------------
+function socketHealth(c) {
+  const t = c ? c.send_timeouts : null;
+  const d = c ? c.dropped_consumers : null;
+  return { timeouts: t == null ? null : t, dropped: d == null ? null : d };
+}
 function renderMachine(s) {
   const h = s && s.host;
   machineMeta.textContent = h && h.cores ? h.cores + " cores" : "host";
+  const sh = socketHealth(s && s.counters);
+  socketLine.textContent = (sh.timeouts == null || sh.dropped == null)
+    ? "socket timeouts/dropped not reported by this node"
+    : "socket " + sh.timeouts + " timeouts / " + sh.dropped + " dropped";
+  socketLine.title = "event socket write timeouts and slow readers dropped; when the log stalls but the node reads live, look here first";
   if (!h) {
     machineRoot.replaceChildren(el("div", "empty-note", "host telemetry not reported by this node"));
     paintMachineCharts();
@@ -1464,7 +1498,31 @@ function wireLogControls() {
     if (!state.logPaused) paintLog();
   });
 }
+function refusalTally(events) {
+  const counts = new Map();
+  for (const e of events) {
+    if (e.kind !== "lease.refused") continue;
+    const d = ((e.detail || "").trim() || "no reason given");
+    counts.set(d, (counts.get(d) || 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+}
+function paintRefusals() {
+  const top = refusalTally(state.events);
+  refusalTallyEl.replaceChildren();
+  if (top.length === 0) {
+    refusalTallyEl.hidden = true;
+    return;
+  }
+  refusalTallyEl.hidden = false;
+  refusalTallyEl.append(el("span", "rt-label", "REFUSED"));
+  top.forEach(([detail, n], i) => {
+    if (i > 0) refusalTallyEl.append(el("span", "rt-sep", "·"));
+    refusalTallyEl.append(el("span", "rt-item", n + "× " + detail));
+  });
+}
 function paintLog() {
+  paintRefusals();
   const frag = document.createDocumentFragment();
   const visible = state.events.filter((e) => state.filters[kindGroup(e.kind)]);
   logMeta.textContent = state.logPaused ? "paused" : visible.length + " shown";
@@ -1472,7 +1530,15 @@ function paintLog() {
   for (const e of visible) {
     const at = new Date(e.at);
     const row = el("div", "log-row" + (kindCss(e.kind) ? " " + kindCss(e.kind) : ""));
-    row.append(el("span", "lt", Number.isNaN(at.getTime()) ? String(e.at || "") : fmtClock(at)), el("span", "lk", kindWord(e.kind)), el("span", "le", e.engine || e.lease || ""), el("span", "lb", fmtMiB(e.bytes)), el("span", "ld", e.detail || ""));
+    const detail = el("span", "ld", e.detail || "");
+    if (e.kind === "lease.juggle") {
+      const why = el("button", "log-why", "why");
+      why.type = "button";
+      why.setAttribute("aria-label", "show the card ranking that decided this juggle");
+      why.addEventListener("click", showPriority);
+      detail.append(" ", why);
+    }
+    row.append(el("span", "lt", Number.isNaN(at.getTime()) ? String(e.at || "") : fmtClock(at)), el("span", "lk", kindWord(e.kind)), el("span", "le", e.engine || e.lease || ""), el("span", "lb", fmtMiB(e.bytes)), detail);
     frag.append(row);
   }
   logList.replaceChildren(frag);
@@ -1489,8 +1555,12 @@ function renderCounters(c) {
   if (state.crange !== "all") {
     const w = state.cwindow;
     if (!w || w.range !== state.crange) {
-      // the window has not arrived yet: say so rather than show the all-time board under a window's name
-      counterMeta.textContent = "reading the last " + COUNTER_WORDS[state.crange] + "...";
+      if (state.counterStaleSince > 0) {
+        counterMeta.textContent = "stale since " + fmtClock(new Date(state.counterStaleSince)) + ", showing last kept numbers";
+      } else {
+        // the window has not arrived yet: say so rather than show the all-time board under a window's name
+        counterMeta.textContent = "reading the last " + COUNTER_WORDS[state.crange] + "...";
+      }
       return;
     }
     c = w.counts;
@@ -1547,8 +1617,23 @@ function findVoyage(s, key) {
 }
 
 // ---------------- render all ----------------
+function showPriority() {
+  const tab = $("tab-engines");
+  if (tab) tab.click();
+  const panel = $("priority-panel");
+  if (panel && panel.scrollIntoView) panel.scrollIntoView();
+}
 function renderAll(s) {
+  renderLight(s);
+  const now = Date.now();
+  if (!state.lastHeavy || now - state.lastHeavy >= LIVE_POLL_MS) {
+    state.lastHeavy = now;
+    renderHeavy(s);
+  }
+}
+function renderLight(s) {
   renderCounters(s.counters);
+  priorityView.render(s.priority);
   board.render(boardEntries(s), berthLabel(s));
   boardMeta.textContent = boardEntries(s).length + " voyage" + (boardEntries(s).length === 1 ? "" : "s");
   renderBerths(s);
@@ -1556,12 +1641,16 @@ function renderAll(s) {
   renderStowaways(s);
   renderNoTicket(s);
   renderMachine(s);
-  updateKpiStrip(s);
   enginesMeta.textContent = (s.engines || []).length + " engine" + ((s.engines || []).length === 1 ? "" : "s");
-  engineView.render(s);
+  engineView.renderCards((s && Array.isArray(s.engines)) ? s.engines : []);
   engineView.renderPool(s, state.history, state.range);
-  residency.render(s);
   if (ticket.current) ticket.refresh();
+}
+function renderHeavy(s) {
+  updateKpiStrip(s);
+  engineView.renderTables(s.insights || null);
+  if (state.lbrange === "24h" && engineView.lbMeta) engineView.lbMeta.textContent = "24 h, click a column to sort";
+  residency.render(s);
 }
 function boardEntries(s) {
   const out = [];

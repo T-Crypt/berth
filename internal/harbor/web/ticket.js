@@ -1,6 +1,6 @@
 // The passage ticket: a boat ticket with a perforated stub and a rubber stamp.
 // Esc and the close button both return focus to the voyage that opened it.
-import { fmtGiB, fmtAge, classWord, stateTone, berthLabel } from "./util.js";
+import { fmtGiB, fmtBytes, fmtAge, classWord, stateTone, berthLabel } from "./util.js";
 const STAMP_WORD = {
   active: "CLEARED",
   waiting: "BOARDING",
@@ -83,7 +83,7 @@ export class Ticket {
     const contested = (lease.contested || 0) > 0;
     f.stamp2.hidden = !contested;
     if (contested) {
-      f.stamp2.textContent = "CONTESTED";
+      f.stamp2.textContent = "CONTESTED " + fmtBytes(lease.contested);
       f.stamp2.className = "stamp stamp-second ink-magenta";
     }
     f.stubNo.textContent = f.no.textContent;

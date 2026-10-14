@@ -399,6 +399,21 @@ body.mode-basic .adv-only { display: none !important; }
   cursor: pointer;
 }
 .log-pause[aria-pressed="true"] { color: var(--amber); border-color: var(--amber-dim); }
+.refusal-tally { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; font-family: var(--mono); font-size: 11px; margin-bottom: var(--s2); }
+.refusal-tally[hidden] { display: none; }
+.rt-label { font-size: 10px; letter-spacing: 2px; color: var(--magenta); }
+.rt-item { color: var(--dim); }
+.rt-sep { color: var(--dim-2); }
+.log-why {
+  appearance: none; background: transparent; border: 0; cursor: pointer;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 1px;
+  color: var(--cyan); text-decoration: underline; padding: 0 2px;
+}
+.ptable { border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+.ptable th, .ptable td { text-align: left; padding: 4px 14px 4px 0; color: var(--dim); }
+.ptable th { font-size: 10px; letter-spacing: 2px; color: var(--dim-2); }
+.ptable td.num, .ptable th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.priority-note { font-size: 12px; color: var(--dim); margin-bottom: var(--s2); max-width: 60ch; }
 .log {
   border: 1px solid var(--hair);
   border-radius: 6px;
@@ -518,6 +533,7 @@ body.mode-basic .adv-only { display: none !important; }
 .mfill { height: 100%; background: linear-gradient(90deg, var(--cyan-dim), var(--cyan)); }
 .mcpu .mfill { background: linear-gradient(90deg, #23506b, var(--cyan)); }
 .machine-charts { margin-top: var(--s3); padding-top: var(--s3); border-top: 1px solid var(--hair); }
+.socket-line { margin-top: var(--s3); font-family: var(--mono); font-size: 11px; letter-spacing: 1px; color: var(--dim); }
 .machine-charts-inner { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); }
 .machine-chart { border: 1px solid var(--hair); border-radius: 4px; background: var(--panel-3); padding: var(--s2); }
 .machine-chart svg { width: 100%; height: auto; display: block; }
@@ -836,6 +852,13 @@ dialog#ticket::backdrop { background: rgba(4, 6, 10, 0.78); }
   .digit { width: 30px; height: 40px; }
   .reel span { height: 40px; line-height: 40px; font-size: 20px; }
   .odometer-label { letter-spacing: 2px; }
+  .mode-btn { min-height: 40px; padding: 8px 16px; }
+  .tab { min-height: 44px; padding: 10px 14px; }
+  .chip { min-height: 40px; padding: 8px 12px; }
+  .log-pause { min-height: 40px; padding: 8px 12px; }
+  .log-why { min-height: 40px; padding: 8px 4px; }
+  .kpi-value { font-size: 28px; }
+  .kpi-label { font-size: 12px; }
 }
 
 /* ---------- reduced motion ---------- */

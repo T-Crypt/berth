@@ -435,9 +435,12 @@
     "squatters_caught": 112,
     "contested_grants": 63,
     "refused": 9,
+    "juggles_stopped": 4,
+    "send_timeouts": 3,
+    "dropped_consumers": 1,
     "since": "2026-09-01T04:12:00.000000-06:00"
   },
-  "last_event": 18,
+  "last_event": 21,
   "alerts": {
     "table": {
       "temp": {
@@ -626,6 +629,50 @@
       "at": "2026-10-09T22:52:58-06:00",
       "kind": "alert.raised",
       "detail": "warn: temp 84°C (warn at 80°C)"
+    },
+    {
+      "seq": 19,
+      "at": "2026-10-09T21:57:02-06:00",
+      "kind": "lease.juggle",
+      "engine": "comfyui",
+      "detail": "equal priority with llama-swap; rank decided"
+    },
+    {
+      "seq": 20,
+      "at": "2026-10-09T21:58:14-06:00",
+      "kind": "lease.refused",
+      "lease": "TTS-0142",
+      "engine": "batch-embed",
+      "detail": "no free berth after 300s wait"
+    },
+    {
+      "seq": 21,
+      "at": "2026-10-09T21:59:40-06:00",
+      "kind": "lease.refused",
+      "lease": "EMB-0098",
+      "engine": "strata",
+      "detail": "card pinned by holder past deadline"
     }
-  ]
+  ],
+  "priority": {
+    "source": "usage",
+    "juggle_window": 30,
+    "engines": [
+      {
+        "engine": "llama-swap",
+        "rank": 1,
+        "hours_7d": 118.5
+      },
+      {
+        "engine": "comfyui",
+        "rank": 2,
+        "hours_7d": 41.2
+      },
+      {
+        "engine": "ollama",
+        "rank": 3,
+        "hours_7d": 9.7
+      }
+    ]
+  }
 }

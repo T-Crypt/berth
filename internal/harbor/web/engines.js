@@ -69,6 +69,7 @@ export class EngineView {
     this.sort = { key: "requests", dir: -1 };
     this.poolLine = null;
     this.poolSig = "";
+    this.staleNote = "";
   }
   sample(name, decode, prefill) {
     const c = this.cards.get(name);
@@ -82,12 +83,30 @@ export class EngineView {
     const engines = status && Array.isArray(status.engines) ? status.engines : [];
     this.renderCards(engines);
     const ins = (status && status.insights) || null;
+    this.renderTables(ins);
+    if (this.lbMeta) this.lbMeta.textContent = "24 h, click a column to sort";
+  }
+  renderTables(ins) {
     this.renderLedger(ins);
     this.renderLeaderboard(ins);
     this.renderRecent(ins);
-    if (this.lbMeta) this.lbMeta.textContent = "24 h, click a column to sort";
   }
 
+  markStale(note) {
+    this.staleNote = note;
+    for (const m of [this.lbMeta, this.recentMeta, this.poolMeta]) {
+      if (!m || m.textContent.includes("stale since")) continue;
+      m.textContent = m.textContent ? m.textContent + ", " + note : note;
+    }
+  }
+  clearStale() {
+    this.staleNote = "";
+  }
+  restamp(m) {
+    if (m && this.staleNote && !m.textContent.includes("stale since")) {
+      m.textContent = m.textContent ? m.textContent + ", " + this.staleNote : this.staleNote;
+    }
+  }
   // The same three panels from the stored range's /v1/insights, when the
   // leaderboard's picker is off its 24 h default. The sort state carries
   // over, so a column sorted on 24 h stays sorted on 7 d.
@@ -99,6 +118,7 @@ export class EngineView {
     if (this.lbMeta) {
       const word = range === "7d" ? "7 d, stored" : range === "30d" ? "30 d, stored" : "24 h, stored";
       this.lbMeta.textContent = word + ", click a column to sort";
+      this.restamp(this.lbMeta);
     }
   }
   renderCards(engines) {
@@ -257,6 +277,7 @@ export class EngineView {
     this.recent.replaceChildren();
     const rows = (ins && Array.isArray(ins.recent)) ? ins.recent : [];
     if (this.recentMeta) this.recentMeta.textContent = rows.length ? rows.length + " newest first" : "none";
+    this.restamp(this.recentMeta);
     if (rows.length === 0) { this.recent.append(el("div", "empty-note", "no requests logged yet")); return; }
     const cols = [
       { key: "time", cls: "" },
@@ -368,10 +389,12 @@ export class EngineView {
     if (n === 0) {
       this.pool.append(el("div", "empty-note", "no slot data: no engine on this node reports /slots"));
       this.poolMeta.textContent = "no slot data";
+      this.restamp(this.poolMeta);
       return;
     }
     this.poolMeta.textContent = n + " live slot" + (n === 1 ? "" : "s") + ", " + reporting
       + (reporting === 1 ? " engine reports" : " engines report") + " /slots";
+    this.restamp(this.poolMeta);
   }
   paintPoolStored(history, range) {
     const samples = history && Array.isArray(history.samples) ? history.samples : [];
@@ -383,6 +406,7 @@ export class EngineView {
       if (this.poolLine) { this.poolLine.el.remove(); this.poolLine = null; this.poolSig = ""; }
       this.poolChart.replaceChildren(el("div", "empty-note", "no stored KV data for this range yet"));
       this.poolMeta.textContent = "peak slot fill per engine, " + rangeWord(range);
+      this.restamp(this.poolMeta);
       return;
     }
     const labels = samples.map((sm) => (range === "7d" || range === "30d" ? fmtDayShort(new Date(sm.t)) : fmtClockShort(new Date(sm.t))));
@@ -406,5 +430,6 @@ export class EngineView {
       this.poolLine.set(series);
     }
     this.poolMeta.textContent = "peak slot fill per engine, " + rangeWord(range) + stepNote(history.every_seconds);
+    this.restamp(this.poolMeta);
   }
 }

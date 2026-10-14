@@ -90,6 +90,19 @@ with sync_playwright() as p:
         ok("ticket closes on Escape", not pg.locator("#ticket").evaluate("d => d.open"))
     else:
         ok("ticket dialog opens from board", False, "no clickable board row found")
+    # socket health, refusal tally, contested magnitude, juggle link
+    ok("socket line shows timeouts", "timeout" in pg.inner_text("#socket-line").lower(), pg.inner_text("#socket-line"))
+    ok("refusal tally lists the top reason", "no free berth" in pg.inner_text("#refusal-tally").lower(), pg.inner_text("#refusal-tally")[:160])
+    titles = pg.locator("#board .board-row[title]").all()
+    ok("contested row title names the held bytes", any("granted while" in (t.get_attribute("title") or "") for t in titles), str(len(titles)))
+    ok("juggle log line links to the ranking", pg.locator("#log .log-why").count() >= 1, str(pg.locator("#log .log-why").count()))
+    crow = pg.locator("#board .board-row[title]").first
+    if crow.count():
+        crow.click(); pg.wait_for_timeout(400)
+        ok("ticket stamp names the contested bytes", "CONTESTED" in pg.inner_text("#t-stamp2"), pg.inner_text("#t-stamp2"))
+        pg.keyboard.press("Escape"); pg.wait_for_timeout(200)
+    else:
+        ok("ticket stamp names the contested bytes", False, "no contested row")
     # log chips + pause
     pg.click("#chip-leases"); pg.wait_for_timeout(200)
     ok("chip toggles", pg.get_attribute("#chip-leases", "aria-pressed") == "false")
@@ -98,6 +111,8 @@ with sync_playwright() as p:
     # engines tab + leaderboard sort
     pg.click("#tab-engines"); pg.wait_for_timeout(500)
     ok("engines tab shows", pg.locator("#panel-engines").is_visible())
+    ok("priority table ranks the engines", pg.locator("#priority .ptable tbody tr").count() >= 3, str(pg.locator("#priority .ptable tbody tr").count()))
+    ok("priority meta names the source", "7 day" in pg.inner_text("#priority-meta"), pg.inner_text("#priority-meta"))
     ok("hash updated", "engines" in pg.url, pg.url)
     # leaderboard range picker: 24H is the live node's view; 7D and 30D read
     # the stored range, and the meta says so
@@ -172,10 +187,23 @@ with sync_playwright() as p:
     ok("live 24H pressed", pg2.get_attribute("#range-24h", "aria-pressed") == "true")
     lmeta = pg2.inner_text("#tide-meta").lower()
     ok("live long-range meta is honest", "24h" in lmeta or "no" in lmeta, lmeta)
+    # stored-panel failures must say so: abort the window fetch and read the meta
+    pg2.route(lambda url: "v1/counters" in str(url) and "range=5m" in str(url), lambda route, request: route.abort())
+    pg2.locator("#counter-range [data-range='5m']").click(); pg2.wait_for_timeout(800)
+    ok("counter window failure says stale since", "stale since" in pg2.inner_text("#counter-meta").lower(), pg2.inner_text("#counter-meta"))
+    pg2.unroute_all()
     # the live page polls /v1/spans like the tide polls /v1/history; a young
     # store (or a node that predates Sample.models) yields the empty state,
     # never an error
     ok("live spans fetched", any("/v1/spans" in u for u in livereqs), str(livereqs[-6:]))
+    ok("live status still polls at 3s", len([u for u in livereqs if "/v1/status" in u]) >= 2,
+       str(len([u for u in livereqs if "/v1/status" in u])))
+    pg2.locator("#tab-engines").click(); pg2.wait_for_timeout(300)
+    pg2.route(lambda url: "v1/insights" in str(url) and "range=7d" in str(url), lambda route, request: route.abort())
+    pg2.locator("#lbrange-7d").click(); pg2.wait_for_timeout(800)
+    ok("stored ledger failure says stale since", "stale since" in pg2.inner_text("#lb-meta").lower(), pg2.inner_text("#lb-meta"))
+    pg2.unroute_all()
+    pg2.locator("#tab-harbor").click(); pg2.wait_for_timeout(300)
     ok("live timeline painted (data or empty state)",
        pg2.locator("#timeline .timeline-svg, #timeline .empty-note").count() >= 1,
        "svg" if pg2.locator("#timeline .timeline-svg").count() else "empty-note")
@@ -183,7 +211,7 @@ with sync_playwright() as p:
     ok("no JS errors", not errs, "; ".join(errs[:5]))
     # phone width: no page-level horizontal overflow; the board scrolls
     # inside its panel, the header and KPI strip wrap
-    pg3 = b.new_page(viewport={"width": 390, "height": 844})
+    pg3 = b.new_page(viewport={"width": 390, "height": 844}, has_touch=True)
     pg3.on("pageerror", lambda e: errs.append("phone: " + str(e)))
     pg3.goto(BASE + "?demo", wait_until="networkidle"); pg3.wait_for_timeout(1500)
     ok("phone: no page-level horizontal overflow",
@@ -200,6 +228,24 @@ with sync_playwright() as p:
     # the server mode says lan (demo/loopback keeps it hidden)
     ok("phone: lan banner in the DOM, hidden outside lan mode",
        pg3.locator("#lan-banner").count() == 1 and not pg3.locator("#lan-banner").is_visible())
+    ok("phone: chips meet 40px targets",
+       pg3.evaluate("getComputedStyle(document.querySelector('#chip-leases')).minHeight") == "40px",
+       pg3.evaluate("getComputedStyle(document.querySelector('#chip-leases')).minHeight"))
+    ok("phone: tabs meet 44px targets",
+       pg3.evaluate("getComputedStyle(document.querySelector('#tab-harbor')).minHeight") == "44px",
+       pg3.evaluate("getComputedStyle(document.querySelector('#tab-harbor')).minHeight"))
+    tide3 = pg3.locator("#tide svg").first
+    tide3.scroll_into_view_if_needed(); pg3.wait_for_timeout(300)
+    bb3 = tide3.bounding_box()
+    if bb3:
+        pg3.touchscreen.tap(bb3["x"] + bb3["width"] * 0.5, bb3["y"] + bb3["height"] * 0.5); pg3.wait_for_timeout(300)
+        tip3 = pg3.locator(".tide-chart .chart-tip").first
+        vis3 = tip3.count() > 0 and tip3.is_visible()
+        ok("phone: tap pins the tide tooltip", vis3, tip3.inner_text()[:160].replace("\n", " | ") if vis3 else "")
+        pg3.touchscreen.tap(10, 10); pg3.wait_for_timeout(300)
+        ok("phone: tap away dismisses the tooltip", not (tip3.count() > 0 and tip3.is_visible()))
+    else:
+        ok("phone: tap pins the tide tooltip", False, "no tide svg")
     pg3.screenshot(path=out + "phone-390.png", full_page=True)
     ok("phone: no JS errors", not [e for e in errs if e.startswith("phone:")], "; ".join(e for e in errs if e.startswith("phone:"))[:160])
     b.close()
