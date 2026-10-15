@@ -1,0 +1,9 @@
+ts	phase	decision	why	evidence	result
+2026-10-15T22:27:09Z	start	harbor UI overhaul run begins in worktree berth-ui at c71d581	figure-it-out playbook; live harbor on 127.0.0.1:9798 used as the real artifact	git worktree add berth-ui c71d581 -b ui/harbor-overhaul	open
+2026-10-15T22:27:09Z	harness	captured the pre-change Playwright baseline, all 63 checks green, screenshots in /tmp/berth-baseline	so the gate reads old value vs new value instead of passing on a feeling	test/ui/check.py against 127.0.0.1:9798, /tmp/berth-baseline/*.png	green
+2026-10-15T22:27:09Z	ground	spawned three read-only explorers over harbor.js, the render modules, and css+html+harbor.go	grounding before redesign; context stays in the main thread	subagents harbor-core-explorer, harbor-modules-explorer, harbor-style-explorer	open
+2026-10-15T22:59:43Z	design	ui.js primitives module written	one module for icons toasts shortcuts	web/ui.js	verified
+2026-10-15T22:59:46Z	ground	all three explorer reports landed, token values fixed from measured contrast ratios	every text token now clears AA on every dark surface	subagent reports plus contrast script output	verified
+2026-10-15T23:18:33Z	design	no framework: the transferable ui-styling patterns apply but React and Tailwind stay out	harbor is go:embed with CSP script-src self and no build step, so zero-dependency vanilla JS and one stylesheet stay	AGENTS.md harness rules plus harbor.go CSP headers	verified
+2026-10-15T23:20:36Z	verify	both Playwright gates green on the new build	check.py 75 pass plus overhaul.py 57 pass plus go proof and lint clean	9790 runs of both gates	green
+2026-10-15T23:20:39Z	docs	README previews recaptured from the new UI on the live node	basic mode with the tide at 6h like the caption says	assets preview PNGs	verified

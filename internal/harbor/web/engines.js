@@ -122,6 +122,8 @@ export class EngineView {
     }
   }
   renderCards(engines) {
+    const skel = this.grid.querySelector(":scope > .skel-box");
+    if (skel) skel.remove();
     const seen = new Set();
     for (const eng of engines) {
       const key = eng.name || "?" + engines.indexOf(eng);

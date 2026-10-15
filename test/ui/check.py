@@ -57,6 +57,8 @@ with sync_playwright() as p:
     # left edge
     tlbars = pg.locator("#timeline .timeline-svg rect[fill-opacity]")
     ok("timeline renders in demo (24h)", tlbars.count() >= 3, str(tlbars.count()) + " bars")
+    if tlbars.count():
+        tlbars.first.scroll_into_view_if_needed(); pg.wait_for_timeout(400)
     tb = tlbars.first.bounding_box() if tlbars.count() else None
     ok("timeline bar under the tide's plot", tb is not None and tb["width"] > 4, str(tb))
     if tb:
@@ -81,7 +83,7 @@ with sync_playwright() as p:
     ok("timeline meta names the 1h range", "last hour" in pg.inner_text("#timeline-meta").lower(), pg.inner_text("#timeline-meta"))
     pg.screenshot(path=out + "harbor-timeline-1h.png", full_page=True)
     # ticket dialog from the board
-    row = pg.locator("#board [role=button], #board button, #board a, #board .row").first
+    row = pg.locator("#board .board-row").first
     if row.count():
         row.click(); pg.wait_for_timeout(500)
         ok("ticket dialog opens from board", pg.locator("#ticket").evaluate("d => d.open"))

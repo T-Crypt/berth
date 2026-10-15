@@ -93,6 +93,24 @@ export function pinTip(tip, wrap) {
 export function unpinTip(tip) {
   if (pinnedTip && (!tip || pinnedTip.tip === tip)) pinnedTip = null;
 }
+// Keyboard parity for chart tooltips: focusing a chart shows the same tip
+// a pointer would, centered on the plot; blur or Escape hides it. Callers
+// set their own aria-label naming the chart and its range.
+export function armFocusTip(wrap, tip, showMiddle, hideExtra) {
+  wrap.setAttribute("tabindex", "0");
+  wrap.setAttribute("role", "img");
+  wrap.addEventListener("focus", () => {
+    const r = wrap.getBoundingClientRect();
+    showMiddle({ clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 });
+  });
+  wrap.addEventListener("blur", () => {
+    if (!isPinned(tip)) hideTip(tip);
+    if (hideExtra) hideExtra();
+  });
+  wrap.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && tip) { hideTip(tip); unpinTip(tip); }
+  });
+}
 let tapAwayArmed = false;
 export function armTapTip(wrap, tip, show) {
   wrap.addEventListener("click", (ev) => {
@@ -238,12 +256,7 @@ export function lineChart(series, opts = {}) {
     set(data) { paint(data); },
   };
   if (o.interactive) {
-    const inspect = (ev) => {
-      const rect = el.getBoundingClientRect();
-      const vx = (ev.clientX - rect.left) / rect.width * w;
-      if (vx < padL || vx > padL + plotW) return hideTip(tip);
-      const frac = (vx - padL) / plotW;
-      const idx = Math.max(0, Math.min(_range ? _range.n - 1 : 1, Math.round(frac * (_range ? _range.n - 1 : 1))));
+    const paintAt = (idx, ev) => {
       const px = xScale(idx, _range.n);
       cross.setAttribute("x1", px);
       cross.setAttribute("x2", px);
@@ -255,9 +268,20 @@ export function lineChart(series, opts = {}) {
       }
       showTip(tip, wrap, ev, html);
     };
+    const inspect = (ev) => {
+      const rect = el.getBoundingClientRect();
+      const vx = (ev.clientX - rect.left) / rect.width * w;
+      if (vx < padL || vx > padL + plotW) return hideTip(tip);
+      const frac = (vx - padL) / plotW;
+      const idx = Math.max(0, Math.min(_range ? _range.n - 1 : 1, Math.round(frac * (_range ? _range.n - 1 : 1))));
+      paintAt(idx, ev);
+    };
     el.addEventListener("pointermove", inspect);
     el.addEventListener("pointerleave", () => { if (!isPinned(tip)) hideTip(tip); if (cross) cross.setAttribute("visibility", "hidden"); });
     armTapTip(wrap, tip, inspect);
+    armFocusTip(wrap, tip,
+      (ev) => { if (_range) paintAt(Math.floor((_range.n - 1) / 2), ev); },
+      () => { if (cross) cross.setAttribute("visibility", "hidden"); });
   }
   ctl.set = (data) => { ctl._series = data; paint(data); };
   ctl.set(series);
@@ -405,13 +429,7 @@ export function stackedArea(data, opts = {}) {
       gEvents.append(hitline);
     }
     // crosshair over the whole plot
-    const inspect = (ev) => {
-      if (!state) return;
-      const rect = el.getBoundingClientRect();
-      const vx = (ev.clientX - rect.left) / rect.width * w;
-      if (vx < padL || vx > padL + plotW) return hideTip(tip);
-      const frac = (vx - padL) / plotW;
-      const idx = Math.max(0, Math.min(n - 1, Math.round(frac * (n - 1))));
+    const paintAt = (idx, ev) => {
       const px = xOf(state.t[idx]);
       cross.setAttribute("x1", px);
       cross.setAttribute("x2", px);
@@ -428,8 +446,18 @@ export function stackedArea(data, opts = {}) {
       html.append(tipRow("free", Math.max(0, total - used).toFixed(1) + "G", "#42566e"));
       showTip(tip, wrap, ev, html);
     };
+    const inspect = (ev) => {
+      if (!state) return;
+      const rect = el.getBoundingClientRect();
+      const vx = (ev.clientX - rect.left) / rect.width * w;
+      if (vx < padL || vx > padL + plotW) return hideTip(tip);
+      const frac = (vx - padL) / plotW;
+      const idx = Math.max(0, Math.min(n - 1, Math.round(frac * (n - 1))));
+      paintAt(idx, ev);
+    };
     hit.onpointermove = inspect;
     hit.onpointerleave = () => { if (!isPinned(tip)) hideTip(tip); cross.setAttribute("visibility", "hidden"); };
+    wrap._paintMid = (ev) => { if (state) paintAt(Math.floor((n - 1) / 2), ev); };
     wrap._inspect = inspect;
     if (!wrap._tapArmed) {
       wrap._tapArmed = true;
@@ -437,6 +465,9 @@ export function stackedArea(data, opts = {}) {
     }
   }
   const ctl = { el: wrap, set: paint };
+  armFocusTip(wrap, tip,
+    (ev) => { if (wrap._paintMid) wrap._paintMid(ev); },
+    () => cross.setAttribute("visibility", "hidden"));
   ctl.set(data);
   return ctl;
 }
@@ -473,6 +504,7 @@ export function timelineChart(data, opts = {}) {
   const trunc = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 
   function paint(data) {
+    ctl._data = data;
     const rows = data.rows || [];
     const t0 = data.t0, t1 = data.t1;
     const h = o.padT + Math.max(rows.length, 1) * o.rowH + o.padB;
@@ -535,7 +567,25 @@ export function timelineChart(data, opts = {}) {
       }
     });
   }
-  const ctl = { el: wrap, set: paint };
+  const ctl = { el: wrap, set: paint, _data: null };
+  // focusing the timeline reads the first row's first span: the same
+  // loaded/unloaded/duration tip a pointer would get on that bar
+  armFocusTip(wrap, tip, (ev) => {
+    const d = ctl._data;
+    const rows = (d && d.rows) || [];
+    if (rows.length === 0 || !rows[0].spans || rows[0].spans.length === 0) return;
+    const row = rows[0];
+    const sp = row.spans[0];
+    const s = Math.max(sp.start, d.t0);
+    const open = sp.end == null;
+    const e = open ? d.t1 : Math.min(sp.end, d.t1);
+    showTip(tip, wrap, ev, tipBox(
+      tipRow(row.model, row.engine, row.color),
+      tipRow("loaded at", o.fmtTip(s), null),
+      tipRow("unloaded at", open ? "still loaded" : o.fmtTip(e), null),
+      tipRow("duration", fmtAgeW(Math.round((e - s) / 1000)), null)
+    ));
+  }, null);
   ctl.set(data);
   return ctl;
 }

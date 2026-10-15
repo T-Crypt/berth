@@ -1,7 +1,30 @@
 // The departures board: split-flap tiles, one tile per character.
 // Rows are real buttons so Tab reaches every voyage and Enter opens its ticket.
 import { el, fmtBytes, isReducedMotion } from "./util.js";
+import { icon, pulseClass } from "./ui.js";
 const COLS = ["ticket", "vessel", "berth", "cls", "hold", "status", "time"];
+// Columns the header can sort. The board keeps the broker's queue order
+// until the operator picks one.
+const SORTABLE = { vessel: "vessel", hold: "hold", status: "status", time: "time" };
+const STATUS_RANK = { waiting: 0, active: 1, draining: 2, releasing: 3, stuck: 4 };
+function holdBytes(entry) {
+  const l = entry.lease;
+  if (!entry.isWaiting && l.used > 0) return l.used;
+  return l.needs > 0 ? l.needs : -1;
+}
+function sortEntries(entries, sort) {
+  if (!sort || !SORTABLE[sort]) return entries;
+  const arr = [...entries];
+  const stateOf = (e) => (e.isWaiting ? "waiting" : e.lease.state);
+  const ageOf = (e) => (e.lease.age_seconds == null ? -1 : e.lease.age_seconds);
+  switch (sort) {
+    case "vessel": arr.sort((a, b) => String(a.lease.engine || "").localeCompare(String(b.lease.engine || ""))); break;
+    case "hold": arr.sort((a, b) => holdBytes(b) - holdBytes(a)); break;
+    case "status": arr.sort((a, b) => (STATUS_RANK[stateOf(a)] ?? 9) - (STATUS_RANK[stateOf(b)] ?? 9)); break;
+    case "time": arr.sort((a, b) => ageOf(b) - ageOf(a)); break;
+  }
+  return arr;
+}
 
 // Characters per column. Every cell always shows exactly this many tiles
 // (padded with blank tiles, trimmed with "~"), so the board never wraps.
@@ -32,9 +55,25 @@ const HEADS = {
   time: "TIME",
 };
 const STAGGER_MS = 15;
-function makeHead() {
+function makeHead(onSort) {
   const h = el("div", "board-cols board-head");
-  for (const c of COLS) h.append(el("div", "cell", el("span", null, HEADS[c])));
+  h._sortBtns = {};
+  for (const c of COLS) {
+    const cell = el("div", "cell");
+    if (SORTABLE[c] && onSort) {
+      const b = el("button", "bhead-btn");
+      b.type = "button";
+      b.dataset.sort = c;
+      b.setAttribute("aria-label", "sort departures by " + HEADS[c].toLowerCase());
+      b.append(el("span", null, HEADS[c]), icon("swap", 10));
+      b.addEventListener("click", () => onSort(c));
+      cell.append(b);
+      h._sortBtns[c] = b;
+    } else {
+      cell.append(el("span", null, HEADS[c]));
+    }
+    h.append(cell);
+  }
   return h;
 }
 function makeRow(key, onOpen) {
@@ -98,31 +137,44 @@ function updateCell(cell, text, tone) {
   });
 }
 export class Board {
-  constructor(root, onOpenTicket) {
+  constructor(root, onOpenTicket, onSort) {
     this.root = root;
     this.onOpen = onOpenTicket;
-    this.head = makeHead();
+    this.onSort = onSort || null;
+    this.head = makeHead(this.onSort);
     this.rows = new Map(); // key -> button
+    this.prevState = new Map(); // key -> status word, for the change flash
     this.empty = el("div", "board-empty", "No voyages. All berths free.");
     this.root.append(this.head, this.empty);
+    this.foot = el("div", "board-foot");
+    this.root.append(this.foot);
   }
   focusRow(key) {
     const row = this.rows.get(key);
     if (row) row.focus();
   }
-  // data: [{ key, lease, isWaiting }] in display order
-  render(data, berth) {
+  // data: [{ key, lease, isWaiting }] in display order; sort names a
+  // SORTABLE column or is null for the broker's own queue order
+  render(data, berth, sort) {
+    const ordered = sortEntries(data, sort);
+    for (const c of Object.keys(this.head._sortBtns)) {
+      this.head._sortBtns[c].classList.toggle("sorted", sort === c);
+    }
     const seen = new Set();
     let i = 0;
-    for (const entry of data) {
+    for (const entry of ordered) {
       seen.add(entry.key);
       let row = this.rows.get(entry.key);
-      if (!row) {
+      const isNew = !row;
+      if (isNew) {
         row = makeRow(entry.key, this.onOpen);
         this.rows.set(entry.key, row);
       }
       const l = entry.lease;
       const st = entry.isWaiting ? "waiting" : l.state;
+      const word = statusText(st);
+      if (!isNew && this.prevState.get(entry.key) !== word) pulseClass(row, "row-changed");
+      this.prevState.set(entry.key, word);
       const tone = { active: "cyan", draining: "amber", stuck: "magenta", waiting: "amber" }[st] || "dim";
       const c = row._cells;
       // HOLD: what the driver measures once docked, else what was asked for.
@@ -146,11 +198,16 @@ export class Board {
       if (!seen.has(key)) {
         row.remove();
         this.rows.delete(key);
+        this.prevState.delete(key);
       }
     }
     const hasRows = seen.size > 0;
     this.empty.hidden = hasRows;
     this.head.hidden = !hasRows;
+    this.foot.hidden = !hasRows;
+    this.foot.textContent = hasRows
+      ? seen.size + (seen.size === 1 ? " voyage" : " voyages") + (sort && SORTABLE[sort] ? ", ordered by " + HEADS[sort].toLowerCase() : ", broker order")
+      : "";
     return i;
   }
 }

@@ -13,6 +13,10 @@ import { EngineView } from "./engines.js";
 import { ResidencyView } from "./residency.js";
 import { sparkline, lineChart, stackedArea, timelineChart } from "./charts.js";
 import { GIB } from "./util.js";
+import {
+  icon, toast, relTime, copyText, onKey, showDialog, skeleton,
+  prefersReduced, watchMotion, pulseClass,
+} from "./ui.js";
 const POLL_MS = 3000;
 const STALE_MS = 10000;
 const DEBOUNCE_MS = 250;
@@ -67,9 +71,15 @@ const state = {
   events: [],
   filters: { leases: true, stowaways: true, probe: true, alerts: true },
   logPaused: false,
+  logQuery: "", // the log toolbar's text filter, matched case-insensitively
   lastSeq: 0,
   demoHist: null, // ?demo: the recorded 1 h window the longer ranges are synthesized from
+  boardSort: null, // departures board sort: null | "vessel" | "hold" | "status" | "time"
+  alertSeen: {}, // key -> first-seen ms, so a sticky alert names its age
+  alertDismissed: {}, // key -> level string the operator dismissed
+  collapsed: [], // panel ids the operator folded, remembered in localStorage
 };
+const COLLAPSE_KEY = "berth-harbor-collapsed";
 
 function initialMode() {
   const m = params.get("mode"); // ?mode= for tests/screenshot
@@ -109,7 +119,10 @@ let board, ticket, engineView, residency, priorityView;
 let connPill, statePill, nodeVersion, lastUpdate, demoStrip, alertStripEl;
 let odometerReels, counterSince, counterMeta;
 let ctiles;
-let logList, logNote, logMeta, refusalTallyEl;
+let logList, logNote, logMeta, refusalTallyEl, logCountEl, logWrapEl, logJumpEl, logSearchInput;
+let shortcutsDlg;
+let lastLogSig = null; // filter+query+pause signature: repaint only on change, append otherwise
+let lastTick = 0; // the relative-time ticker's own 1 s cadence
 let berthsRoot, stowRoot, notickRoot, machineRoot, machineCharts, machineMeta, socketLine;
 let kpiStripEl, tideEl, tideLegend, tideMeta;
 let boardMeta, berthsMeta, stowMeta, noticketMeta, enginesMeta;
@@ -138,6 +151,10 @@ function main() {
   logNote = $("log-note");
   logMeta = $("log-meta");
   refusalTallyEl = $("refusal-tally");
+  logCountEl = $("log-count");
+  logWrapEl = $("log-wrap");
+  logJumpEl = $("log-jump");
+  shortcutsDlg = $("shortcuts");
   berthsRoot = $("berths");
   stowRoot = $("stowaways");
   notickRoot = $("noticket");
@@ -162,7 +179,7 @@ function main() {
   storageEl = $("storage");
   storageMeta = $("storage-meta");
   lbMeta = $("lb-meta");
-  board = new Board($("board"), (key) => openTicket(key));
+  board = new Board($("board"), (key) => openTicket(key), (sort) => setBoardSort(sort));
   ticket = new Ticket($("ticket"), board);
   priorityView = new PriorityView($("priority"), $("priority-meta"));
   engineView = new EngineView($("engine-grid"), $("ledger"), $("leaderboard"), $("recent"), $("recent-meta"), lbMeta, $("kv-pool"), $("pool-chart"), $("pool-meta"));
@@ -175,7 +192,11 @@ function main() {
   applyMode();
   wireTabs();
   wireLogControls();
+  buildLogSearch();
+  wireLogJump();
   wireRangePickers();
+  wireChrome();
+  paintSkeletons();
   paintRange();
   paintLbRange();
   wireDemo();
@@ -406,6 +427,147 @@ function wireTabs() {
 }
 let pendingTicket = location.hash.startsWith("#ticket=") ? decodeURIComponent(location.hash.slice(8)) : null;
 
+// ---------------- page chrome ----------------
+// The sub-navigation, the collapsible panels, the keyboard shortcuts, the
+// relative-time ticker and the first-paint skeletons. None of it touches
+// the node's data; it only organizes the page around it.
+const HARBOR_SECTIONS = [
+  ["sec-counter", "Counter"], ["sec-tide", "Tide"], ["sec-timeline", "Timeline"],
+  ["sec-board", "Board"], ["sec-log", "Log"], ["sec-berths", "Berths"],
+  ["sec-machine", "Machine"], ["sec-stow", "Stowaways"], ["sec-noticket", "No ticket"],
+];
+const ENGINES_SECTIONS = [
+  ["sec-engines", "Engines"], ["priority-panel", "Ranking"], ["sec-pool", "KV pool"],
+  ["sec-throughput", "Throughput"], ["sec-ledger", "Ledger"], ["sec-lb", "Leaderboard"],
+  ["sec-recent", "Recent"], ["sec-residency", "Residency"], ["sec-storage", "Storage"],
+];
+function wireChrome() {
+  try {
+    const stored = localStorage.getItem(COLLAPSE_KEY);
+    if (stored) state.collapsed = JSON.parse(stored) || [];
+  } catch (e) { state.collapsed = []; }
+  buildSubnav($("subnav-harbor"), HARBOR_SECTIONS);
+  buildSubnav($("subnav-engines"), ENGINES_SECTIONS);
+  wireCollapse();
+  wireShortcuts();
+  // the header's clock ticks in relative time on its own second
+  setInterval(() => {
+    const now = Date.now();
+    if (now - lastTick < 1000) return;
+    lastTick = now;
+    paintLastUpdate();
+  }, 500);
+  document.body.classList.toggle("reduced-motion", prefersReduced());
+  watchMotion(() => { /* the class above is the switch; CSS does the rest */ });
+  requestAnimationFrame(() => requestAnimationFrame(() => document.body.classList.add("ready")));
+}
+function buildSubnav(nav, sections) {
+  if (!nav) return;
+  const links = [];
+  for (const [id, label] of sections) {
+    const target = document.getElementById(id);
+    if (!target) continue;
+    const a = el("a", null, label);
+    a.href = "#" + id;
+    a.dataset.sec = id;
+    a.addEventListener("click", (e) => {
+      e.preventDefault();
+      target.scrollIntoView({ behavior: prefersReduced() ? "auto" : "smooth", block: "start" });
+      history.replaceState(null, "", "#" + id);
+    });
+    nav.append(a);
+    links.push([a, target]);
+  }
+  if (links.length === 0 || typeof IntersectionObserver !== "function") return;
+  const obs = new IntersectionObserver((entries) => {
+    for (const en of entries) {
+      if (!en.isIntersecting) continue;
+      for (const [a, t] of links) a.classList.toggle("active", t === en.target);
+    }
+  }, { rootMargin: "-30% 0px -60% 0px" });
+  for (const [, t] of links) obs.observe(t);
+}
+function wireCollapse() {
+  for (const panel of document.querySelectorAll(".panel")) {
+    const head = panel.querySelector(":scope > .panel-head");
+    if (!head || !panel.id) continue;
+    const btn = el("button", "collapse-btn");
+    btn.type = "button";
+    btn.setAttribute("aria-expanded", String(!state.collapsed.includes(panel.id)));
+    btn.setAttribute("aria-label", "fold the " + panel.getAttribute("aria-label") + " panel");
+    btn.append(icon("down", 14));
+    btn.addEventListener("click", () => {
+      const folded = panel.classList.toggle("collapsed");
+      btn.setAttribute("aria-expanded", String(!folded));
+      state.collapsed = state.collapsed.filter((id) => id !== panel.id);
+      if (folded) state.collapsed.push(panel.id);
+      try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify(state.collapsed)); } catch (e) { /* ignore */ }
+    });
+    head.append(btn);
+    if (state.collapsed.includes(panel.id)) panel.classList.add("collapsed");
+  }
+}
+function wireShortcuts() {
+  // a header button for the operators who never press ?
+  const keys = el("button", "icon-btn");
+  keys.type = "button";
+  keys.id = "keys-btn";
+  keys.setAttribute("aria-label", "keyboard shortcuts");
+  keys.title = "keyboard shortcuts (?)";
+  keys.append(icon("command", 15));
+  keys.addEventListener("click", () => showDialog(shortcutsDlg));
+  const mode = document.querySelector(".app-header .mode");
+  if (mode) mode.before(keys);
+  shortcutsDlg.querySelector(".sc-close").addEventListener("click", () => shortcutsDlg.close());
+  const tabFor = { 1: "tab-harbor", 2: "tab-engines", 3: "tab-about" };
+  for (const k of Object.keys(tabFor)) onKey(k, () => $(tabFor[k]).click());
+  onKey("b", () => setMode("basic", true));
+  onKey("a", () => setMode("advanced", true));
+  onKey("p", () => $("log-pause").click());
+  onKey("r", () => { fetchStatus(); fetchHistory(); });
+  onKey("/", (e) => { e.preventDefault(); if (logSearchInput) logSearchInput.focus(); });
+  onKey("?", () => showDialog(shortcutsDlg));
+}
+// Loading shimmer in the data panels until the first status lands; every
+// first render replaces its skeleton with real content or an honest note.
+function paintSkeletons() {
+  const skel = (root, n) => { if (root && root.childElementCount === 0) root.append(skeleton(n)); };
+  skel($("board"), 4);
+  skel(logList, 6);
+  skel(berthsRoot, 3);
+  skel(machineRoot, 3);
+  skel(stowRoot, 2);
+  skel(notickRoot, 2);
+  skel($("engine-grid"), 2);
+  skel($("kv-pool"), 3);
+  skel($("ledger"), 2);
+  skel($("leaderboard"), 4);
+  skel($("recent"), 4);
+  skel($("residency-sessions"), 3);
+  skel(storageEl, 5);
+}
+// The harbor tab's voyage count and the engines tab's engine count ride on
+// the tabs, so a glance at the header says which tab wants attention.
+function paintTabCounts(voyages, engines) {
+  setTabCount($("tab-harbor"), voyages);
+  setTabCount($("tab-engines"), engines);
+}
+function setTabCount(tab, n) {
+  if (!tab) return;
+  let badge = tab.querySelector(".count");
+  if (n == null) { if (badge) badge.remove(); return; }
+  if (!badge) { badge = el("span", "count"); tab.append(badge); }
+  badge.textContent = String(n);
+}
+function setBoardSort(sort) {
+  state.boardSort = sort;
+  if (state.status) {
+    const entries = boardEntries(state.status);
+    board.render(entries, berthLabel(state.status), state.boardSort);
+    boardMeta.textContent = entries.length + " voyage" + (entries.length === 1 ? "" : "s");
+  }
+}
+
 // ---------------- connection ----------------
 function connState() {
   if (state.demo) return "demo";
@@ -430,11 +592,30 @@ function setConn() {
   }
   connPill.textContent = "";
   connPill.append(dot, el("span", null, text));
+  if (s === "live" || s === "demo") {
+    const ago = el("span", "ago", state.lastGood ? relTime(state.lastGood) : "");
+    ago.id = "conn-ago";
+    connPill.append(ago);
+  } else {
+    // stale or down: the retry reads the node now instead of waiting out the poll
+    const retry = el("button", "retry");
+    retry.type = "button";
+    retry.setAttribute("aria-label", "read the node now");
+    retry.title = "read the node now";
+    retry.append(icon("refresh", 12));
+    retry.addEventListener("click", () => { fetchStatus(); fetchHistory(); });
+    connPill.append(retry);
+  }
 }
 function refreshConn() {
   setConn();
   paintOverall();
-  lastUpdate.textContent = state.lastGood ? fmtClock(new Date(state.lastGood)) : "never";
+  paintLastUpdate();
+}
+function paintLastUpdate() {
+  if (!lastUpdate) return;
+  lastUpdate.textContent = state.lastGood ? "updated " + relTime(state.lastGood) : "never read";
+  lastUpdate.title = state.lastGood ? "last successful status read: " + fmtClock(new Date(state.lastGood)) : "last successful status read";
 }
 // overallState is the operator's state, reconciled against the conn pill's
 // transport state: offline when the node is down, degraded on any alert
@@ -570,6 +751,7 @@ function startEvents() {
     state.lastSeq = 0;
     state.events.length = 0;
     state.lastHist = 0;
+    lastLogSig = null; // the dead generation's rows belong to events that no longer exist
     fetchStatus();
     fetchHistory();
     paintLog();
@@ -975,16 +1157,42 @@ function alertMsg(key, level, s) {
   }
   return key;
 }
+// Alert cards: one per level the node holds, with a severity badge, the
+// node's own message, when it first showed, and a dismiss that lasts until
+// the level clears or changes. The strip only rebuilds when the set of
+// levels changes, so a screen reader is not re-told the same alert.
+let lastAlertSig = null;
 function paintAlerts(s) {
   const lv = (s.alerts && s.alerts.levels) || {};
+  const now = Date.now();
+  for (const k of Object.keys(lv)) if (!state.alertSeen[k]) state.alertSeen[k] = now;
+  for (const k of Object.keys(state.alertSeen)) if (!lv[k]) { delete state.alertSeen[k]; delete state.alertDismissed[k]; }
+  const keys = alertKeys(lv).filter((k) => state.alertDismissed[k] !== lv[k]);
+  const sig = keys.map((k) => k + ":" + lv[k]).join("|") + "#" + keys.map((k) => alertMsg(k, lv[k], s)).join("|");
+  if (sig === lastAlertSig) return;
+  lastAlertSig = sig;
   alertStripEl.replaceChildren();
-  const keys = alertKeys(lv);
   if (keys.length === 0) { alertStripEl.hidden = true; return; }
   alertStripEl.hidden = false;
   for (const k of keys) {
-    alertStripEl.append(el("div", "alert-line " + lv[k],
-      el("span", "alert-badge " + lv[k], lv[k].toUpperCase()),
-      el("span", "alert-msg", alertMsg(k, lv[k], s))));
+    const msg = alertMsg(k, lv[k], s);
+    const card = el("div", "alert-card " + lv[k]);
+    card.setAttribute("role", "alert");
+    const badge = el("span", "alert-badge", lv[k].toUpperCase());
+    const text = el("span", "alert-msg", msg);
+    const when = el("span", "alert-when", "since " + fmtClock(new Date(state.alertSeen[k] || now)));
+    const dismiss = el("button", "alert-dismiss");
+    dismiss.type = "button";
+    dismiss.setAttribute("aria-label", "dismiss the " + k + " alert");
+    dismiss.title = "dismiss until it clears or changes";
+    dismiss.append(icon("close", 12));
+    dismiss.addEventListener("click", () => {
+      state.alertDismissed[k] = lv[k];
+      lastAlertSig = null;
+      paintAlerts(state.status || s);
+    });
+    card.append(badge, text, when, dismiss);
+    alertStripEl.append(card);
   }
 }
 
@@ -1071,6 +1279,7 @@ function updateTide(s) {
     ? "gpu" + firstSched(s) + " memory, last " + Math.round((data.t[data.t.length - 1] - data.t[0]) / 60000) + " min, " + (state.history && state.history.every_seconds ? Math.round(state.history.every_seconds) : "?") + " s"
     : "gpu" + firstSched(s) + " memory, " + RANGE_WORD[state.range] + rangeStepNote() + rangeSinceNote(state.history.samples);
   tideMeta.textContent = meta;
+  tideChart.el.setAttribute("aria-label", "scheduled card memory by holder, " + RANGE_WORD[state.range] + ". Focus shows a data point.");
   const lastHolder = data.series[1] ? (data.series[1].data[data.t.length - 1] || 0).toFixed(1) : "0";
   const sig = data.total + "|" + data.t[0] + "|" + data.t[data.t.length - 1] + "|" + data.series.map((b) => b.label).join(",") + "|" + lastHolder + "|" + data.events.length;
   if (sig === tideChart._sig) { paintTideLegend(data.series); return; }
@@ -1143,9 +1352,16 @@ function paintTimeline() {
       fmtTip: (ts) => tideTipLabel(new Date(ts)),
     });
     timelineEl.replaceChildren(tlChart.el);
+    tlChart._sig = null;
   }
-  tlChart.set({ t0, t1, t: samples.map((sm) => new Date(sm.t).getTime()), rows });
+  // the spans endpoint repaints at 3 s in the 1 h range; skip the rebuild
+  // when no span moved
+  const sig = t0 + "|" + t1 + "|" + rows.map((r) => r.engine + "\u0000" + r.model + ":" + r.spans.map((sp) => sp.start + "-" + (sp.end || "open")).join(",")).join("|");
   timelineMeta.textContent = meta + ", " + rows.length + (rows.length === 1 ? " model" : " models");
+  tlChart.el.setAttribute("aria-label", "model load timeline, " + meta + ". Focus reads the first row.");
+  if (sig === tlChart._sig) return;
+  tlChart._sig = sig;
+  tlChart.set({ t0, t1, t: samples.map((sm) => new Date(sm.t).getTime()), rows });
 }
 
 // ---------------- throughput ----------------
@@ -1197,8 +1413,10 @@ function paintThroughput() {
     throughputRpm.replaceChildren();
     const labels = samples.map((sm) => xAxisLabel(new Date(sm.t)));
     tpDecodeChart = lineChart(decodeSeries(samples), { w: 1200, h: 240, xLabels: labels, interactive: true });
+    tpDecodeChart.el.setAttribute("aria-label", "decode tokens per second per engine, " + RANGE_WORD[state.range] + ". Focus shows a data point.");
     throughputDecode.append(tpDecodeChart.el);
     tpMiniChart = lineChart(miniSeries(samples), { w: 1200, h: 140, xLabels: labels, interactive: true, yFmt: fmtMS });
+    tpMiniChart.el.setAttribute("aria-label", "requests per minute and p95 duration, " + RANGE_WORD[state.range] + ". Focus shows a data point.");
     throughputRpm.append(tpMiniChart.el);
     tpSig = sig;
     throughputMeta.textContent = "decode t/s per engine, " + RANGE_WORD[state.range] + rangeSinceNote(samples);
@@ -1251,6 +1469,8 @@ function makeBerth(g) {
 }
 function renderBerths(s) {
   const gpus = s.gpus || [];
+  const skel = berthsRoot.querySelector(":scope > .skel-box");
+  if (skel) skel.remove();
   const seen = new Set();
   for (const g of gpus) {
     seen.add(g.index);
@@ -1343,9 +1563,14 @@ function numCell(v, l) {
   return el("div", "n", el("span", "v", v), el("span", "l", l));
 }
 
-// Advanced per-GPU trend charts, driven by history only.
+// Advanced per-GPU trend charts, driven by history only. The whole grid
+// rebuilds only when the sample window moves, not on every status poll.
+let berthChartsSig = null;
 function updateBerthCharts(s) {
   const samples = state.history && state.history.samples ? state.history.samples : [];
+  const sig = samples.length + "|" + (samples.length ? samples[0].t + "|" + samples[samples.length - 1].t : "");
+  if (sig === berthChartsSig) return;
+  berthChartsSig = sig;
   for (const [idx, card] of berthCards) {
     if (!card.g || !card.g.scheduled) continue;
     card.charts.replaceChildren();
@@ -1383,7 +1608,6 @@ function renderMachine(s) {
   socketLine.title = "event socket write timeouts and slow readers dropped; when the log stalls but the node reads live, look here first";
   if (!h) {
     machineRoot.replaceChildren(el("div", "empty-note", "host telemetry not reported by this node"));
-    paintMachineCharts();
     return;
   }
   machineRoot.replaceChildren();
@@ -1412,10 +1636,9 @@ function renderMachine(s) {
     el("span", "mlabel msub", "1m  5m  15m")
   );
   machineRoot.append(load);
-  paintMachineCharts();
 }
-// The CPU/RAM lines are history-driven, so they are painted from the history
-// refresh too: in a one-shot demo the status can land before the history does.
+// The CPU/RAM lines are history-driven and repaint on the heavy gate from
+// renderHeavy, so a status poll never rebuilds them.
 function paintMachineCharts() {
   machineCharts.replaceChildren();
   if (state.mode !== "advanced") return;
@@ -1465,8 +1688,83 @@ function renderNoTicket(s) {
 // ---------------- harbor log ----------------
 function pushEvent(ev) {
   state.events.unshift(ev);
-  if (state.events.length > LOG_MAX) state.events.length = LOG_MAX;
+  if (state.events.length > LOG_MAX) {
+    // the ring drops the oldest: drop its row too, so the board never grows
+    const dropped = state.events.pop();
+    if (dropped && dropped._row) { dropped._row.remove(); dropped._row = null; }
+  }
   if (!state.logPaused) paintLog();
+}
+function buildLogSearch() {
+  const wrap = $("log-search-wrap");
+  if (!wrap) return;
+  wrap.append(icon("search", 13));
+  const input = document.createElement("input");
+  input.type = "search";
+  input.id = "log-search";
+  input.placeholder = "filter events";
+  input.setAttribute("aria-label", "filter the harbor log");
+  input.setAttribute("autocomplete", "off");
+  input.addEventListener("input", () => {
+    state.logQuery = input.value.trim().toLowerCase();
+    wrap.classList.toggle("has-text", input.value.length > 0);
+    paintLog();
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && input.value) { input.value = ""; state.logQuery = ""; wrap.classList.remove("has-text"); paintLog(); }
+    else if (e.key === "Escape") input.blur();
+  });
+  const clear = el("button", "clear-btn");
+  clear.type = "button";
+  clear.setAttribute("aria-label", "clear the log filter");
+  clear.append(icon("close", 12));
+  clear.addEventListener("click", () => {
+    input.value = "";
+    state.logQuery = "";
+    wrap.classList.remove("has-text");
+    paintLog();
+    input.focus();
+  });
+  wrap.append(input, clear);
+  logSearchInput = input;
+}
+function wireLogJump() {
+  if (!logWrapEl || !logJumpEl) return;
+  logList.addEventListener("scroll", () => {
+    const up = logList.scrollTop > 40;
+    logWrapEl.classList.toggle("scrolled-up", up);
+  });
+  logJumpEl.append(icon("up", 12));
+  logJumpEl.addEventListener("click", () => logList.scrollTo({ top: 0, behavior: prefersReduced() ? "auto" : "smooth" }));
+}
+// The text filter reads what the row shows: the kind word, the engine or
+// lease, and the detail line.
+function matchQuery(e) {
+  const q = state.logQuery;
+  if (!q) return true;
+  const hay = (kindWord(e.kind) + " " + (e.engine || "") + " " + (e.lease || "") + " " + (e.detail || "")).toLowerCase();
+  return q.split(/\s+/).every((w) => hay.includes(w));
+}
+function logVisible(e) {
+  return state.filters[kindGroup(e.kind)] && matchQuery(e);
+}
+function logSig() {
+  return JSON.stringify(state.filters) + "|" + state.logQuery;
+}
+function updateChipCounts() {
+  const counts = { leases: 0, stowaways: 0, probe: 0, alerts: 0 };
+  for (const e of state.events) {
+    if (!matchQuery(e)) continue;
+    const g = kindGroup(e.kind);
+    if (counts[g] != null) counts[g] += 1;
+  }
+  for (const [id, group] of [["chip-leases", "leases"], ["chip-stowaways", "stowaways"], ["chip-probe", "probe"], ["chip-alerts", "alerts"]]) {
+    const b = $(id);
+    if (!b) continue;
+    let n = b.querySelector(".n");
+    if (!n) { n = el("span", "n"); b.append(n); }
+    n.textContent = String(counts[group]);
+  }
 }
 function wireLogControls() {
   const chip = (id, group) => {
@@ -1521,27 +1819,59 @@ function paintRefusals() {
     refusalTallyEl.append(el("span", "rt-item", n + "× " + detail));
   });
 }
+function makeLogRow(e) {
+  const at = new Date(e.at);
+  const row = el("div", "log-row" + (kindCss(e.kind) ? " " + kindCss(e.kind) : ""));
+  const detail = el("span", "ld", e.detail || "");
+  if (e.kind === "lease.juggle") {
+    const why = el("button", "log-why", "why");
+    why.type = "button";
+    why.setAttribute("aria-label", "show the card ranking that decided this juggle");
+    why.addEventListener("click", showPriority);
+    detail.append(" ", why);
+  }
+  row.append(el("span", "lt", Number.isNaN(at.getTime()) ? String(e.at || "") : fmtClock(at)), el("span", "lk", kindWord(e.kind)), el("span", "le", e.engine || e.lease || ""), el("span", "lb", fmtMiB(e.bytes)), detail);
+  e._row = row;
+  return row;
+}
+// The log appends new rows and only rebuilds on a filter, search, pause or
+// rebase change: a screen reader hears the new arrivals, not the whole
+// 200-row board every poll.
 function paintLog() {
   paintRefusals();
-  const frag = document.createDocumentFragment();
-  const visible = state.events.filter((e) => state.filters[kindGroup(e.kind)]);
+  const visible = state.events.filter(logVisible);
   logMeta.textContent = state.logPaused ? "paused" : visible.length + " shown";
-  if (visible.length === 0) frag.append(el("div", "log-empty", state.events.length === 0 ? "quiet at the harbor; events appear as they happen" : "nothing in the selected groups"));
-  for (const e of visible) {
-    const at = new Date(e.at);
-    const row = el("div", "log-row" + (kindCss(e.kind) ? " " + kindCss(e.kind) : ""));
-    const detail = el("span", "ld", e.detail || "");
-    if (e.kind === "lease.juggle") {
-      const why = el("button", "log-why", "why");
-      why.type = "button";
-      why.setAttribute("aria-label", "show the card ranking that decided this juggle");
-      why.addEventListener("click", showPriority);
-      detail.append(" ", why);
-    }
-    row.append(el("span", "lt", Number.isNaN(at.getTime()) ? String(e.at || "") : fmtClock(at)), el("span", "lk", kindWord(e.kind)), el("span", "le", e.engine || e.lease || ""), el("span", "lb", fmtMiB(e.bytes)), detail);
-    frag.append(row);
+  if (logCountEl) {
+    logCountEl.textContent = state.logQuery
+      ? visible.length + " of " + state.events.length + " shown"
+      : state.events.length ? state.events.length + " events" : "";
   }
-  logList.replaceChildren(frag);
+  updateChipCounts();
+  const sig = logSig() + (state.logPaused ? "|paused" : "|live");
+  if (sig !== lastLogSig) {
+    lastLogSig = sig;
+    const frag = document.createDocumentFragment();
+    if (visible.length === 0) {
+      frag.append(el("div", "log-empty", state.events.length === 0
+        ? "quiet at the harbor; events appear as they happen"
+        : state.logQuery ? "no events match the filter" : "nothing in the selected groups"));
+    }
+    for (const e of visible) frag.append(makeLogRow(e));
+    logList.replaceChildren(frag);
+    return;
+  }
+  // steady state: prepend rows for arrivals the ring gained since last paint
+  const pending = visible.filter((e) => !e._row || !e._row.isConnected);
+  if (pending.length > 0) {
+    const empty = logList.querySelector(".log-empty");
+    if (empty) empty.remove();
+    for (let i = pending.length - 1; i >= 0; i -= 1) logList.prepend(makeLogRow(pending[i]));
+  }
+  // and drop rows the filters now hide (they keep their _row for later)
+  const keep = new Set(visible);
+  for (const child of [...logList.children]) {
+    if (child.classList && child.classList.contains("log-row") && ![...keep].some((e) => e._row === child)) child.remove();
+  }
 }
 
 // ---------------- counters ----------------
@@ -1634,8 +1964,10 @@ function renderAll(s) {
 function renderLight(s) {
   renderCounters(s.counters);
   priorityView.render(s.priority);
-  board.render(boardEntries(s), berthLabel(s));
-  boardMeta.textContent = boardEntries(s).length + " voyage" + (boardEntries(s).length === 1 ? "" : "s");
+  const entries = boardEntries(s);
+  board.render(entries, berthLabel(s), state.boardSort);
+  boardMeta.textContent = entries.length + " voyage" + (entries.length === 1 ? "" : "s");
+  paintTabCounts(entries.length, (s.engines || []).length);
   renderBerths(s);
   paintAlerts(s);
   renderStowaways(s);
@@ -1651,6 +1983,9 @@ function renderHeavy(s) {
   engineView.renderTables(s.insights || null);
   if (state.lbrange === "24h" && engineView.lbMeta) engineView.lbMeta.textContent = "24 h, click a column to sort";
   residency.render(s);
+  // the CPU/RAM lines rebuild from history on the 10 s heavy gate, never
+  // on the 3 s status poll
+  paintMachineCharts();
 }
 function boardEntries(s) {
   const out = [];

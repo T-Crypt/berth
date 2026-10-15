@@ -4,7 +4,7 @@
 // KV sessions. One hand-rolled SVG surface, like the rest of the charts; no
 // library.
 import { el, fmtClock, fmtTok, fmtMS, na } from "./util.js";
-import { armTapTip, isPinned } from "./charts.js";
+import { armTapTip, armFocusTip, isPinned } from "./charts.js";
 
 const SVGNS = "http://www.w3.org/2000/svg";
 const W = 1200; // logical width; the surface scales to its container
@@ -13,7 +13,7 @@ const PAD_L = 40; // y labels (tokens)
 const PAD_R = 8;
 const PAD_T = 10;
 const PAD_B = 14;
-const MAX_COLS = 40; // Speculum's column count
+const MAX_COLS = 40; // the column count the recent table feeds
 const MAX_SESSIONS = 20; // the session list caps, with "…N more"
 
 const CACHED = "#7ee0a3";
@@ -46,9 +46,11 @@ export class ResidencyView {
     this.tip = el("div", "res-tip");
     this.tip.hidden = true;
     wrap.append(this.tip);
+    wrap.setAttribute("aria-label", "context residency: each request's tokens against its model's window");
     wrap.addEventListener("pointermove", (ev) => this._hover(ev));
     wrap.addEventListener("pointerleave", () => { if (!isPinned(this.tip)) this.tip.hidden = true; });
     armTapTip(wrap, this.tip, (ev) => this._hover(ev));
+    armFocusTip(wrap, this.tip, (ev) => this._hover(ev), null);
   }
 
   _hover(ev) {

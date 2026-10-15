@@ -39,7 +39,8 @@
 
   <main id="main">
     <section id="panel-harbor" class="panel-harbor" aria-label="harbor">
-      <section class="ticket-counter" aria-label="the ticket counter">
+      <nav class="subnav" id="subnav-harbor" aria-label="harbor sections"></nav>
+      <section class="panel ticket-counter" id="sec-counter" aria-label="the ticket counter">
         <div class="panel-head">
           <h2 class="panel-title">THE TICKET COUNTER</h2>
           <div class="mode range-group" role="group" aria-label="counter range" id="counter-range">
@@ -78,7 +79,7 @@
         <div class="kpi-strip" id="kpi-strip" aria-label="request KPIs"></div>
       </section>
 
-      <section class="tide-section" aria-label="the tide">
+      <section class="panel tide-section" id="sec-tide" aria-label="the tide">
         <div class="panel-head">
           <h2 class="panel-title">THE TIDE</h2>
           <div class="mode range-group" role="group" aria-label="tide range" id="tide-range">
@@ -96,7 +97,7 @@
         </div>
       </section>
 
-      <section class="timeline-section" aria-label="the model timeline">
+      <section class="panel timeline-section" id="sec-timeline" aria-label="the model timeline">
         <div class="panel-head">
           <h2 class="panel-title">MODEL TIMELINE</h2>
           <span class="panel-meta" id="timeline-meta">when each model was loaded on each engine, last hour</span>
@@ -108,19 +109,22 @@
 
       <div class="harbor-grid">
         <div class="col-left">
-          <section class="panel board-section" aria-label="departures board">
+          <section class="panel board-section" id="sec-board" aria-label="departures board">
             <div class="panel-head">
               <h2 class="panel-title">DEPARTURES</h2>
               <span class="panel-meta" id="board-meta">voyages on the card</span>
             </div>
             <div class="board" id="board" aria-live="polite"></div>
           </section>
-          <section class="panel log-section" aria-label="harbor log">
+          <section class="panel log-section" id="sec-log" aria-label="harbor log">
             <div class="panel-head">
               <h2 class="panel-title">HARBOR LOG</h2>
               <span class="panel-meta" id="log-meta">streaming</span>
             </div>
             <div class="log-toolbar">
+              <label class="search" id="log-search-wrap">
+                <span class="sr-only">Filter the harbor log</span>
+              </label>
               <div class="log-chips" role="group" aria-label="log filters">
                 <button class="chip" id="chip-all" type="button" aria-pressed="true" title="show every kind of event">ALL</button>
                 <button class="chip" id="chip-leases" type="button" aria-pressed="true" title="lease lifecycle: requested, waiting, granted, draining, released, freed, stuck, refused">LEASES</button>
@@ -129,21 +133,25 @@
                 <button class="chip" id="chip-alerts" type="button" aria-pressed="true" title="threshold and danger alerts, raised and cleared">ALERTS</button>
               </div>
               <button class="log-pause" id="log-pause" type="button" aria-pressed="false" title="pause new entries on the board; the harbor keeps working">PAUSE</button>
+              <span class="log-count" id="log-count" role="status"></span>
             </div>
             <div class="refusal-tally" id="refusal-tally" role="status"></div>
-            <div class="log" id="log" role="log" aria-live="polite"></div>
+            <div class="log-wrap" id="log-wrap">
+              <div class="log" id="log" role="log" aria-label="harbor log entries"></div>
+              <button class="jump-btn" id="log-jump" type="button">LATEST</button>
+            </div>
             <div class="log-note" id="log-note">events stream in as they happen; the page resumes where it left off</div>
           </section>
         </div>
         <div class="col-right">
-          <section class="panel berths-section" aria-label="berths">
+          <section class="panel berths-section" id="sec-berths" aria-label="berths">
             <div class="panel-head">
               <h2 class="panel-title">BERTHS</h2>
               <span class="panel-meta" id="berths-meta">per card</span>
             </div>
             <div id="berths" class="berths"></div>
           </section>
-          <section class="panel machine-section" aria-label="the machine">
+          <section class="panel machine-section" id="sec-machine" aria-label="the machine">
             <div class="panel-head">
               <h2 class="panel-title">THE MACHINE</h2>
               <span class="panel-meta" id="machine-meta">host</span>
@@ -152,14 +160,14 @@
             <div id="machine-charts" class="machine-charts adv-only"></div>
             <div class="socket-line" id="socket-line" role="status"></div>
           </section>
-          <section class="panel stowaways-section" aria-label="stowaways">
+          <section class="panel stowaways-section" id="sec-stow" aria-label="stowaways">
             <div class="panel-head">
               <h2 class="panel-title">STOWAWAYS</h2>
               <span class="panel-meta" id="stow-meta">no lease</span>
             </div>
             <div id="stowaways"></div>
           </section>
-          <section class="panel noticket-section" aria-label="runs without a ticket">
+          <section class="panel noticket-section" id="sec-noticket" aria-label="runs without a ticket">
             <div class="panel-head">
               <h2 class="panel-title">NO TICKET</h2>
               <span class="panel-meta" id="noticket-meta">unprotected</span>
@@ -171,9 +179,10 @@
     </section>
 
     <section id="panel-engines" class="panel-group" hidden aria-label="engines and requests">
+      <nav class="subnav" id="subnav-engines" aria-label="engines sections"></nav>
       <div class="engines-intro">Engines are what the engines report about themselves, not driver measurements. The ledger, leaderboard and request log are computed by the node from the requests it has seen.</div>
 
-      <section class="panel" aria-label="engine cards">
+      <section class="panel" id="sec-engines" aria-label="engine cards">
         <div class="panel-head">
           <h2 class="panel-title">ENGINES</h2>
           <span class="panel-meta" id="engines-meta">self-reported</span>
@@ -182,6 +191,7 @@
       </section>
 
       <section class="panel" aria-label="card ranking" id="priority-panel">
+
         <div class="panel-head">
           <h2 class="panel-title">CARD RANKING</h2>
           <span class="panel-meta" id="priority-meta">card ranking</span>
@@ -189,7 +199,7 @@
         <div id="priority"></div>
       </section>
 
-      <section class="panel" aria-label="kv pool">
+      <section class="panel" id="sec-pool" aria-label="kv pool">
         <div class="panel-head">
           <h2 class="panel-title">KV POOL</h2>
           <span class="panel-meta" id="pool-meta">live KV slots against each model's window</span>
@@ -198,7 +208,7 @@
         <div id="pool-chart" class="throughput-chart"></div>
       </section>
 
-      <section class="panel" aria-label="throughput">
+      <section class="panel" id="sec-throughput" aria-label="throughput">
         <div class="panel-head">
           <h2 class="panel-title">THROUGHPUT</h2>
           <span class="panel-meta" id="throughput-meta">decode tokens per second, per engine</span>
@@ -207,7 +217,7 @@
         <div id="throughput-rpm" class="throughput-chart adv-only"></div>
       </section>
 
-      <section class="panel" aria-label="token ledger">
+      <section class="panel" id="sec-ledger" aria-label="token ledger">
         <div class="panel-head">
           <h2 class="panel-title">TOKEN LEDGER</h2>
           <span class="panel-meta">generated + fresh + cached, by window</span>
@@ -215,7 +225,7 @@
         <div id="ledger" class="ledger"></div>
       </section>
 
-      <section class="panel" aria-label="leaderboard">
+      <section class="panel" id="sec-lb" aria-label="leaderboard">
         <div class="panel-head">
           <h2 class="panel-title">LEADERBOARD</h2>
           <div class="mode range-group" role="group" aria-label="leaderboard range" id="lb-range">
@@ -228,7 +238,7 @@
         <div id="leaderboard" class="ledger-table-wrap"></div>
       </section>
 
-      <section class="panel" aria-label="recent requests">
+      <section class="panel" id="sec-recent" aria-label="recent requests">
         <div class="panel-head">
           <h2 class="panel-title">RECENT REQUESTS</h2>
           <span class="panel-meta" id="recent-meta">newest first</span>
@@ -236,7 +246,7 @@
         <div id="recent" class="recent"></div>
       </section>
 
-      <section class="panel" aria-label="context residency">
+      <section class="panel" id="sec-residency" aria-label="context residency">
         <div class="panel-head">
           <h2 class="panel-title">CONTEXT RESIDENCY</h2>
           <span class="panel-meta" id="residency-meta">each request's tokens against its model's window</span>
@@ -246,7 +256,7 @@
         <div id="residency-sessions" class="residency-sessions"></div>
       </section>
 
-      <section class="panel adv-only" aria-label="storage">
+      <section class="panel adv-only" id="sec-storage" aria-label="storage">
         <div class="panel-head">
           <h2 class="panel-title">STORAGE</h2>
           <span class="panel-meta" id="storage-meta">harbor history store</span>
@@ -264,6 +274,21 @@
         <dl class="about-dl">
           <dt>BASIC</dt><dd>the at-a-glance story: the counters, the request KPIs, the tide, the departures board, and the berths. The mode you land on.</dd>
           <dt>ADVANCED</dt><dd>everything a power user wants: full GPU telemetry (clocks, fan, PCIe), host CPU and memory trends, prefill and reingest KPIs, the token ledger, the leaderboard, and the full recent-request table. Toggled in the header, remembered between visits.</dd>
+        </dl>
+
+        <h2 class="section-title">GETTING AROUND</h2>
+        <p>A section rail under the header jumps to any panel on the tab and marks the one in view. Every panel folds from the chevron in its head and stays folded between visits. The harbor tab counts voyages and the engines tab counts engines, so the header says which tab wants attention. Times read relative, with the exact clock in the title. When a read goes stale the conn pill grows a retry that reads the node now instead of waiting out the poll.</p>
+        <p>The log's filter box matches the kind word, the engine and the detail; the chips carry live counts and the count line names what is shown. LATEST jumps back to the newest row. The board's headers sort by vessel, hold, status and age, and the foot names the order. Alert cards dismiss until they clear or change level. The ticket copies its JSON or a deep link to this exact voyage.</p>
+
+        <h2 class="section-title">KEYBOARD</h2>
+        <dl class="about-dl">
+          <dt>1 / 2 / 3</dt><dd>harbor, engines, about</dd>
+          <dt>B / A</dt><dd>basic, advanced mode</dd>
+          <dt>P</dt><dd>pause or resume the log</dd>
+          <dt>/</dt><dd>filter the log</dd>
+          <dt>R</dt><dd>read the node now</dd>
+          <dt>?</dt><dd>the shortcut list</dd>
+          <dt>ESC</dt><dd>close dialogs, clear the filter</dd>
         </dl>
 
         <h2 class="section-title">THE STATUS WORDS</h2>
@@ -331,7 +356,7 @@ berth config check</pre>
   <dialog id="ticket" aria-label="passage ticket">
     <div class="ticket-paper">
       <div class="ticket-main">
-        <div class="ticket-head">BERTH LINE - PASSAGE TICKET<button class="ticket-close" type="button" aria-label="close ticket">close</button></div>
+        <div class="ticket-head">BERTH LINE - PASSAGE TICKET<span class="ticket-actions"><button class="ticket-act" id="t-copy" type="button">COPY</button><button class="ticket-act" id="t-link" type="button">LINK</button></span><button class="ticket-close" type="button" aria-label="close ticket">close</button></div>
         <div class="ticket-body">
           <div class="trow"><span class="tlabel" id="t-no-label">TICKET NO.</span><span class="tvalue" id="t-no"></span></div>
           <div class="trow"><span class="tlabel">VESSEL</span><span class="tvalue" id="t-vessel"></span></div>
@@ -353,6 +378,19 @@ berth config check</pre>
         <div class="stub-line stub-class" id="t-stub-class"></div>
         <div class="stub-note">keep this stub</div>
       </div>
+    </div>
+  </dialog>
+
+  <dialog id="shortcuts" aria-label="keyboard shortcuts">
+    <div class="sc-head">KEYBOARD SHORTCUTS<button class="ticket-close sc-close" type="button" data-autofocus aria-label="close shortcuts">close</button></div>
+    <div class="sc-list">
+      <div class="sc-row"><span><span class="kbd">1</span> <span class="kbd">2</span> <span class="kbd">3</span></span><span>Harbor, engines, about</span></div>
+      <div class="sc-row"><span><span class="kbd">B</span> <span class="kbd">A</span></span><span>Basic, advanced mode</span></div>
+      <div class="sc-row"><span><span class="kbd">P</span></span><span>Pause or resume the log</span></div>
+      <div class="sc-row"><span><span class="kbd">/</span></span><span>Filter the log</span></div>
+      <div class="sc-row"><span><span class="kbd">R</span></span><span>Read the node now</span></div>
+      <div class="sc-row"><span><span class="kbd">?</span></span><span>This list</span></div>
+      <div class="sc-row"><span><span class="kbd">Esc</span></span><span>Close dialogs, stop filtering</span></div>
     </div>
   </dialog>
 

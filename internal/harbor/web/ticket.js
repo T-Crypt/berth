@@ -1,6 +1,7 @@
 // The passage ticket: a boat ticket with a perforated stub and a rubber stamp.
 // Esc and the close button both return focus to the voyage that opened it.
 import { fmtGiB, fmtBytes, fmtAge, classWord, stateTone, berthLabel } from "./util.js";
+import { toast, copyText } from "./ui.js";
 const STAMP_WORD = {
   active: "CLEARED",
   waiting: "BOARDING",
@@ -37,6 +38,10 @@ export class Ticket {
     };
     const closeBtn = dialog.querySelector(".ticket-close");
     closeBtn.addEventListener("click", () => this.close());
+    const copyBtn = dialog.querySelector("#t-copy");
+    if (copyBtn) copyBtn.addEventListener("click", () => this.copyJson());
+    const linkBtn = dialog.querySelector("#t-link");
+    if (linkBtn) linkBtn.addEventListener("click", () => this.copyLink());
     dialog.addEventListener("cancel", (e) => {
       e.preventDefault(); // we close ourselves so focus return always runs
       this.close();
@@ -58,6 +63,17 @@ export class Ticket {
   }
   close() {
     if (this.dlg.open) this.dlg.close();
+  }
+  async copyJson() {
+    if (!this.current) return;
+    const ok = await copyText(JSON.stringify(this.current.lease, null, 2));
+    toast(ok ? "ticket copied" : "copy failed", ok ? "good" : "bad");
+  }
+  async copyLink() {
+    if (!this.current) return;
+    const url = location.origin + location.pathname + location.search + "#ticket=" + encodeURIComponent(this.current.key);
+    const ok = await copyText(url);
+    toast(ok ? "ticket link copied" : "copy failed", ok ? "good" : "bad");
   }
   refresh() {
     if (this.current) this.fill(this.current.lease, this.current.status);
