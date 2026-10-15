@@ -7,3 +7,7 @@ ts	phase	decision	why	evidence	result
 2026-10-15T23:18:33Z	design	no framework: the transferable ui-styling patterns apply but React and Tailwind stay out	harbor is go:embed with CSP script-src self and no build step, so zero-dependency vanilla JS and one stylesheet stay	AGENTS.md harness rules plus harbor.go CSP headers	verified
 2026-10-15T23:20:36Z	verify	both Playwright gates green on the new build	check.py 75 pass plus overhaul.py 57 pass plus go proof and lint clean	9790 runs of both gates	green
 2026-10-15T23:20:39Z	docs	README previews recaptured from the new UI on the live node	basic mode with the tide at 6h like the caption says	assets preview PNGs	verified
+2026-10-15T23:23:06Z	harness	new overhaul.py gate with 57 checks plus two check.py selector updates for the new DOM	the old gate could not see the new behavior and tripped on the new sort buttons	test/ui/overhaul.py and test/ui/check.py	verified
+2026-10-15T23:23:09Z	ship	draft PR opened then unslop pass rewrote the body and one about verb	the first body used fragments and label lists	PR 12 on T-Crypt/berth	open
+2026-10-15T23:23:09Z	review	self-reviewed the full diff, no cross-model review	the operator forbade subagents for the finish, so the trail audit is mine alone	git diff origin/main stat plus two gate runs	open
+2026-10-15T23:23:16Z	design	kept the departures-board identity over the generic ops palette the search returned	the nautical ticket and berth words are the product, the overhaul deepens them instead of replacing them	harbor.css token sheet plus plan.md unit list	verified
