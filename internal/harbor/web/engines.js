@@ -426,6 +426,8 @@ export class EngineView {
       this.poolChart.replaceChildren();
       if (this.poolLine) { this.poolLine.el.remove(); this.poolLine = null; }
       this.poolLine = lineChart(series, { w: 1200, h: 160, xLabels: labels, interactive: true, yMin: 0, yMax: 100, yFmt: (v) => Math.round(v) + "%" });
+      // focusable, so it must say what it is
+      this.poolLine.el.setAttribute("aria-label", "peak KV slot fill per engine, " + rangeWord(range) + ". Focus shows a data point.");
       this.poolChart.append(this.poolLine.el);
       this.poolSig = sig;
     } else {

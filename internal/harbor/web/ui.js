@@ -44,8 +44,26 @@ export function icon(name, size = 14) {
   return svg;
 }
 
-export function hasIcon(name) {
-  return Object.prototype.hasOwnProperty.call(ICON_PATHS, name);
+/* ---------------- keyed lists ---------------- */
+// Keep a keyed list of nodes in sync with a desired order, reusing the nodes
+// it already has. A gauge rebuilt from scratch on every poll never runs the
+// transition its own stylesheet declares, so the hot panels update in place.
+export function syncKeyed(root, items, keyOf, make, update) {
+  const live = root._keyed || (root._keyed = new Map());
+  const seen = new Set();
+  items.forEach((item, i) => {
+    const key = keyOf(item);
+    seen.add(key);
+    let node = live.get(key);
+    if (!node) { node = make(item); live.set(key, node); }
+    update(node, item);
+    const at = root.children[i];
+    if (at !== node) root.insertBefore(node, at || null);
+  });
+  for (const [key, node] of [...live]) {
+    if (!seen.has(key)) { node.remove(); live.delete(key); }
+  }
+  return root;
 }
 
 /* ---------------- toasts ---------------- */
@@ -117,14 +135,17 @@ export function watchMotion(onChange) {
   });
 }
 
-// Run cls once on el, then drop it when the animation ends.
-export function flash(el, cls = "flash") {
+// Run cls once on el, then drop it when the animation ends. A class that
+// waits on animationend alone sticks forever under reduced motion, where the
+// animation never runs.
+export function flash(el, cls = "row-changed", ms = 900) {
   if (!el) return;
   el.classList.remove(cls);
   void el.offsetWidth;
   el.classList.add(cls);
-  const done = () => el.classList.remove(cls);
-  el.addEventListener("animationend", done, { once: true });
+  const done = () => { el.classList.remove(cls); el.removeEventListener("animationend", done); };
+  el.addEventListener("animationend", done);
+  window.setTimeout(done, ms);
 }
 
 /* ---------------- relative time ---------------- */
@@ -177,25 +198,29 @@ const TYPING = new Set(["INPUT", "TEXTAREA", "SELECT"]);
 function isTyping(el) {
   return !!el && (TYPING.has(el.tagName) || el.isContentEditable);
 }
-// Bind a key such as "1" or "?" (no modifiers, ignored while typing).
+function modalOpen() {
+  return !!document.querySelector("dialog[open]");
+}
+// Bind a key such as "1" or "?" (no modifiers, ignored while typing and while
+// a dialog is up, where the page behind it must not move under the operator).
 export function onKey(key, fn) {
   document.addEventListener("keydown", (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
-    if (isTyping(e.target)) return;
+    if (isTyping(e.target) || modalOpen()) return;
     if (e.key === key) fn(e);
   });
 }
 
 /* ---------------- dialog helpers ---------------- */
 // Show a dialog, focus the first control, and return it closed or on Escape.
+// A second call while it is already up is a no-op: showModal throws on an
+// open dialog.
 export function showDialog(dialog, selector = "[data-autofocus]") {
+  if (!dialog || dialog.open) return;
   if (typeof dialog.showModal === "function") dialog.showModal();
   else dialog.setAttribute("open", "");
   const target = dialog.querySelector(selector) || dialog.querySelector("button");
   if (target) target.focus();
-}
-export function closeDialog(dialog) {
-  if (dialog && dialog.open) dialog.close();
 }
 
 /* ---------------- states: skeleton, empty, error ---------------- */
@@ -208,17 +233,6 @@ export function skeleton(lines = 3, cls = "skel") {
     line.className = cls + (i === lines - 1 ? " skel-short" : "");
     box.append(line);
   }
-  return box;
-}
-export function emptyNote(text, cls = "empty-note") {
-  const box = document.createElement("div");
-  box.className = cls;
-  const ico = document.createElement("span");
-  ico.className = "empty-ico";
-  ico.append(icon("clock", 13));
-  const label = document.createElement("span");
-  label.textContent = text;
-  box.append(ico, label);
   return box;
 }
 // A note with a retry button, for a fetch that failed.
@@ -239,15 +253,3 @@ export function errorNote(text, onRetry, cls = "empty-note error-note") {
   return box;
 }
 
-/* ---------------- misc ---------------- */
-// Toggle a class on el for ms. Used for "just changed" row highlights.
-export function pulseClass(el, cls, ms = 900) {
-  if (!el) return;
-  el.classList.add(cls);
-  window.setTimeout(() => el.classList.remove(cls), ms);
-}
-// Escape text for a data attribute value or a CSV field.
-export function csvCell(v) {
-  const s = String(v == null ? "" : v);
-  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-}

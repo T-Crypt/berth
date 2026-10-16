@@ -2,6 +2,7 @@
 # accessibility floor on demo fixtures and the live node, desktop and phone.
 # Run against a harbor serving the new UI: python3 test/ui/overhaul.py [base-url]
 import sys
+import json
 from playwright.sync_api import sync_playwright
 import os
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:9790/"
@@ -243,7 +244,185 @@ with sync_playwright() as p:
     lv.locator("#conn-pill .retry").click(); lv.wait_for_timeout(4000)
     ok("retry reads the node again", "LIVE" in lv.inner_text("#conn-pill").upper(), lv.inner_text("#conn-pill"))
     lv.screenshot(path=out + "live-new.png", full_page=True)
+    # ---- the poll stays quiet: live regions are not rewritten per tick ----
+    # element children only: a number that changes its text is the point of the
+    # panel, a node that is rebuilt every three seconds is not
+    CHURN = """(sels) => new Promise((res) => {
+      const roots = sels.map((s) => document.querySelector(s)).filter(Boolean);
+      const added = [], removed = [];
+      const obs = roots.map((r) => {
+        const o = new MutationObserver((ms) => {
+          for (const m of ms) {
+            for (const n of m.addedNodes) if (n.nodeType === 1) added.push((r.id || r.className) + ':' + (n.className || n.nodeName));
+            for (const n of m.removedNodes) if (n.nodeType === 1) removed.push((r.id || r.className) + ':' + (n.className || n.nodeName));
+          }
+        });
+        o.observe(r, { childList: true, subtree: true });
+        return o;
+      });
+      setTimeout(() => { obs.forEach((o) => o.disconnect()); res({ added, removed }); }, 8000);
+    })"""
+    churn = lv.evaluate(CHURN, ["#conn-pill", "#state-pill", "#machine", "#socket-line", "#board-foot", "#refusal-tally"])
+    ok("the live pills are not rebuilt per poll", not churn["added"] and not churn["removed"], json.dumps(churn))
+    # the departures board is not itself a live region; its foot announces the
+    # count and the order instead
+    ok("board is not a live region", lv.evaluate("!document.querySelector('#board').hasAttribute('aria-live')"))
+    ok("board foot is the board's status", lv.evaluate("document.querySelector('.board-foot').getAttribute('role')") == "status")
+    # state is not carried by color alone
+    ok("the rail marks the section in view", lv.evaluate("document.querySelector('#subnav-harbor a.active').getAttribute('aria-current')") == "true")
+    if lv.locator("#board .bhead-btn").first.is_visible():
+        lv.locator("#board .bhead-btn[data-sort='vessel']").click(); lv.wait_for_timeout(300)
+        ok("the sorted column is pressed", lv.evaluate("document.querySelector(\"#board .bhead-btn[data-sort='vessel']\").getAttribute('aria-pressed')") == "true")
+        ok("the other columns are not", lv.evaluate("document.querySelector(\"#board .bhead-btn[data-sort='time']\").getAttribute('aria-pressed')") == "false")
+    else:
+        res.append(("INFO", "board sort state", "no voyages on the live node; checked on the demo page instead"))
+    # the ALL chip restores every row now, not at the next event
+    rows0 = lv.locator("#log .log-row").count()
+    lv.click("#chip-leases"); lv.wait_for_timeout(200)
+    rows_off = lv.locator("#log .log-row").count()
+    ok("chip ALL is no longer holding", lv.evaluate("document.querySelector('#chip-all').getAttribute('aria-pressed')") == "false")
+    lv.click("#chip-all"); lv.wait_for_timeout(200)
+    ok("ALL brings every row back at once", lv.locator("#log .log-row").count() == rows0, f"{rows0} -> {rows_off} -> {lv.locator('#log .log-row').count()}")
+    stamp = [r.inner_text().split("\n")[0] for r in lv.locator("#log .log-row").all()]
+    ok("the rows come back in event order", stamp == sorted(stamp, reverse=True), str(stamp[:4]))
+    # a dialog owns the keyboard: the page behind it must not move
+    if lv.locator("#board .board-row").count():
+        lv.locator("#board .board-row").first.click(); lv.wait_for_timeout(300)
+        lv.keyboard.press("2"); lv.wait_for_timeout(300)
+        ok("keys do not work behind the ticket", lv.locator("#panel-harbor").is_visible() and lv.locator("#ticket").evaluate("d => d.open"))
+        lv.keyboard.press("Escape"); lv.wait_for_timeout(200)
+    else:
+        ok("keys do not work behind the ticket", True, "no board row to open")
+    # an engine that never started reads grey, not the green of a live one
+    offc = lv.evaluate("""() => {
+      const c = document.querySelector('.engine-card.offline');
+      if (!c) return null;
+      return { state: getComputedStyle(c.querySelector('.engine-state')).color, green: getComputedStyle(document.querySelector('.engine-card.up, .engine-card .engine-state')).color };
+    }""")
+    if offc:
+        ok("an offline engine is not painted green", offc["state"] != offc["green"], json.dumps(offc))
+    else:
+        res.append(("INFO", "offline engine card", "no offline engine on this node"))
     ok("live: no JS errors", not [e for e in errs if e.startswith("live:")], "; ".join(e for e in errs if e.startswith("live:"))[:200])
+
+    # ---------- accessibility floor ----------
+    SKIP = """() => new Promise((res) => {
+      const a = document.querySelector('.skip-link');
+      a.focus();
+      setTimeout(() => {
+        const r = a.getBoundingClientRect();
+        res({ visible: r.top >= -2 && r.top < 40 && r.height > 0, focused: document.activeElement === a, label: a.textContent.trim() });
+      }, 300);
+    })"""
+    TARGETS = """(minH, minW, iconOnly) => {
+      const out = [];
+      for (const e of document.querySelectorAll('button, a[href], input, [tabindex="0"]')) {
+        if (!e.offsetParent) continue;
+        const r = e.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) continue;
+        const icon = !e.textContent.trim();
+        const bad = r.height < minH || r.width < minW || (iconOnly && icon && (r.width < minH || r.height < minH));
+        if (bad) out.push((e.id || e.className) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height));
+      }
+      return out;
+    }"""
+    TINY = """() => {
+      const out = [];
+      for (const e of document.querySelectorAll('body *')) {
+        if (!e.offsetParent || e.children.length || !e.textContent.trim()) continue;
+        if (parseFloat(getComputedStyle(e).fontSize) < 10) out.push(e.className + '@' + getComputedStyle(e).fontSize);
+      }
+      return out;
+    }"""
+    pg4 = b.new_page(viewport={"width": 1440, "height": 900})
+    pg4.on("pageerror", lambda e: errs.append("floor: " + str(e)))
+    pg4.goto(BASE + "?demo", wait_until="networkidle"); pg4.wait_for_timeout(1500)
+    skip = pg4.evaluate(SKIP)
+    ok("skip link is the first stop and shows on focus", skip["visible"] and skip["focused"], json.dumps(skip))
+    ok("color-scheme is dark", pg4.evaluate("getComputedStyle(document.documentElement).colorScheme") == "dark")
+    ok("no text under 10px", not pg4.evaluate(TINY), "; ".join(pg4.evaluate(TINY)[:6]))
+    bad_d = pg4.evaluate(TARGETS, [28, 24, False])
+    ok("desktop controls >= 28px tall and >= 24px wide", not bad_d, "; ".join(bad_d[:8]))
+    # a chart you can focus has to say what it is
+    UNNAMED = """() => {
+      const out = [];
+      for (const e of document.querySelectorAll('[tabindex="0"], [role="img"]')) {
+        if (!e.offsetParent) continue;
+        const n = (e.getAttribute('aria-label') || '').trim();
+        if (!n) out.push(e.className || e.tagName);
+      }
+      return out;
+    }"""
+    ok("every focusable chart is named", not pg4.evaluate(UNNAMED), "; ".join(pg4.evaluate(UNNAMED)[:6]))
+    odo_label = pg4.locator("#odometer").get_attribute("aria-label") or ""
+    ok("the counter's name carries the number", any(c.isdigit() for c in odo_label), odo_label)
+    pg4.locator("#board .bhead-btn[data-sort='vessel']").click(); pg4.wait_for_timeout(300)
+    ok("the sorted column is pressed", pg4.evaluate("document.querySelector(\"#board .bhead-btn[data-sort='vessel']\").getAttribute('aria-pressed')") == "true")
+    ok("the other columns are not", pg4.evaluate("document.querySelector(\"#board .bhead-btn[data-sort='time']\").getAttribute('aria-pressed')") == "false")
+    ok("desktop: no page-level overflow", pg4.evaluate("document.documentElement.scrollWidth") <= 1440,
+       str(pg4.evaluate("document.documentElement.scrollWidth")))
+    # the jump button floats over the log's own corner and shifts nothing
+    pg4.locator("#log").evaluate("el => el.scrollTop = 300"); pg4.wait_for_timeout(400)
+    jump = pg4.evaluate("""() => {
+      const j = document.querySelector('#log-jump'), l = document.querySelector('#log');
+      const jr = j.getBoundingClientRect(), lr = l.getBoundingClientRect();
+      return { shown: getComputedStyle(j).display !== 'none', inside: jr.top >= lr.top && jr.bottom <= lr.bottom + 1 && jr.left >= lr.left && jr.right <= lr.right + 1 };
+    }""")
+    note0 = pg4.evaluate("document.querySelector('#log-note').getBoundingClientRect().top")
+    pg4.locator("#log").evaluate("el => el.scrollTop = 0"); pg4.wait_for_timeout(400)
+    shift = abs(pg4.evaluate("document.querySelector('#log-note').getBoundingClientRect().top") - note0)
+    ok("LATEST sits inside the log and shifts nothing", jump["shown"] and jump["inside"] and shift < 1, f"{json.dumps(jump)} shift={shift}px")
+    # a store read that fails says so instead of shimmering forever
+    pg5 = b.new_page(viewport={"width": 1440, "height": 900})
+    pg5.route(lambda url: "v1/storage" in str(url), lambda route, request: route.abort())
+    pg5.goto(BASE, wait_until="domcontentloaded"); pg5.wait_for_timeout(3000)
+    pg5.click("#mode-advanced"); pg5.wait_for_timeout(2500)
+    ok("a failed store read leaves no shimmer", pg5.locator("#storage .skel-box").count() == 0,
+       pg5.locator("#storage .skel-box").count())
+    ok("a failed store read says so and offers RETRY",
+       "retry" in pg5.inner_text("#storage").lower() and pg5.locator("#storage .error-note").count() == 1,
+       pg5.inner_text("#storage").replace("\n", " | ")[:120])
+    # a node that reports no host telemetry says so, once, instead of
+    # shimmering forever (the same for the panels fed by a read that fails)
+    status = pg5.request.get(BASE + "v1/status").json()
+    status.pop("host", None)
+    pg6 = b.new_page(viewport={"width": 1440, "height": 900})
+    pg6.route("**/v1/status", lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps(status)))
+    pg6.goto(BASE, wait_until="domcontentloaded"); pg6.wait_for_timeout(7000)
+    ok("a node with no host telemetry says so", "not reported" in pg6.inner_text("#sec-machine").lower() and pg6.locator("#machine .skel-box").count() == 0,
+       pg6.inner_text("#sec-machine").replace("\n", " | ")[:100])
+    ok("no panel is left shimmering", pg6.locator(".skel-box").count() == 0, str(pg6.locator(".skel-box").count()))
+    pg4.keyboard.press("?"); pg4.wait_for_timeout(200)
+    pg4.keyboard.press("?"); pg4.wait_for_timeout(200)
+    ok("a second ? does not throw", pg4.locator("#shortcuts").evaluate("d => d.open") and not [e for e in errs if e.startswith("floor:")], str(errs[-2:])[:120])
+    pg4.keyboard.press("Escape"); pg4.wait_for_timeout(200)
+    # the skip link really moves the keyboard past the chrome
+    pg4.evaluate("document.querySelector('.skip-link').focus()"); pg4.wait_for_timeout(250)
+    pg4.keyboard.press("Enter"); pg4.wait_for_timeout(400)
+    ok("the skip link lands on the content", pg4.evaluate("document.activeElement.id") == "main",
+       pg4.evaluate("document.activeElement.id || document.activeElement.tagName"))
+    pg4.screenshot(path=out + "floor-desktop.png", full_page=True)
+    ok("floor: no JS errors", not [e for e in errs if e.startswith("floor:")], "; ".join(e for e in errs if e.startswith("floor:"))[:160])
+
+    # ---------- phone: every control a thumb can land on ----------
+    ph2 = b.new_page(viewport={"width": 390, "height": 844}, has_touch=True)
+    ph2.on("pageerror", lambda e: errs.append("phone2: " + str(e)))
+    ph2.goto(BASE + "?demo", wait_until="networkidle"); ph2.wait_for_timeout(1800)
+    bad_p = ph2.evaluate(TARGETS, [40, 24, True])
+    ok("phone controls are 40px tall, icon controls 40px square", not bad_p, "; ".join(bad_p[:8]))
+    ok("phone: no text under 10px", not ph2.evaluate(TINY), "; ".join(ph2.evaluate(TINY)[:6]))
+    # one sweep over the widths the breakpoints switch at
+    overflow = []
+    for w in (360, 390, 428, 700, 768, 900, 1000, 1100, 1280, 1440, 1920):
+        ph2.set_viewport_size({"width": w, "height": 900}); ph2.wait_for_timeout(350)
+        sw = ph2.evaluate("document.documentElement.scrollWidth")
+        if sw > w + 1: overflow.append(f"{w}:{sw}")
+    ok("no page overflow at any width", not overflow, "; ".join(overflow))
+    ph2.set_viewport_size({"width": 390, "height": 844}); ph2.wait_for_timeout(350)
+    ok("phone: still no page-level overflow", ph2.evaluate("document.documentElement.scrollWidth") <= 390,
+       str(ph2.evaluate("document.documentElement.scrollWidth")))
+    ph2.screenshot(path=out + "floor-phone.png", full_page=True)
+    ok("phone: no JS errors", not [e for e in errs if e.startswith("phone2:")], "; ".join(e for e in errs if e.startswith("phone2:"))[:160])
     b.close()
 for r in res: print(*r, sep="\t")
 sys.exit(1 if any(r[0] == "FAIL" for r in res) else 0)

@@ -170,10 +170,3 @@ export function fmtDayShort(d) {
   const m = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   return m[d.getMonth()] + " " + d.getDate();
 }
-let reduced = null;
-export function isReducedMotion() {
-  if (reduced == null && typeof matchMedia === "function") {
-    reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  }
-  return reduced === true;
-}

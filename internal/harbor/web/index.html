@@ -10,6 +10,7 @@
   <script type="module" src="harbor.js"></script>
 </head>
 <body class="mode-basic">
+  <a class="skip-link" href="#main">Skip to the content</a>
   <div id="demo-strip" class="demo-strip" hidden>DEMO DATA - NOT LIVE. The harbor is not being read. Fixtures from demo.json.</div>
   <div id="lan-banner" class="lan-banner" hidden>LAN EXPOSED - THIS HARBOR IS REACHABLE FROM YOUR NETWORK. READ ONLY; NOTHING HERE CAN CONTROL THE NODE.</div>
 
@@ -37,7 +38,7 @@
 
   <div id="alerts" class="alert-strip" role="status" aria-live="polite" hidden></div>
 
-  <main id="main">
+  <main id="main" tabindex="-1">
     <section id="panel-harbor" class="panel-harbor" aria-label="harbor">
       <nav class="subnav" id="subnav-harbor" aria-label="harbor sections"></nav>
       <section class="panel ticket-counter" id="sec-counter" aria-label="the ticket counter">
@@ -114,7 +115,7 @@
               <h2 class="panel-title">DEPARTURES</h2>
               <span class="panel-meta" id="board-meta">voyages on the card</span>
             </div>
-            <div class="board" id="board" aria-live="polite"></div>
+            <div class="board" id="board"></div>
           </section>
           <section class="panel log-section" id="sec-log" aria-label="harbor log">
             <div class="panel-head">

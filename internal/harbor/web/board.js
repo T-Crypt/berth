@@ -1,7 +1,7 @@
 // The departures board: split-flap tiles, one tile per character.
 // Rows are real buttons so Tab reaches every voyage and Enter opens its ticket.
-import { el, fmtBytes, isReducedMotion } from "./util.js";
-import { icon, pulseClass } from "./ui.js";
+import { el, fmtBytes } from "./util.js";
+import { icon, flash, prefersReduced } from "./ui.js";
 const COLS = ["ticket", "vessel", "berth", "cls", "hold", "status", "time"];
 // Columns the header can sort. The board keeps the broker's queue order
 // until the operator picks one.
@@ -64,6 +64,7 @@ function makeHead(onSort) {
       const b = el("button", "bhead-btn");
       b.type = "button";
       b.dataset.sort = c;
+      b.setAttribute("aria-pressed", "false");
       b.setAttribute("aria-label", "sort departures by " + HEADS[c].toLowerCase());
       b.append(el("span", null, HEADS[c]), icon("swap", 10));
       b.addEventListener("click", () => onSort(c));
@@ -93,7 +94,7 @@ function makeRow(key, onOpen) {
 }
 function flipTile(tile, ch, delay) {
   if (ch === tile.textContent) return;
-  if (isReducedMotion()) {
+  if (prefersReduced()) {
     tile.classList.remove("flipping");
     tile.textContent = ch;
     return;
@@ -146,7 +147,10 @@ export class Board {
     this.prevState = new Map(); // key -> status word, for the change flash
     this.empty = el("div", "board-empty", "No voyages. All berths free.");
     this.root.append(this.head, this.empty);
+    // the foot is the board's one announcement: the voyage count and the
+    // order, not 200 flapping tiles inside a live region
     this.foot = el("div", "board-foot");
+    this.foot.setAttribute("role", "status");
     this.root.append(this.foot);
   }
   focusRow(key) {
@@ -158,7 +162,9 @@ export class Board {
   render(data, berth, sort) {
     const ordered = sortEntries(data, sort);
     for (const c of Object.keys(this.head._sortBtns)) {
-      this.head._sortBtns[c].classList.toggle("sorted", sort === c);
+      const on = sort === c;
+      this.head._sortBtns[c].classList.toggle("sorted", on);
+      this.head._sortBtns[c].setAttribute("aria-pressed", String(on));
     }
     const seen = new Set();
     let i = 0;
@@ -173,7 +179,7 @@ export class Board {
       const l = entry.lease;
       const st = entry.isWaiting ? "waiting" : l.state;
       const word = statusText(st);
-      if (!isNew && this.prevState.get(entry.key) !== word) pulseClass(row, "row-changed");
+      if (!isNew && this.prevState.get(entry.key) !== word) flash(row, "row-changed");
       this.prevState.set(entry.key, word);
       const tone = { active: "cyan", draining: "amber", stuck: "magenta", waiting: "amber" }[st] || "dim";
       const c = row._cells;
