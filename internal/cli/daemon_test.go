@@ -1,6 +1,9 @@
 package cli
 
 import (
+	"bytes"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/T-Crypt/berth/internal/broker"
@@ -22,5 +25,25 @@ func TestComfyEngines(t *testing.T) {
 	}
 	if g := comfyEngines(config.Config{}); len(g) != 0 {
 		t.Errorf("empty config = %+v, want none", g)
+	}
+}
+
+// The arming line is emitted for the empty case too: a silently empty list is
+// the #19 regression (every squat becomes a contested grant), and only this
+// line can say so in the daemon log.
+func TestLogComfyArmed(t *testing.T) {
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+
+	logComfyArmed(log, nil)
+	if !strings.Contains(buf.String(), "not armed") {
+		t.Fatalf("empty list log = %q, want a not-armed line", buf.String())
+	}
+
+	buf.Reset()
+	logComfyArmed(log, []broker.ComfyEngine{{Name: "comfyui", URL: "http://127.0.0.1:8188"}})
+	out := buf.String()
+	if !strings.Contains(out, "armed") || !strings.Contains(out, "comfyui") || !strings.Contains(out, "http://127.0.0.1:8188") {
+		t.Fatalf("armed log = %q, want the engine name and url", out)
 	}
 }

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -132,9 +133,7 @@ func runDaemon(c *Context) int {
 			log.Info("discovering engines", "every", engines.DiscoveryEvery, "hosts", cfg.Engines.Hosts, "extra_ports", cfg.Engines.Ports)
 		}
 	}
-	for _, e := range comfy {
-		log.Info("comfy squat-free armed", "engine", e.Name, "url", e.URL)
-	}
+	logComfyArmed(log, comfy)
 	if cfg.Metrics.Listen != "" {
 		go func() {
 			if err := server.ServeMetrics(ctx, cfg.Metrics.Listen, b, watcher.Snapshot, log); err != nil {
@@ -196,6 +195,20 @@ func comfyEngines(cfg config.Config) []broker.ComfyEngine {
 		}
 	}
 	return out
+}
+
+// logComfyArmed reports the squat-free arming at startup. The empty case is
+// logged too: an engine found only by discovery is never armed (comfyEngines
+// reads cfg.Engine), and that has to be visible, because a silently empty list
+// turns every ComfyUI squat into a contested grant.
+func logComfyArmed(log *slog.Logger, comfy []broker.ComfyEngine) {
+	if len(comfy) == 0 {
+		log.Info("comfy squat-free not armed: no [[engine]] with type \"comfyui\"")
+		return
+	}
+	for _, e := range comfy {
+		log.Info("comfy squat-free armed", "engine", e.Name, "url", e.URL)
+	}
 }
 
 // splitList splits a comma-separated flag value, dropping the empties.
