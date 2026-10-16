@@ -88,6 +88,16 @@ func (w *Watcher) Run(ctx context.Context) {
 	}
 }
 
+// PollOnce reads every engine once, discovering first when discovery is on.
+// It is the one-shot form of Run: no timer, no history and no rates, since a
+// rate needs two readings.
+func (w *Watcher) PollOnce(ctx context.Context) {
+	if w.Discover {
+		w.discover(ctx)
+	}
+	w.Poll(ctx)
+}
+
 // Poll reads every engine once.
 func (w *Watcher) Poll(ctx context.Context) {
 	w.mu.Lock()
