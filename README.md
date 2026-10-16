@@ -142,7 +142,7 @@ Linux machine, following its README and contrib/INTEGRATION.md. Steps:
    Back up every file before you edit it and tell me how to undo each change.
 6. Engines on non-default ports or other machines: add [[engine]] entries or
    [engines] discover_ports / discover_hosts to ~/.config/berth/berth.toml, then run
-   `berth config check`.
+   `berth config check` and `berth engine check`.
 7. Restart what you changed, then show me `berth status` with each engine leased and read,
    and the harbor at http://127.0.0.1:9798/. Do not expose the harbor beyond loopback unless
    I ask; it has no authentication.
@@ -356,9 +356,25 @@ engine's figures are its own claims and are shown apart from what the driver mea
   measures.
 
 ### Interfaces
-- **CLI:** `berth status`, `berth events -f`, `berth run`, `berth gateway`, `berth key`, `berth config check`,
-  `berth export`.
-  Berth runs fully headless.
+- **CLI:** one command tree with one output contract. `berth status`, `berth events -f`,
+  `berth run`, `berth engine check`, `berth config check`, `berth config show`, `berth export`,
+  `berth gateway`, `berth key`, `berth version`. Berth runs fully headless.
+
+  ```sh
+  berth config check --strict          # a warning fails the check, exit 1
+  berth config show --format toml      # the evaluated config, ready to save
+  berth engine check -v                # what each engine reports, right now
+  berth -q status; echo $?             # exit codes only, for CI
+  berth status --format json | jq .leases
+  ```
+
+  Results go to stdout, diagnostics go to stderr. `--format` is `human` (the default), `json` or
+  `yaml`, and `berth config show` also takes `toml`, the config's own file format. `-v` adds
+  detail to the human view, and `-q` suppresses stdout and leaves the exit code as the answer.
+  Exit codes are 0 (done), 1 (validation or logic: an invalid config, a warning under `--strict`,
+  an engine that did not answer, a lease the broker refused) and 2 (berth could not do its job:
+  unknown flag, missing file, berthd unreachable). `berth run` passes the engine's own status
+  through and exits 75 when no berth was granted. Every read-only command changes nothing.
 - **Harbor web UI** (`berth harbor`): a departures board of every lease, a boat ticket
   per lease, the collisions counter, berths with measured memory, stowaways, the event
   log, and engine metrics. The tide (card memory by holder) and the model timeline share a

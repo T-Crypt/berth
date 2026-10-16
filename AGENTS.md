@@ -24,11 +24,15 @@ local proof command green before opening a PR; CI must end green at merge.
 
 ## Packages
 
-- `cmd/berth` — CLI and daemon entrypoint: flags, signals, wiring.
+- `cmd/berth` — CLI entrypoint: `main` and the release version only.
 - `internal/broker` — the core: the lease table for one GPU, priorities, the drain
   ladder, process attribution, stowaway detection, the queue. In-memory only; never
   kills.
-- `internal/config` — TOML config (`~/.config/berth/berth.toml`); `berth config check`.
+- `internal/cli` — the `berth` command tree: one flag set, one output contract
+  (human, json, yaml) and one exit-code contract (0 done, 1 validation, 2 system)
+  for every command.
+- `internal/config` — TOML config (`~/.config/berth/berth.toml`), its defaults and its
+  warnings; `berth config check` and `berth config show`.
 - `internal/engines` — engine readers (every engine in the README's table, `custom`),
   port discovery by response fingerprint, and the 24 h request log.
 - `internal/export` — the store's rows as CSV or JSON for the `berth export` command.
