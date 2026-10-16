@@ -66,6 +66,11 @@ func runDaemon(c *Context) int {
 		watcher = &engines.Watcher{Engines: cfg.Engine, Every: cfg.Engines.Every.Duration,
 			Discover: *cfg.Engines.Discover, Hosts: cfg.Engines.Hosts, Ports: cfg.Engines.Ports}
 	}
+	// The broker's squat-free path (ask a squatting ComfyUI to unload through
+	// its own /free and hold the waiter) fires only for engines this list
+	// names. Without it every whole-card request is granted over the squat
+	// and dies on it.
+	comfy := comfyEngines(cfg)
 	b := broker.New(broker.Config{
 		Poll:           *poll,
 		Reserve:        *reserve * gpu.MiB,
@@ -78,6 +83,7 @@ func runDaemon(c *Context) int {
 		Order:          cfg.Priority.Order,
 		JuggleWindow:   cfg.Priority.JuggleWindow.Duration,
 		Busy:           watcher.Busy,
+		Comfy:          comfy,
 		ReattachWindow: *reattachWin,
 		Version:        c.Version,
 		Reporter:       rep,
@@ -125,6 +131,9 @@ func runDaemon(c *Context) int {
 		if *cfg.Engines.Discover {
 			log.Info("discovering engines", "every", engines.DiscoveryEvery, "hosts", cfg.Engines.Hosts, "extra_ports", cfg.Engines.Ports)
 		}
+	}
+	for _, e := range comfy {
+		log.Info("comfy squat-free armed", "engine", e.Name, "url", e.URL)
 	}
 	if cfg.Metrics.Listen != "" {
 		go func() {
@@ -175,6 +184,18 @@ func samplerLoop(ctx context.Context, rec *history.Recorder, hr *host.Reader, b 
 		case <-t.C:
 		}
 	}
+}
+
+// comfyEngines names the configured ComfyUI engines the broker may ask to
+// unload their models when a waiter needs the card they squat.
+func comfyEngines(cfg config.Config) []broker.ComfyEngine {
+	var out []broker.ComfyEngine
+	for _, e := range cfg.Engine {
+		if e.Type == "comfyui" {
+			out = append(out, broker.ComfyEngine{Name: e.Name, URL: e.URL})
+		}
+	}
+	return out
 }
 
 // splitList splits a comma-separated flag value, dropping the empties.
