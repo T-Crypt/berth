@@ -118,13 +118,22 @@ func (g *Gateway) log() *slog.Logger {
 	return slog.Default()
 }
 
-// Handler serves the OpenAI-compatible surface.
+// Handler serves the OpenAI-compatible surface plus the ComfyUI
+// passthrough: /prompt queues a workflow (starting ComfyUI under a lease
+// when it is down), while /ws /queue /history /view /upload proxy to a
+// running ComfyUI.
 func (g *Gateway) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/models", g.models)
 	for _, p := range []string{"/v1/chat/completions", "/v1/completions", "/v1/embeddings"} {
 		mux.HandleFunc("POST "+p, g.forward)
 	}
+	mux.HandleFunc("POST /prompt", g.comfyPrompt)
+	mux.HandleFunc("/ws", g.comfyProxy)
+	mux.HandleFunc("/queue", g.comfyProxy)
+	mux.HandleFunc("/history/", g.comfyProxy)
+	mux.HandleFunc("/view", g.comfyProxy)
+	mux.HandleFunc("/upload/", g.comfyProxy)
 	return g.guard(mux)
 }
 
@@ -343,13 +352,7 @@ func (g *Gateway) forward(w http.ResponseWriter, r *http.Request) {
 	}
 	if !t.live {
 		if err := g.ensure(r.Context(), t.engine); err != nil {
-			code := ""
-			var se *startError
-			if errors.As(err, &se) {
-				code = se.code
-			}
-			g.log().Warn("gateway start failed", "engine", t.engine.Name, "model", req.Model, "code", code, "err", err)
-			apiErrorCode(w, http.StatusServiceUnavailable, code, err.Error())
+			g.startFailed(w, t.engine.Name, req.Model, err)
 			return
 		}
 	}
@@ -366,10 +369,107 @@ func (g *Gateway) forward(w http.ResponseWriter, r *http.Request) {
 	p.ServeHTTP(w, r)
 }
 
+// startFailed answers a request whose engine would not come up: a 503
+// carrying the reason code a client can branch on.
+func (g *Gateway) startFailed(w http.ResponseWriter, engine, what string, err error) {
+	code := ""
+	var se *startError
+	if errors.As(err, &se) {
+		code = se.code
+	}
+	g.log().Warn("gateway start failed", "engine", engine, "request", what, "code", code, "err", err)
+	apiErrorCode(w, http.StatusServiceUnavailable, code, err.Error())
+}
+
+// comfyTarget finds ComfyUI: a live one first (it takes the prompt
+// itself), else a configured one the gateway may start.
+func (g *Gateway) comfyTarget(ctx context.Context) (target, bool) {
+	for _, e := range g.live() {
+		if e.Up && e.Type == "comfyui" && g.comfyAnswers(ctx, e.URL) {
+			return target{url: e.URL, live: true}, true
+		}
+	}
+	for i := range g.Engines {
+		e := &g.Engines[i]
+		if e.Type == "comfyui" {
+			return target{url: e.URL, engine: e}, true
+		}
+	}
+	return target{}, false
+}
+
+// comfyAnswers is true when ComfyUI's queue endpoint responds. The
+// /v1/models probe the chat path uses does not exist on ComfyUI.
+func (g *Gateway) comfyAnswers(ctx context.Context, base string) bool {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+"/queue", nil)
+	if err != nil {
+		return false
+	}
+	resp, err := g.client().Do(req)
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
+
+// comfyPrompt queues a workflow: it makes sure ComfyUI is up under a lease
+// (draining the holder like any other request, holding this request until
+// the engine answers), then proxies the prompt unchanged.
+func (g *Gateway) comfyPrompt(w http.ResponseWriter, r *http.Request) {
+	t, ok := g.comfyTarget(r.Context())
+	if !ok {
+		apiError(w, http.StatusNotFound, "no ComfyUI engine on this node (configure an engine of type comfyui)")
+		return
+	}
+	if !t.live {
+		if err := g.ensure(r.Context(), t.engine); err != nil {
+			g.startFailed(w, t.engine.Name, "prompt", err)
+			return
+		}
+	}
+	g.comfyProxyTo(t.url, w, r)
+}
+
+// comfyProxy passes the rest of the ComfyUI surface (/ws, /history, /view,
+// /upload, /queue) to the engine unchanged, streaming. /prompt is the entry
+// point that starts a down engine; these answer 503 naming it instead, so
+// a thumbnail fetch never cold-starts a 12 GB server by accident.
+func (g *Gateway) comfyProxy(w http.ResponseWriter, r *http.Request) {
+	t, ok := g.comfyTarget(r.Context())
+	if !ok {
+		apiError(w, http.StatusNotFound, "no ComfyUI engine on this node (configure an engine of type comfyui)")
+		return
+	}
+	if !t.live && !g.comfyAnswers(r.Context(), t.url) {
+		apiError(w, http.StatusServiceUnavailable, "ComfyUI is not running; POST /prompt first to start it")
+		return
+	}
+	g.comfyProxyTo(t.url, w, r)
+}
+
+func (g *Gateway) comfyProxyTo(base string, w http.ResponseWriter, r *http.Request) {
+	u, err := url.Parse(base)
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, "engine url: "+err.Error())
+		return
+	}
+	p := httputil.NewSingleHostReverseProxy(u)
+	p.FlushInterval = -1 // stream progress as ComfyUI sends it
+	r.Host = u.Host
+	p.ServeHTTP(w, r)
+}
+
 // ensure starts e under a lease unless this gateway already has, then waits
 // until it answers. A start the broker refuses comes back as the reason.
 func (g *Gateway) ensure(ctx context.Context, e *config.Engine) error {
-	if g.answers(ctx, e.URL) {
+	// ComfyUI answers no /v1/models; its queue endpoint is the liveness
+	// probe instead, so a cold start waits for the real server.
+	probe := g.answers
+	if e.Type == "comfyui" {
+		probe = g.comfyAnswers
+	}
+	if probe(ctx, e.URL) {
 		return nil // already up (started by hand or by its own manager)
 	}
 	if len(e.Start) == 0 {
@@ -394,7 +494,7 @@ func (g *Gateway) ensure(ctx context.Context, e *config.Engine) error {
 
 	deadline := time.Now().Add(ready)
 	for {
-		if g.answers(ctx, e.URL) {
+		if probe(ctx, e.URL) {
 			return nil
 		}
 		select {
@@ -468,7 +568,8 @@ func (g *Gateway) run(e *config.Engine, s *started, wait time.Duration) {
 	s.code = runner.Run(runner.Options{
 		Socket: g.Socket, Engine: e.Name, Priority: prio, Needs: e.NeedsMiB << 20,
 		Wait: wait, DrainPost: e.DrainPost, DrainComfyUI: e.DrainComfyUI,
-		Grace: 30 * time.Second, Argv: e.Start, Stderr: s.stderr,
+		KeepComfyUI: e.KeepComfyUI,
+		Grace:       30 * time.Second, Argv: e.Start, Stderr: s.stderr,
 	})
 	g.log().Info("gateway engine exited", "engine", e.Name, "code", s.code)
 	g.mu.Lock()
