@@ -150,4 +150,35 @@ board. Read only: nothing here changes the node.`,
 		Formats: []Format{FormatHuman, FormatJSON, FormatYAML},
 		Run:     runVersion,
 	},
+	{
+		Name:    "wire",
+		Summary: "make another engine's whole roster run under berth",
+		Help: `An engine that loads its own models only waits for the card if its model
+starts run through berth. Wire edits that engine's config so every model in
+the roster does, in one pass, and stays re-runnable as the roster changes.`,
+		Sub: []*Command{
+			{
+				Name:    "llama-swap",
+				Summary: "wrap every model's cmd in berth run",
+				Args:    "--config PATH [--api URL] [--bin P] [--group G] [--priority P] [--exclude PAT] [--update] [--write|--check] [--format F]",
+				Help: `Reduce the whole roster of a llama-swap config so every model starts through
+berth: each model's cmd gets one wrapper line, ` + "`berth run --as NAME ... --`" + `,
+and the model's original command follows unchanged. llama-swap loads a model on
+the first request that names it, so without the wrapper a whole-card load
+cannot wait for the card; that is how an unwired model dies against whatever
+else holds it.
+
+The default run prints the plan and writes nothing. --write applies it and
+keeps a timestamped backup beside the file; llama-swap reloads a config it
+watches by itself. --check writes nothing and exits 1 when any model still
+needs a wrapper, which is what a timer or a CI job runs.
+
+Re-run it whenever the roster changes; already wired models are left alone.
+--update also rewrites existing wrapper lines whose flags no longer match.
+Models whose cmd is a single-line scalar are skipped; make it a > block first.`,
+				Formats: []Format{FormatHuman, FormatJSON, FormatYAML},
+				Run:     runWireLlamaSwap,
+			},
+		},
+	},
 }
