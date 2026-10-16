@@ -28,6 +28,12 @@ type Record struct {
 // window to re-attach before granting anything new.
 const ReasonLost = "berthd went away mid-run"
 
+// ReasonKeepUp is the reason berth run records when a keep-up drain leaves
+// the engine running with its models unloaded: the process stays on its
+// port, but it no longer holds the card, so the released lease must not
+// keep blocking waiters on its idle footprint.
+const ReasonKeepUp = "keep-up drain: models unloaded, server left up"
+
 // Dir is where records live for a given socket path.
 func Dir(socket string) string {
 	return filepath.Join(filepath.Dir(socket), "berth-unprotected")

@@ -8,17 +8,24 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/T-Crypt/berth/internal/procs"
+	"github.com/T-Crypt/berth/internal/runs"
 )
 
-// comfyStub is a ComfyUI stand-in: an empty or busy queue plus a /free that
-// records what it was asked.
+// comfyStub is a ComfyUI stand-in: an empty or busy queue, a /free that
+// records what it was asked, and stats that free the device unless hold is
+// set (an unload that did not take, for the timeout fallback).
 type comfyStub struct {
 	busy   atomic.Bool
+	hold   atomic.Bool
+	freed  atomic.Bool
 	mu     sync.Mutex
 	frees  int
 	bodies []string
@@ -39,7 +46,18 @@ func (c *comfyStub) handler() http.Handler {
 		c.frees++
 		c.bodies = append(c.bodies, string(b))
 		c.mu.Unlock()
+		if !c.hold.Load() {
+			c.freed.Store(true)
+		}
 		fmt.Fprint(w, `{}`)
+	})
+	mux.HandleFunc("/system_stats", func(w http.ResponseWriter, r *http.Request) {
+		used := uint64(17) << 30
+		if c.freed.Load() {
+			used = 512 << 20
+		}
+		total := uint64(24) << 30
+		fmt.Fprintf(w, `{"devices":[{"vram_free":%d,"vram_total":%d}]}`, total-used, total)
 	})
 	return mux
 }
@@ -66,8 +84,8 @@ func sayTo(logs *strings.Builder) func(string, ...any) {
 }
 
 // A drain with an empty queue unloads via POST /free with ComfyUI's own
-// shape, then keeps the server up when asked: the lease is released and the
-// process never exits.
+// shape, then keeps the server up when asked: the lease is released, the
+// run is recorded, and the process never exits.
 func TestDrainUnloadsThenKeepsUp(t *testing.T) {
 	stub := &comfyStub{}
 	srv := httptest.NewServer(stub.handler())
@@ -77,8 +95,9 @@ func TestDrainUnloadsThenKeepsUp(t *testing.T) {
 	done := make(chan struct{})
 	released := make(chan struct{})
 	var logs strings.Builder
+	sock := filepath.Join(t.TempDir(), "berthd.sock")
 
-	drain(Options{Engine: "comfyui", DrainComfyUI: srv.URL, KeepComfyUI: true,
+	drain(Options{Engine: "comfyui", DrainComfyUI: srv.URL, KeepComfyUI: true, Socket: sock,
 		Grace: 50 * time.Millisecond}, cmd, done, released, "test", sayTo(&logs))
 
 	select {
@@ -105,6 +124,80 @@ func TestDrainUnloadsThenKeepsUp(t *testing.T) {
 	}
 	if out := logs.String(); !strings.Contains(out, "leaving the server up") {
 		t.Fatalf("no keep-up line; log:\n%s", out)
+	}
+	records := runs.List(runs.Dir(sock), procs.System{}.StartTime)
+	if len(records) != 1 || records[0].Reason != runs.ReasonKeepUp || records[0].Engine != "comfyui" {
+		t.Fatalf("keep-up records = %+v, want one comfyui run with reason %q", records, runs.ReasonKeepUp)
+	}
+}
+
+// A keep-up release waits for the driver to show the models gone; the
+// lease is not released while the card still holds them.
+func TestDrainKeepUpWaitsForFreedVRAM(t *testing.T) {
+	stub := &comfyStub{}
+	stub.hold.Store(true) // /free succeeds but the models stay for now
+	srv := httptest.NewServer(stub.handler())
+	defer srv.Close()
+
+	cmd, waited := startSleep(t)
+	done := make(chan struct{})
+	released := make(chan struct{})
+	var logs strings.Builder
+	sock := filepath.Join(t.TempDir(), "berthd.sock")
+
+	go drain(Options{Engine: "comfyui", DrainComfyUI: srv.URL, KeepComfyUI: true, Socket: sock,
+		Grace: 200 * time.Millisecond}, cmd, done, released, "test", sayTo(&logs))
+
+	select {
+	case <-released:
+		t.Fatal("released while the models were still on the card")
+	case <-time.After(120 * time.Millisecond):
+	}
+	stub.freed.Store(true)
+	select {
+	case <-released:
+	case <-time.After(3 * time.Second):
+		t.Fatalf("no release after the device freed; log:\n%s", &logs)
+	}
+	select {
+	case err := <-waited:
+		t.Fatalf("keep-up killed the server (%v)", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+// An unload that never frees the card falls back to stopping the server:
+// no keep-up record, the process dies, and the lease is not released early.
+func TestDrainKeepUpTimeoutStops(t *testing.T) {
+	stub := &comfyStub{}
+	stub.hold.Store(true)
+	srv := httptest.NewServer(stub.handler())
+	defer srv.Close()
+
+	cmd, waited := startSleep(t)
+	done := make(chan struct{})
+	released := make(chan struct{})
+	var logs strings.Builder
+	sock := filepath.Join(t.TempDir(), "berthd.sock")
+
+	drain(Options{Engine: "comfyui", DrainComfyUI: srv.URL, KeepComfyUI: true, Socket: sock,
+		Grace: 50 * time.Millisecond}, cmd, done, released, "test", sayTo(&logs))
+
+	select {
+	case <-released:
+		t.Fatalf("timeout released the lease; log:\n%s", &logs)
+	default:
+	}
+	select {
+	case <-waited:
+	case <-time.After(3 * time.Second):
+		t.Fatalf("server still alive after the timeout; log:\n%s", &logs)
+	}
+	if out := logs.String(); !strings.Contains(out, "did not free within") {
+		t.Fatalf("no timeout line; log:\n%s", out)
+	}
+	if records := runs.List(runs.Dir(sock), procs.System{}.StartTime); len(records) != 0 {
+		t.Fatalf("timeout wrote keep-up records: %+v", records)
 	}
 }
 

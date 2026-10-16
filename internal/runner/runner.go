@@ -290,6 +290,66 @@ func comfyFree(base string) error {
 	return nil
 }
 
+// comfyIdleFootprint is what an unloaded ComfyUI server is allowed to keep
+// on the card: its own process plus driver and desktop baseline. A keep-up
+// release only happens once the free memory reaches total minus this.
+const comfyIdleFootprint = 2 << 30
+
+// comfyUnloaded polls ComfyUI's stats until the device shows all but the
+// idle footprint free. Unreadable stats fail open: older servers answer no
+// /system_stats and a failed unload already fell back to stopping.
+func comfyUnloaded(base string, within time.Duration) bool {
+	deadline := time.Now().Add(within)
+	every := 500 * time.Millisecond
+	if within/4 < every {
+		every = within / 4
+	}
+	if every < 20*time.Millisecond {
+		every = 20 * time.Millisecond
+	}
+	for {
+		free, total, err := comfyVRAM(base)
+		if err != nil || free+comfyIdleFootprint >= total {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(every)
+	}
+}
+
+// comfyVRAM reads ComfyUI's device 0 (vram_free, vram_total) in bytes.
+func comfyVRAM(base string) (free, total uint64, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+"/system_stats", nil)
+	if err != nil {
+		return 0, 0, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, 0, fmt.Errorf("GET /system_stats: %s", resp.Status)
+	}
+	var stats struct {
+		Devices []struct {
+			VRAMFree  uint64 `json:"vram_free"`
+			VRAMTotal uint64 `json:"vram_total"`
+		} `json:"devices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&stats); err != nil {
+		return 0, 0, fmt.Errorf("/system_stats: %w", err)
+	}
+	if len(stats.Devices) == 0 {
+		return 0, 0, fmt.Errorf("/system_stats: no devices")
+	}
+	return stats.Devices[0].VRAMFree, stats.Devices[0].VRAMTotal, nil
+}
+
 // slotBoundary waits until the engine behind the drain-post URL reports no
 // processing slot, so an unload never cuts an in-flight request off. A host
 // with no boundary at all (404, an unreachable host, a body that is not a
@@ -486,17 +546,25 @@ func drain(o Options, cmd *exec.Cmd, done <-chan struct{}, released chan<- struc
 		}
 		// Unload first: models leave VRAM the moment the queue is known
 		// empty. A failed unload falls through to stopping the server; a
-		// keep-up leaves it on its port for OpenWebUI instead.
+		// keep-up leaves it on its port for OpenWebUI instead, but only
+		// once the driver shows the memory actually left: the run record
+		// written below tells the broker the lingering server no longer
+		// holds the card.
 		if err := comfyFree(o.DrainComfyUI); err != nil {
 			say("ComfyUI unload (%v); stopping the server instead", err)
 		} else if o.KeepComfyUI {
-			// The server stays up with no models loaded. Run returns, the
-			// lease is released, and the broker grants once the driver
-			// shows the memory free. An idle server lingering past
-			// ReleaseGrace may still trip the broker's stuck warning.
-			say("ComfyUI models unloaded; leaving the server up")
-			close(released)
-			return
+			if unloadWait := 2 * o.Grace; !comfyUnloaded(o.DrainComfyUI, unloadWait) {
+				say("ComfyUI memory did not free within %s; stopping the server instead", unloadWait)
+			} else {
+				say("ComfyUI models unloaded; leaving the server up")
+				// The record must outlive this run: the server stays up and
+				// the broker lists it as an unprotected run, so the released
+				// lease frees instead of turning stuck on the idle server.
+				// runs.List clears the record once the process is gone.
+				_ = record(o, cmd, runs.ReasonKeepUp)
+				close(released)
+				return
+			}
 		} else {
 			say("ComfyUI models unloaded; stopping the server")
 		}
