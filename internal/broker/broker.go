@@ -776,8 +776,8 @@ func (b *Broker) comfySquat() (uint64, []ComfyEngine) {
 // /free. Rate limited per engine: evaluate runs every tick while a waiter
 // is blocked, the engine hears about it at most once per comfyPokeEvery.
 // The request runs in the background so a slow server cannot stall the
-// scheduler; failures stay silent because the wait reason already said
-// the ask went out.
+// scheduler. A failed ask is logged: the wait reason already says the ask
+// went out, so silence would hide a wedged /free until the waiter times out.
 func (b *Broker) comfyPoke(now time.Time, engines []ComfyEngine) {
 	for _, e := range engines {
 		if e.URL == "" {
@@ -787,28 +787,37 @@ func (b *Broker) comfyPoke(now time.Time, engines []ComfyEngine) {
 			continue
 		}
 		b.comfyPoked[e.Name] = now
-		go postComfyFree(e.URL)
+		b.log.Debug("asking ComfyUI to free its models", "engine", e.Name, "url", e.URL)
+		go func(name, url string) {
+			if err := postComfyFree(url); err != nil {
+				b.log.Warn("ComfyUI free ask failed; still waiting for the memory", "engine", name, "url", url, "err", err)
+			}
+		}(e.Name, e.URL)
 	}
 }
 
 // postComfyFree is ComfyUI's own eviction call, its shape: unload_models
 // plus free_memory. It applies at the job boundary, so it never cuts a
-// running generation off.
-func postComfyFree(base string) {
+// running generation off. A non-2xx is a failure, as in the runner's ask.
+func postComfyFree(base string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	body := strings.NewReader(`{"unload_models":true,"free_memory":true}`)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(base, "/")+"/free", body)
 	if err != nil {
-		return
+		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return
+		return err
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return fmt.Errorf("POST /free: %s", resp.Status)
+	}
+	return nil
 }
 
 // cardBudget is one schedule/evaluate pass's view of the card: what the

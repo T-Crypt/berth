@@ -1,9 +1,14 @@
 package broker
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -110,4 +115,54 @@ func TestComfyPokeSkipsEmptyURL(t *testing.T) {
 	c.set(gpu.Proc{PID: 101, Name: "python", Used: 512 << 20})
 	b.Tick(context.Background())
 	must(t, ch)
+}
+
+// syncBuffer is a writer safe to read while slog writes from a goroutine.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.String()
+}
+
+// A failed /free must be visible: the wait reason already claims the ask went
+// out, so a non-2xx is logged as a warning instead of swallowed.
+func TestComfyPokeLogsFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "wedged", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	logs := &syncBuffer{}
+	tree := procs.Fake{Parents: map[int]int{101: 100}, Starts: map[int]uint64{100: 1, 101: 1}}
+	dir := t.TempDir()
+	keepUpRun(t, dir)
+	c := &card{total: 24 * GiB}
+	b := New(Config{RunsDir: dir, Comfy: []ComfyEngine{{Name: "comfyui", URL: srv.URL}},
+		ReleaseGrace: time.Hour, DefaultWait: time.Second, JuggleWindow: -1,
+		Log: slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))}, c, tree)
+	b.Tick(context.Background())
+	c.set(gpu.Proc{PID: 101, Name: "python", Used: 17 * GiB})
+	b.Tick(context.Background())
+
+	ch := acquire(b, Request{Engine: "ninfer"})
+	pending(t, ch)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for !strings.Contains(logs.String(), "free ask failed") && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !strings.Contains(logs.String(), "free ask failed") {
+		t.Fatalf("no warning for a failed /free; log:\n%s", logs.String())
+	}
 }
