@@ -73,7 +73,7 @@ For each request the gateway:
 2. hands the request straight to an engine that is up and lists that model (llama-swap and Ollama load
    their own models under their own leases);
 3. otherwise starts the engine that `serves` it through the same path as `berth run`: it takes a lease,
-   Berth drains the holder (llama-swap through its unload URL, then SIGTERM, then SIGKILL), and the
+   Berth drains the holder (llama-swap through its unload URL once its slots are idle, then SIGTERM, then SIGKILL), and the
    gateway waits until the new engine answers `/v1/models`;
 4. proxies the request and streams tokens as the engine sends them.
 
@@ -92,11 +92,20 @@ llama-swap) and Strata (262K context):
 | Strata to NInfer | Strata released in 2 s | 41 s |
 | NInfer to Strata | NInfer released in 0.6 s | 110 s |
 
-At no point did the two engines hold the card at the same time. The gateway serves `/v1/chat/completions`,
-`/v1/completions`, `/v1/embeddings` and a merged `/v1/models`. Every route needs the key. The gateway listens
+At no point did the two engines hold the card at the same time.
+
+**Long waits and idle clients.** Cold starts take 41-110 s (table above), and `forward` writes zero
+bytes while `ensure` drains the holder and starts the engine: both proxies stream once the engine sends
+bytes (`FlushInterval = -1`) but send no keep-alive during the wait, and flushing a 200 early is unsafe
+for non-streamed bodies. If a client with an idle-connection timeout (OpenWebUI's is ~40 s) drops the
+wait first, raise its read timeout and prefer streamed requests. A stream-aware early flush needs its
+own ticket. The gateway serves `/v1/chat/completions`,
+`/v1/completions`, `/v1/embeddings` and a merged `/v1/models`, plus the ComfyUI surface: `POST /prompt`
+queues a workflow (starting ComfyUI under a lease when it is down, holding the request until its `/queue`
+answers), while `/ws`, `/queue`, `/history/`, `/view` and `/upload/` proxy to a running ComfyUI. Every route
+needs the key. The gateway listens
 on loopback only, refuses a Host that is not a loopback name (DNS rebinding) and refuses any request that
-carries a browser `Origin`, so a web page cannot start an engine. ComfyUI already hands off at a job boundary under a lease (`--drain-comfyui`); starting
-ComfyUI on demand from its own API through the gateway comes next.
+carries a browser `Origin`, so a web page cannot start an engine. ComfyUI already hands off at a job boundary under a lease (`--drain-comfyui`); a drain first unloads its models via `POST /free`, and `--keep-comfyui-up` leaves the server on its port for OpenWebUI instead of stopping it.
 
 ---
 
