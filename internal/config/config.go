@@ -27,29 +27,29 @@ type Engine struct {
 	URL  string `toml:"url" json:"url" yaml:"url"`    // any host and port
 	// APIKeyEnv names an environment variable holding a bearer token for
 	// engines that want one; the token itself never goes in the file.
-	APIKeyEnv string `toml:"api_key_env" json:"api_key_env,omitempty" yaml:"api_key_env,omitempty"`
+	APIKeyEnv string `toml:"api_key_env,omitempty" json:"api_key_env,omitempty" yaml:"api_key_env,omitempty"`
 	// Custom engines: every path is optional. Health decides up/down (else
 	// metrics or models do, else GET /); Models is an OpenAI-style list;
 	// Slots is a llama.cpp-style /slots; Map names the metrics to read.
-	Health  string            `toml:"health" json:"health,omitempty" yaml:"health,omitempty"`
-	Models  string            `toml:"models" json:"models,omitempty" yaml:"models,omitempty"`
-	Metrics string            `toml:"metrics" json:"metrics,omitempty" yaml:"metrics,omitempty"` // path of Prometheus text; custom default /metrics when Map is set
-	Slots   string            `toml:"slots" json:"slots,omitempty" yaml:"slots,omitempty"`
-	Map     map[string]string `toml:"map" json:"map,omitempty" yaml:"map,omitempty"` // field -> metric name
+	Health  string            `toml:"health,omitempty" json:"health,omitempty" yaml:"health,omitempty"`
+	Models  string            `toml:"models,omitempty" json:"models,omitempty" yaml:"models,omitempty"`
+	Metrics string            `toml:"metrics,omitempty" json:"metrics,omitempty" yaml:"metrics,omitempty"` // path of Prometheus text; custom default /metrics when Map is set
+	Slots   string            `toml:"slots,omitempty" json:"slots,omitempty" yaml:"slots,omitempty"`
+	Map     map[string]string `toml:"map,omitempty" json:"map,omitempty" yaml:"map,omitempty"` // field -> metric name
 	// Gateway: how `berth gateway` starts this engine when a request names a
 	// model it serves and it is not running. Start is the engine's command;
 	// it runs under a lease exactly as `berth run` would.
-	Start    []string `toml:"start" json:"start,omitempty" yaml:"start,omitempty"`
-	Serves   []string `toml:"serves" json:"serves,omitempty" yaml:"serves,omitempty"`          // model names this engine answers for
-	Priority string   `toml:"priority" json:"priority,omitempty" yaml:"priority,omitempty"`    // batch, interactive (default) or foreground
-	NeedsMiB uint64   `toml:"needs_mib" json:"needs_mib,omitempty" yaml:"needs_mib,omitempty"` // 0 = the whole card
+	Start    []string `toml:"start,omitempty" json:"start,omitempty" yaml:"start,omitempty"`
+	Serves   []string `toml:"serves,omitempty" json:"serves,omitempty" yaml:"serves,omitempty"`         // model names this engine answers for
+	Priority string   `toml:"priority,omitempty" json:"priority,omitempty" yaml:"priority,omitempty"`   // batch, interactive (default) or foreground
+	NeedsMiB uint64   `toml:"needs_mib,omitzero" json:"needs_mib,omitempty" yaml:"needs_mib,omitempty"` // 0 = the whole card
 	// NeedsRAMMiB estimates the engine's host RAM spike at cold start, for
 	// the gateway headroom guard. 0 = unknown, and the guard fails open.
-	NeedsRAMMiB  uint64 `toml:"needs_ram_mib" json:"needs_ram_mib,omitempty" yaml:"needs_ram_mib,omitempty"`
-	DrainPost    string `toml:"drain_post" json:"drain_post,omitempty" yaml:"drain_post,omitempty"`          // as berth run --drain-post
-	DrainComfyUI string `toml:"drain_comfyui" json:"drain_comfyui,omitempty" yaml:"drain_comfyui,omitempty"` // as berth run --drain-comfyui
+	NeedsRAMMiB  uint64 `toml:"needs_ram_mib,omitzero" json:"needs_ram_mib,omitempty" yaml:"needs_ram_mib,omitempty"`
+	DrainPost    string `toml:"drain_post,omitempty" json:"drain_post,omitempty" yaml:"drain_post,omitempty"`          // as berth run --drain-post
+	DrainComfyUI string `toml:"drain_comfyui,omitempty" json:"drain_comfyui,omitempty" yaml:"drain_comfyui,omitempty"` // as berth run --drain-comfyui
 	// KeepComfyUI is berth run --keep-comfyui-up: unload and stay up.
-	KeepComfyUI bool `toml:"keep_comfyui_up" json:"keep_comfyui_up,omitempty" yaml:"keep_comfyui_up,omitempty"`
+	KeepComfyUI bool `toml:"keep_comfyui_up,omitempty" json:"keep_comfyui_up,omitempty" yaml:"keep_comfyui_up,omitempty"`
 }
 
 // Types are the engine readers that exist.
@@ -64,19 +64,19 @@ type Config struct {
 		// Listen is where /metrics is served for Prometheus. Loopback only;
 		// empty = off.
 		Listen string `toml:"listen" json:"listen,omitempty" yaml:"listen,omitempty"`
-	} `toml:"metrics" json:"metrics" yaml:"metrics"`
+	} `toml:"metrics,omitempty" json:"metrics" yaml:"metrics"`
 	Engines struct {
 		Every Duration `toml:"every" json:"every" yaml:"every"` // how often engines are read; default 5 s
 		// Discover probes the well-known engine ports on this machine (and
 		// on Hosts) every minute and reads whatever answers; default on.
 		// Ports adds more ports to probe with every reader.
 		Discover *bool    `toml:"discover" json:"discover" yaml:"discover"`
-		Hosts    []string `toml:"discover_hosts" json:"discover_hosts,omitempty" yaml:"discover_hosts,omitempty"`
-		Ports    []int    `toml:"discover_ports" json:"discover_ports,omitempty" yaml:"discover_ports,omitempty"`
+		Hosts    []string `toml:"discover_hosts,omitempty" json:"discover_hosts,omitempty" yaml:"discover_hosts,omitempty"`
+		Ports    []int    `toml:"discover_ports,omitempty" json:"discover_ports,omitempty" yaml:"discover_ports,omitempty"`
 	} `toml:"engines" json:"engines" yaml:"engines"`
-	Engine   []Engine       `toml:"engine" json:"engine,omitempty" yaml:"engine,omitempty"`
+	Engine   []Engine       `toml:"engine,omitempty" json:"engine,omitempty" yaml:"engine,omitempty"`
 	Alerts   AlertsConfig   `toml:"alerts" json:"alerts" yaml:"alerts"`
-	Priority PriorityConfig `toml:"priority" json:"priority" yaml:"priority"`
+	Priority PriorityConfig `toml:"priority,omitempty" json:"priority" yaml:"priority"`
 }
 
 // PriorityConfig decides juggles: two engines at the same priority asking for
@@ -85,7 +85,7 @@ type PriorityConfig struct {
 	// Order ranks engines, first is best: a lease's --group, else its
 	// engine name. Empty = the engine with the most card-hours over the
 	// last 7 days ranks first.
-	Order []string `toml:"order" json:"order,omitempty" yaml:"order,omitempty"`
+	Order []string `toml:"order,omitempty" json:"order,omitempty" yaml:"order,omitempty"`
 	// JuggleWindow: default 15s; "0s" keeps the default, a negative value
 	// turns juggle handling off (last switch always wins).
 	JuggleWindow Duration `toml:"juggle_window" json:"juggle_window" yaml:"juggle_window"`
@@ -95,17 +95,17 @@ type PriorityConfig struct {
 // A key with no entry is not watched. probe and stuck are built in; they
 // cannot be configured off.
 type AlertsConfig struct {
-	ClearPolls *int            `toml:"clear_polls" json:"clear_polls,omitempty" yaml:"clear_polls,omitempty"` // consecutive clean polls before a level drops; nil = 3
-	Queue      proto.Threshold `toml:"queue" json:"queue" yaml:"queue"`                                       // waiting leases
-	TTFT       proto.Threshold `toml:"ttft" json:"ttft" yaml:"ttft"`                                          // prefill time, ms
-	TPOT       proto.Threshold `toml:"tpot" json:"tpot" yaml:"tpot"`                                          // ms per output token
-	P95        proto.Threshold `toml:"p95" json:"p95" yaml:"p95"`                                             // request duration, ms
-	Cache      proto.Threshold `toml:"cache" json:"cache" yaml:"cache"`                                       // cache share, %; low is bad
-	Reingest   proto.Threshold `toml:"reingest" json:"reingest" yaml:"reingest"`                              // re-ingest share, %
-	VRAM       proto.Threshold `toml:"vram" json:"vram" yaml:"vram"`                                          // fraction of the card
-	Temp       proto.Threshold `toml:"temp" json:"temp" yaml:"temp"`                                          // °C
-	Power      proto.Threshold `toml:"power" json:"power" yaml:"power"`                                       // fraction of the power limit
-	KV         proto.Threshold `toml:"kv" json:"kv" yaml:"kv"`                                                // deepest slot fill, 0..1
+	ClearPolls *int            `toml:"clear_polls,omitempty" json:"clear_polls,omitempty" yaml:"clear_polls,omitempty"` // consecutive clean polls before a level drops; nil = 3
+	Queue      proto.Threshold `toml:"queue,omitempty" json:"queue" yaml:"queue"`                                       // waiting leases
+	TTFT       proto.Threshold `toml:"ttft,omitempty" json:"ttft" yaml:"ttft"`                                          // prefill time, ms
+	TPOT       proto.Threshold `toml:"tpot,omitempty" json:"tpot" yaml:"tpot"`                                          // ms per output token
+	P95        proto.Threshold `toml:"p95,omitempty" json:"p95" yaml:"p95"`                                             // request duration, ms
+	Cache      proto.Threshold `toml:"cache,omitempty" json:"cache" yaml:"cache"`                                       // cache share, %; low is bad
+	Reingest   proto.Threshold `toml:"reingest,omitempty" json:"reingest" yaml:"reingest"`                              // re-ingest share, %
+	VRAM       proto.Threshold `toml:"vram,omitempty" json:"vram" yaml:"vram"`                                          // fraction of the card
+	Temp       proto.Threshold `toml:"temp,omitempty" json:"temp" yaml:"temp"`                                          // °C
+	Power      proto.Threshold `toml:"power,omitempty" json:"power" yaml:"power"`                                       // fraction of the power limit
+	KV         proto.Threshold `toml:"kv,omitempty" json:"kv" yaml:"kv"`                                                // deepest slot fill, 0..1
 }
 
 // Duration is a TOML string like "5s". It keeps that spelling in JSON and

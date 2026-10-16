@@ -153,8 +153,8 @@ type EngineRank struct {
 
 // Threshold is one key's alert levels. Warn 0 = that level is not set.
 type Threshold struct {
-	Warn float64 `json:"warn"` // 0 = level not set
-	Crit float64 `json:"crit,omitempty"`
+	Warn float64 `json:"warn" toml:"warn,omitzero" yaml:"warn"` // 0 = level not set
+	Crit float64 `json:"crit,omitempty" toml:"crit,omitzero" yaml:"crit,omitempty"`
 }
 
 // Alerts is the node's alert state: the threshold table it evaluates (every

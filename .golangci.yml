@@ -13,10 +13,12 @@ linters:
     rules:
       # Intentionally unchecked idioms in existing code: cleanup (Close/Rollback/
       # Flush/Remove), log and encoder writes, pflag Parse (exits on error), the
-      # socket hang-up Read, and test probe Scans.
+      # socket hang-up Read, test probe Scans, and the chainable error builders
+      # (Detail/WithHint), whose whole point is that the next call takes the
+      # result.
       - linters:
           - errcheck
-        text: "Error return value of `.+\\.(Close|Rollback|Flush|Encode|Remove|Fprint|Fprintf|Fprintln|Serve|SetDeadline|WriteFile|Parse|Read|Scan)` is not checked"
+        text: "Error return value of `.+\\.(Close|Rollback|Flush|Encode|Remove|Fprint|Fprintf|Fprintln|Serve|SetDeadline|WriteFile|Parse|Read|Scan|Detail|WithHint)` is not checked"
       - linters:
           - errcheck
         text: "^Error return value is not checked"
