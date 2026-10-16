@@ -432,12 +432,20 @@ func (b *Broker) Tick(ctx context.Context) {
 		id := b.identify(p.PID)
 		present[id] = true
 		if l := b.owner(id); l != nil {
-			l.gpu[id] = p
-			l.peak = max(l.peak, l.used())
-			if s, ok := b.squatters[id]; ok {
-				b.reportGone(s)
+			if l.state != active && l.state != draining && b.runFor(p.PID) != nil {
+				// A released lease keeps blocking while its processes hold
+				// memory, unless a run record says they were left behind on
+				// purpose (a keep-up drain): those processes fall through to
+				// the unprotected-run listing and no longer hold the card.
+				delete(l.gpu, id)
+			} else {
+				l.gpu[id] = p
+				l.peak = max(l.peak, l.used())
+				if s, ok := b.squatters[id]; ok {
+					b.reportGone(s)
+				}
+				continue
 			}
-			continue
 		}
 		if b.allowed(p.Name) {
 			continue

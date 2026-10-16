@@ -261,6 +261,38 @@ func TestStuckLeaseBlocksUntilMemoryFrees(t *testing.T) {
 	must(t, ch)
 }
 
+// A keep-up drain leaves the engine running unloaded and records it as an
+// unprotected run. The record lets the released lease free on the next
+// tick: the lingering process no longer blocks the card, and it is listed
+// as a run-backed squatter instead of holding the lease stuck.
+func TestKeepUpRunFreesTheReleasedLease(t *testing.T) {
+	tree := procs.Fake{Parents: map[int]int{101: 100}, Starts: map[int]uint64{100: 1, 101: 1}}
+	b, c, r := setup(t, tree)
+	b.cfg.ReleaseGrace = time.Millisecond
+	dir := t.TempDir()
+	b.cfg.RunsDir = dir
+
+	l := must(t, acquire(b, Request{Engine: "comfyui"}))
+	l.Attach(100)
+	c.set(gpu.Proc{PID: 101, Name: "python", Used: 512 << 20})
+	b.Tick(context.Background())
+	if _, err := runs.Write(dir, runs.Record{
+		Engine: "comfyui", PID: 100, Start: 1, Started: time.Now(), Reason: runs.ReasonKeepUp,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	l.Release()
+	b.Tick(context.Background())
+
+	if st := b.Status(); len(st.Leases) != 0 {
+		t.Fatalf("leases = %+v, want none after the keep-up release", st.Leases)
+	}
+	if got := strings.Join(r.seen, ","); !strings.Contains(got, "appeared:python") {
+		t.Fatalf("reports = %s, want the lingering process listed as a run", got)
+	}
+	must(t, acquire(b, Request{Engine: "next"}))
+}
+
 // Gap a: a PID that a lease's engine once had, reused by an unrelated
 // process, is a squatter, not the lease's.
 func TestPIDReuseIsNotOwnership(t *testing.T) {
