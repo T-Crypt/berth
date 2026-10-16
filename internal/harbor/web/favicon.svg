@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="berth">
-  <rect width="64" height="64" rx="14" fill="#0b1426"/>
-  <rect x="1.5" y="1.5" width="61" height="61" rx="12.5" fill="none" stroke="#1f3a5f" stroke-width="3"/>
-  <path d="M14 10h8v16.5c2.6-2.4 5.9-3.7 9.6-3.7 8.8 0 14.4 6.6 14.4 15.6S40.4 54 31.6 54c-3.9 0-7.3-1.4-9.9-4V53H14Zm16.2 20.1c-4.9 0-8.2 3.5-8.2 8.3s3.3 8.4 8.2 8.4 8-3.6 8-8.4-3.1-8.3-8-8.3Z" fill="#f2f4f8"/>
-  <circle cx="51" cy="49" r="5" fill="#f5b942"/>
+  <rect width="64" height="64" rx="14" fill="#0f1826"/>
+  <rect x="1.5" y="1.5" width="61" height="61" rx="12.5" fill="none" stroke="#243549" stroke-width="3"/>
+  <path d="M14 10h8v16.5c2.6-2.4 5.9-3.7 9.6-3.7 8.8 0 14.4 6.6 14.4 15.6S40.4 54 31.6 54c-3.9 0-7.3-1.4-9.9-4V53H14Zm16.2 20.1c-4.9 0-8.2 3.5-8.2 8.3s3.3 8.4 8.2 8.4 8-3.6 8-8.4-3.1-8.3-8-8.3Z" fill="#f0f5fa"/>
+  <circle cx="51" cy="49" r="5" fill="#e8b56f"/>
 </svg>

@@ -24,8 +24,8 @@ CONTRAST_JS = """([sel, prop]) => {
   for (let e = n; e && e !== document.documentElement; e = e.parentElement) {
     layers.push(getComputedStyle(e).backgroundColor);
   }
-  layers.push('rgb(11, 13, 18)');
-  let bg = [11, 13, 18];
+  layers.push('rgb(10, 16, 23)');
+  let bg = [10, 16, 23];
   for (const c of layers.reverse()) {
     const m = nums(c); const a = m.length > 3 ? m[3] : 1;
     bg = [0, 1, 2].map((i) => Math.round(m[i] * a + bg[i] * (1 - a)));

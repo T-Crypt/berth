@@ -37,9 +37,9 @@ the model ran without a lease after a daemon restart.
 
 <p align="center"><img src="assets/preview-harbor.png" alt="Berth harbor: ticket counter, request KPIs, the tide of card memory by holder, and the model timeline" width="900"></p>
 
-The Engines & Requests tab: the token ledger, the per-model leaderboard and the request log.
+The Engines &amp; Requests tab: decode throughput, the token ledger and the per-model leaderboard.
 
-<p align="center"><img src="assets/preview-requests.png" alt="Berth harbor Engines and Requests tab: token ledger, leaderboard and recent requests" width="900"></p>
+<p align="center"><img src="assets/preview-requests.png" alt="Berth harbor Engines and Requests tab: decode throughput per engine, the token ledger and the per-model leaderboard" width="900"></p>
 
 ## Switch engines by naming a model (gateway, preview)
 

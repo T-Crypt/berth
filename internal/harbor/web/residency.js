@@ -4,6 +4,7 @@
 // KV sessions. One hand-rolled SVG surface, like the rest of the charts; no
 // library.
 import { el, fmtClock, fmtTok, fmtMS, na } from "./util.js";
+import { PAL } from "./palette.js";
 import { armTapTip, armFocusTip, isPinned } from "./charts.js";
 
 const SVGNS = "http://www.w3.org/2000/svg";
@@ -16,9 +17,9 @@ const PAD_B = 14;
 const MAX_COLS = 40; // the column count the recent table feeds
 const MAX_SESSIONS = 20; // the session list caps, with "…N more"
 
-const CACHED = "#7ee0a3";
-const FRESH = "#e0af68";
-const GENERATED = "#7dcfff";
+const CACHED = PAL.green;
+const FRESH = PAL.amber;
+const GENERATED = PAL.cyan;
 
 function S(tag, attrs) {
   const n = document.createElementNS(SVGNS, tag);
@@ -187,7 +188,7 @@ export class ResidencyView {
     // y ticks (tokens)
     for (const f of [0, 0.5, 1]) {
       const y = PAD_T + plotH - f * plotH;
-      svg.append(S("line", { x1: PAD_L, x2: W - PAD_R, y1: y, y2: y, stroke: "#16202f", "stroke-width": "1", "vector-effect": "non-scaling-stroke" }));
+      svg.append(S("line", { x1: PAD_L, x2: W - PAD_R, y1: y, y2: y, stroke: PAL.grid, "stroke-width": "1", "vector-effect": "non-scaling-stroke" }));
       const t = S("text", { x: PAD_L - 4, y: y + 3, "text-anchor": "end", class: "tick" });
       t.textContent = f === 0 ? "0" : fmtTok(scale * f);
       svg.append(t);
@@ -208,9 +209,9 @@ export class ResidencyView {
     if (!noWindows) {
       // the window line (dashed) and a faint one at 75 % of it
       const yWin = yOf(scale);
-      svg.append(S("line", { x1: PAD_L, x2: W - PAD_R, y1: yWin, y2: yWin, stroke: "rgba(201,212,227,0.6)", "stroke-width": "1", "stroke-dasharray": "5 4", "vector-effect": "non-scaling-stroke" }));
+      svg.append(S("line", { x1: PAD_L, x2: W - PAD_R, y1: yWin, y2: yWin, stroke: PAL.rule, "stroke-width": "1", "stroke-dasharray": "5 4", "vector-effect": "non-scaling-stroke" }));
       const y75 = yOf(scale * 0.75);
-      svg.append(S("line", { x1: PAD_L, x2: W - PAD_R, y1: y75, y2: y75, stroke: "rgba(201,212,227,0.2)", "stroke-width": "1", "vector-effect": "non-scaling-stroke" }));
+      svg.append(S("line", { x1: PAD_L, x2: W - PAD_R, y1: y75, y2: y75, stroke: PAL.tick, "stroke-width": "1", "vector-effect": "non-scaling-stroke" }));
     }
     this.svg = svg;
     this.canvas.append(svg);
@@ -247,7 +248,7 @@ export class ResidencyView {
     const shown = rows.slice(0, MAX_SESSIONS);
     for (const { eng, slot } of shown) {
       const frac = slot.window > 0 ? Math.max(0, Math.min(1, slot.used / slot.window)) : 0;
-      const color = this.colorOf ? this.colorOf(eng) : "#7dcfff";
+      const color = this.colorOf ? this.colorOf(eng) : PAL.cyan;
       const fill = el("i", "res-fill");
       fill.style.width = (frac * 100).toFixed(1) + "%";
       fill.style.background = color;

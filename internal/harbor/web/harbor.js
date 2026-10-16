@@ -12,6 +12,7 @@ import { Ticket } from "./ticket.js";
 import { EngineView } from "./engines.js";
 import { ResidencyView } from "./residency.js";
 import { sparkline, lineChart, stackedArea, timelineChart } from "./charts.js";
+import { PAL } from "./palette.js";
 import { GIB } from "./util.js";
 import {
   icon, toast, relTime, copyText, onKey, showDialog, skeleton, errorNote,
@@ -43,7 +44,7 @@ const LIVE_POLL_MS = 10000;
 
 // A fixed, muted palette for the tide's holder bands. Cyan leads so the main
 // engine always reads as the dominant colour.
-const HOLDER_PALETTE = ["#7dcfff", "#e0af68", "#7ee0a3", "#b5a1ff", "#5fb4c9", "#e0c078", "#c98bd4"];
+const HOLDER_PALETTE = PAL.holders;
 const EVENT_TONE = { "lease.granted": "granted", "lease.draining": "draining", "lease.freed": "freed", "lease.stuck": "stuck" };
 
 const params = new URLSearchParams(location.search);
@@ -1035,7 +1036,7 @@ function buildKpiStrip() {
     let sparkCtl = null;
     if (k.spark) {
       const holder = el("div", "kpi-spark");
-      sparkCtl = sparkline([], { w: 100, h: 26, color: k.unit === "ms" ? "#e0af68" : "#7dcfff", area: true });
+      sparkCtl = sparkline([], { w: 100, h: 26, color: k.unit === "ms" ? PAL.amber : PAL.cyan, area: true });
       holder.append(sparkCtl.el);
       tile.append(holder);
     }
@@ -1287,9 +1288,9 @@ function tideSeries(s) {
     }
   }
   const names = [...byName.keys()].sort((a, b) => byName.get(b).total - byName.get(a).total);
-  const series = [{ label: "baseline", kind: "baseline", color: "#263549", data: new Array(n).fill(base) }];
+  const series = [{ label: "baseline", kind: "baseline", color: PAL.baseline, data: new Array(n).fill(base) }];
   names.forEach((eng, i) => series.push({ label: eng, kind: "holder", color: HOLDER_PALETTE[i % HOLDER_PALETTE.length], data: byName.get(eng).data }));
-  series.push({ label: "squatter", kind: "squat", color: "#f7768e", data: samples.map((sm) => (sm.squat || 0) / GIB) });
+  series.push({ label: "squatter", kind: "squat", color: PAL.rose, data: samples.map((sm) => (sm.squat || 0) / GIB) });
   const events = state.events
     .filter((ev) => EVENT_TONE[ev.kind])
     .map((ev) => ({ t: new Date(ev.at).getTime(), tone: EVENT_TONE[ev.kind], kind: ev.kind, engine: ev.engine || "", detail: ev.detail || "" }));
@@ -1338,7 +1339,7 @@ function paintTideLegend(series) {
     else if (band.kind === "holder") tideLegend.append(mk(band.label, band.color));
   }
   tideLegend.append(mk("squatter", "", true));
-  const free = mk("free (to total)", "#42566e");
+  const free = mk("free (to total)", PAL.free);
   free.classList.add("legend-dim");
   tideLegend.append(free);
 }
@@ -1416,13 +1417,13 @@ function decodeSeries(samples) {
   for (const e of names) {
     out.push({ name: e, color: tpColorOf(e), unit: " t/s", data: samples.map((s) => ((s.decode_tps || {})[e]) || 0) });
   }
-  if (out.length === 0) out.push({ name: "no decode reported", color: "#42566e", unit: "", data: new Array(n).fill(0) });
+  if (out.length === 0) out.push({ name: "no decode reported", color: PAL.free, unit: "", data: new Array(n).fill(0) });
   return out;
 }
 function miniSeries(samples) {
   return [
-    { name: "RPM", color: "#e0af68", unit: "", data: samples.map((s) => s.rpm || 0) },
-    { name: "P95", color: "#7ee0a3", unit: " ms", data: samples.map((s) => s.p95_ms || 0) },
+    { name: "RPM", color: PAL.amber, unit: "", data: samples.map((s) => s.rpm || 0) },
+    { name: "P95", color: PAL.green, unit: " ms", data: samples.map((s) => s.p95_ms || 0) },
   ];
 }
 let tpDecodeChart = null, tpMiniChart = null, tpSig = "";
@@ -1657,9 +1658,9 @@ function updateBerthCharts(s) {
     };
     const maxOf = (a) => a.reduce((m, v) => Math.max(m, v || 0), 0);
     const fmtNow = (a) => { const v = a[a.length - 1] || 0; return v >= 1000 ? (v / 1000).toFixed(1) + "k" : v.toFixed(0); };
-    card.charts.append(mk("UTIL %", pick("util_pct"), "#7dcfff", "%"));
-    card.charts.append(mk("TEMP °C", pick("temp_c"), "#e0af68", "°"));
-    card.charts.append(mk("POWER W", pick("power_w"), "#7ee0a3", "W"));
+    card.charts.append(mk("UTIL %", pick("util_pct"), PAL.cyan, "%"));
+    card.charts.append(mk("TEMP °C", pick("temp_c"), PAL.amber, "°"));
+    card.charts.append(mk("POWER W", pick("power_w"), PAL.green, "W"));
   }
 }
 
@@ -1731,8 +1732,8 @@ function paintMachineCharts() {
   if (!state.status || !state.status.host) return;
   if (samples.length < 2) return;
   const xlabels = samples.map((sm) => fmtClockShort(new Date(sm.t)));
-  const cpu = { name: "CPU %", color: "#7dcfff", data: samples.map((sm) => sm.cpu_pct || 0) };
-  const ram = { name: "RAM GiB", color: "#e0af68", data: samples.map((sm) => (sm.ram_used || 0) / GIB) };
+  const cpu = { name: "CPU %", color: PAL.cyan, data: samples.map((sm) => sm.cpu_pct || 0) };
+  const ram = { name: "RAM GiB", color: PAL.amber, data: samples.map((sm) => (sm.ram_used || 0) / GIB) };
   const cpuChart = lineChart([cpu], { w: 300, h: 90, xLabels: xlabels, yMax: 100, interactive: true, area: true });
   const ramChart = lineChart([ram], { w: 300, h: 90, xLabels: xlabels, interactive: true, area: true });
   const wrap = el("div", "machine-charts-inner");

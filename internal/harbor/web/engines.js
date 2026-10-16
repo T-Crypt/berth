@@ -2,6 +2,7 @@
 // requests). Engine sparklines are browser-sampled, decoded and prefilled from
 // each poll; the ledger/leaderboard/recent come from the node's insights.
 import { el, fmtGiB, fmtNum, fmtAge, fmtClock, fmtTok, fmtPct, fmtMS, na, fmtClockShort, fmtDayShort } from "./util.js";
+import { PAL } from "./palette.js";
 import { sparkline, lineChart } from "./charts.js";
 const HIST = 60;
 // The stored pool chart reads the same range words and step notes the tide
@@ -42,8 +43,8 @@ function makeCard(eng) {
     block.append(el("div", "tps-label", label), value, sparkHolder);
     return { block, num, spark, color };
   };
-  const decode = mkBlock("DECODE", "#7dcfff");
-  const prefill = mkBlock("PREFILL", "#e0af68");
+  const decode = mkBlock("DECODE", PAL.cyan);
+  const prefill = mkBlock("PREFILL", PAL.amber);
   tps.append(decode.block, prefill.block);
   card.append(tps);
   const totals = el("div", "engine-totals");
@@ -365,7 +366,7 @@ export class EngineView {
       const slots = Array.isArray(eng.slots) ? eng.slots : [];
       if (slots.length === 0) continue;
       reporting++;
-      const color = this.colorOf ? this.colorOf(eng.name) : "#7dcfff";
+      const color = this.colorOf ? this.colorOf(eng.name) : PAL.cyan;
       for (const s of slots) {
         const frac = s.window > 0 ? Math.max(0, Math.min(1, s.used / s.window)) : 0;
         const tag = s.model ? " " + s.model : "";
@@ -416,7 +417,7 @@ export class EngineView {
     for (const e of [...names].sort()) {
       series.push({
         name: e,
-        color: this.colorOf ? this.colorOf(e) : "#7dcfff",
+        color: this.colorOf ? this.colorOf(e) : PAL.cyan,
         unit: "%",
         data: samples.map((s) => (((s.kv || {})[e] || {}).pressure || 0) * 100),
       });

@@ -4,6 +4,8 @@
 // when the data signature changes. Strokes use vector-effect non-scaling-stroke
 // so a stretched sparkline keeps a 1px line.
 
+import { PAL, TONE } from "./palette.js";
+
 // The tide and the model timeline share one x geometry: the same viewBox
 // (extended left by LABEL_GUTTER for row labels) and the same left/right
 // plot pads, so both maps are the identity over the container width and a
@@ -135,7 +137,7 @@ export function armTapTip(wrap, tip, show) {
 export function sparkline(series, opts = {}) {
   const w = opts.w || 100;
   const h = opts.h || 28;
-  const o = { color: "#7dcfff", area: true, min: 0, max: null, pad: 2, ...opts };
+  const o = { color: PAL.cyan, area: true, min: 0, max: null, pad: 2, ...opts };
   const el = S("svg", { class: "chart chart-spark", viewBox: `0 0 ${w} ${h}`, preserveAspectRatio: "none" });
   el.setAttribute("aria-hidden", "true");
   const area = S("path", { fill: o.color, opacity: "0.12", stroke: "none" });
@@ -194,7 +196,7 @@ export function lineChart(series, opts = {}) {
   let cross = null;
   let tip = null;
   if (o.interactive) {
-    cross = S("line", { class: "crosshair", y1: padT, y2: padT + plotH, stroke: "rgba(201,212,227,0.4)", "stroke-width": "1", "vector-effect": "non-scaling-stroke" });
+    cross = S("line", { class: "crosshair", y1: padT, y2: padT + plotH, stroke: PAL.rule, "stroke-width": "1", "vector-effect": "non-scaling-stroke" });
     cross.setAttribute("visibility", "hidden");
     el.append(cross);
     tip = makeTip();
@@ -219,7 +221,7 @@ export function lineChart(series, opts = {}) {
     gLabel.replaceChildren();
     for (const tv of ticks(lo, hi, o.yTicks)) {
       const gy = y(tv);
-      gGrid.append(S("line", { x1: padL, x2: padL + plotW, y1: gy, y2: gy, stroke: "#1d2939", "stroke-width": "1", "vector-effect": "non-scaling-stroke" }));
+      gGrid.append(S("line", { x1: padL, x2: padL + plotW, y1: gy, y2: gy, stroke: PAL.grid, "stroke-width": "1", "vector-effect": "non-scaling-stroke" }));
       const t = S("text", { x: padL - 5, y: gy + 3, "text-anchor": "end", class: "tick" });
       t.textContent = o.yFmt ? o.yFmt(tv) : fmtTick(tv);
       gLabel.append(t);
@@ -312,8 +314,10 @@ export function stackedArea(data, opts = {}) {
   wrap.className = "chart-wrap chart-tide";
   const defs = S("defs");
   const pid = "hatch-" + Math.random().toString(36).slice(2, 8);
-  const pat = S("pattern", { id: pid, width: "7", height: "7", patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" });
-  pat.append(S("line", { x1: "0", y1: "0", x2: "0", y2: "7", stroke: "#f7768e", "stroke-width": "3.5" }));
+  // 4px stripes, the same two-tone hatch the memory bar's .seg-squatter uses
+  const pat = S("pattern", { id: pid, width: "8", height: "8", patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" });
+  pat.append(S("line", { x1: "0", y1: "0", x2: "0", y2: "8", stroke: PAL.squatterA, "stroke-width": "4" }));
+  pat.append(S("line", { x1: "4", y1: "0", x2: "4", y2: "8", stroke: PAL.squatterB, "stroke-width": "4" }));
   defs.append(pat);
   const el = S("svg", { class: "chart chart-area", viewBox: `-${LABEL_GUTTER} 0 ${w + LABEL_GUTTER} ${h}`, preserveAspectRatio: "none" });
   el.setAttribute("role", "img");
@@ -323,9 +327,9 @@ export function stackedArea(data, opts = {}) {
   const gEvents = S("g", {});
   const gAxis = S("g", { class: "axis-label" });
   const gX = S("g", { class: "axis-label" });
-  const totalLine = S("line", { class: "total-line", stroke: "rgba(201,212,227,0.5)", "stroke-width": "1", "stroke-dasharray": "5 4", "vector-effect": "non-scaling-stroke" });
+  const totalLine = S("line", { class: "total-line", stroke: PAL.rule, "stroke-width": "1", "stroke-dasharray": "5 4", "vector-effect": "non-scaling-stroke" });
   const totalLabel = S("text", { class: "total-label" });
-  const cross = S("line", { class: "crosshair", y1: padT, y2: padT + plotH, stroke: "rgba(201,212,227,0.5)", "stroke-width": "1", "vector-effect": "non-scaling-stroke" });
+  const cross = S("line", { class: "crosshair", y1: padT, y2: padT + plotH, stroke: PAL.rule, "stroke-width": "1", "vector-effect": "non-scaling-stroke" });
   cross.setAttribute("visibility", "hidden");
   el.append(defs, gGrid, gBands, totalLine, totalLabel, gEvents, gAxis, gX, cross);
   const hit = S("rect", { x: padL, y: padT, width: plotW, height: plotH, fill: "transparent" });
@@ -348,7 +352,7 @@ export function stackedArea(data, opts = {}) {
     const yTicks = ticks(0, total || 1, 4);
     for (const tv of yTicks) {
       const gy = padT + plotH - (tv / (total || 1)) * plotH;
-      gGrid.append(S("line", { x1: padL, x2: padL + plotW, y1: gy, y2: gy, stroke: "#16202f", "stroke-width": "1", "vector-effect": "non-scaling-stroke" }));
+      gGrid.append(S("line", { x1: padL, x2: padL + plotW, y1: gy, y2: gy, stroke: PAL.grid, "stroke-width": "1", "vector-effect": "non-scaling-stroke" }));
       const tx = S("text", { x: padL - 6, y: gy + 3, "text-anchor": "end", class: "tick" });
       tx.textContent = (Math.round(tv * 10) / 10) + "G";
       gAxis.append(tx);
@@ -395,15 +399,15 @@ export function stackedArea(data, opts = {}) {
       const isSquat = band.kind === "squat";
       const isBase = band.kind === "baseline";
       const path = S("path", { d, "vector-effect": "non-scaling-stroke" });
-      path.style.fill = isSquat ? "url(#" + pid + ")" : band.color || "#2b394d";
+      path.style.fill = isSquat ? "url(#" + pid + ")" : band.color || PAL.baseline;
       // translucent bands with a crisp edge read as layers, not slabs of paint
       if (!isSquat) {
         path.style.fillOpacity = isBase ? "0.5" : "0.28";
-        path.style.stroke = band.color || "#2b394d";
+        path.style.stroke = band.color || PAL.baseline;
         path.style.strokeWidth = "1.25";
         path.style.strokeOpacity = "0.9";
       }
-      if (isSquat) path.style.stroke = "#f7768e";
+      if (isSquat) path.style.stroke = PAL.rose;
       path.style.fillRule = "evenodd";
       gBands.append(path);
     }
@@ -412,7 +416,7 @@ export function stackedArea(data, opts = {}) {
     for (const ev of state.events) {
       if (ev.t < state.t0 || ev.t > state.t1) continue;
       const ex = xOf(ev.t);
-      const color = { granted: "#7dcfff", draining: "#e0af68", freed: "#42566e", stuck: "#f7768e" }[ev.tone] || "#42566e";
+      const color = (TONE[ev.tone] || TONE.freed)();
       gEvents.append(S("line", { x1: ex, x2: ex, y1: padT, y2: padT + plotH, stroke: color, "stroke-width": "1", "vector-effect": "non-scaling-stroke", opacity: "0.8" }));
       const dot = S("circle", { cx: ex, cy: padT + 4, r: "2.5", fill: color });
       gEvents.append(dot);
@@ -440,10 +444,10 @@ export function stackedArea(data, opts = {}) {
         const v = (band.data || [])[idx] || 0;
         used += v;
         if (v < 0.05) continue; // a holder with nothing on the card at this moment
-        html.append(tipRow(band.label, v.toFixed(1) + "G", band.kind === "squat" ? "#f7768e" : band.color));
+        html.append(tipRow(band.label, v.toFixed(1) + "G", band.kind === "squat" ? PAL.rose : band.color));
       }
-      html.append(tipRow("used", used.toFixed(1) + "G", "#c9d4e3"));
-      html.append(tipRow("free", Math.max(0, total - used).toFixed(1) + "G", "#42566e"));
+      html.append(tipRow("used", used.toFixed(1) + "G", PAL.ink));
+      html.append(tipRow("free", Math.max(0, total - used).toFixed(1) + "G", PAL.free));
       showTip(tip, wrap, ev, html);
     };
     const inspect = (ev) => {
@@ -519,7 +523,7 @@ export function timelineChart(data, opts = {}) {
       const every = Math.max(1, Math.ceil(tt.length / o.gridLines));
       for (let i = 0; i < tt.length; i += every) {
         const gx = xOf(tt[i], t0, t1);
-        gGrid.append(S("line", { x1: gx, x2: gx, y1: o.padT, y2: h - o.padB, stroke: "#16202f", "stroke-width": "1", "vector-effect": "non-scaling-stroke" }));
+        gGrid.append(S("line", { x1: gx, x2: gx, y1: o.padT, y2: h - o.padB, stroke: PAL.grid, "stroke-width": "1", "vector-effect": "non-scaling-stroke" }));
       }
     }
     rows.forEach((row, i) => {
