@@ -7,10 +7,12 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -36,11 +38,18 @@ type Options struct {
 	// has nothing running or pending before any stop step, so a job is
 	// never cut off. There is no time limit; a job ends when it ends.
 	DrainComfyUI string
-	Grace        time.Duration // per drain step before escalating
-	FailClosed   bool          // refuse to start when berthd is unreachable
-	Retry        time.Duration // how often a run that lost berthd dials it again; 0 = 2s
-	Argv         []string
-	Stderr       io.Writer
+	// KeepComfyUI leaves a drained ComfyUI running: after the queue empties
+	// its models are unloaded via POST /free (VRAM frees while the server
+	// and port stay up for OpenWebUI) and the lease is handed back without
+	// stopping the process. Without it the server is stopped after the
+	// unload, which is also the fallback when the idle footprint still
+	// blocks the next engine. No-op without DrainComfyUI.
+	KeepComfyUI bool
+	Grace       time.Duration // per drain step before escalating
+	FailClosed  bool          // refuse to start when berthd is unreachable
+	Retry       time.Duration // how often a run that lost berthd dials it again; 0 = 2s
+	Argv        []string
+	Stderr      io.Writer
 }
 
 // ExitRefused is EX_TEMPFAIL: no berth was granted.
@@ -96,11 +105,16 @@ func Run(o Options) int {
 	done := make(chan struct{})
 	go forwardSignals(cmd, done)
 
+	// released closes when a drain hands the lease back while the engine
+	// keeps running (ComfyUI keep-up after unload); Run then returns clean
+	// although the engine never exited.
+	released := make(chan struct{})
+
 	var drainOnce sync.Once
 	go func() {
 		for {
 			err := listen(conn, func(reason string) {
-				drainOnce.Do(func() { go drain(o, cmd, done, reason, say) })
+				drainOnce.Do(func() { go drain(o, cmd, done, released, reason, say) })
 			})
 			select {
 			case <-done:
@@ -124,8 +138,20 @@ func Run(o Options) int {
 		}
 	}()
 
-	err = cmd.Wait()
-	close(done)
+	err = func() error {
+		waitCh := make(chan error, 1)
+		go func() { waitCh <- cmd.Wait() }()
+		select {
+		case err := <-waitCh:
+			close(done)
+			return err
+		case <-released:
+			// Keep-up: the engine stays up for its other clients; the
+			// deferred conn close releases the lease with a clean status.
+			close(done)
+			return nil
+		}
+	}()
 	return exitCode(cmd, err)
 }
 
@@ -240,6 +266,162 @@ func comfyQueue(url string) (running, pending int, err error) {
 	return len(q.Running), len(q.Pending), nil
 }
 
+// comfyFree asks a drained ComfyUI to unload its models and free VRAM while
+// staying up, so OpenWebUI keeps answering on its port. The /free shape is
+// ComfyUI's own: unload_models plus free_memory.
+func comfyFree(base string) error {
+	body := strings.NewReader(`{"unload_models":true,"free_memory":true}`)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(base, "/")+"/free", body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return fmt.Errorf("POST /free: %s", resp.Status)
+	}
+	return nil
+}
+
+// slotBoundary waits until the engine behind the drain-post URL reports no
+// processing slot, so an unload never cuts an in-flight request off. A host
+// with no boundary at all (404, an unreachable host, a body that is not a
+// slot list) unloads at once and says so. A sick boundary (any other
+// status, a read timeout) waits like a busy one: Berth then has proof work
+// was running and none that it stopped. An engine that exits meanwhile
+// ends the drain.
+func slotBoundary(o Options, done <-chan struct{}, say func(string, ...any)) bool {
+	base := drainPostBase(o.DrainPost)
+	if base == "" {
+		return true
+	}
+	every := o.Retry
+	if every <= 0 {
+		every = 2 * time.Second
+	}
+	url := base + "/slots"
+	if busy, err := slotsBusy(url); err != nil {
+		if failOpen(err) {
+			say("drain: no slot boundary at %s (%v); unloading anyway", url, err)
+			return true
+		}
+		say("drain: slot boundary unreadable (%v); waiting for it to answer", err)
+	} else if !busy {
+		return true
+	} else {
+		say("waiting for the engine to finish its requests before unloading")
+	}
+	for {
+		select {
+		case <-done:
+			return false
+		case <-time.After(every):
+		}
+		busy, err := slotsBusy(url)
+		if err != nil {
+			say("drain: lost the slot boundary (%v); waiting", err)
+			continue
+		}
+		if !busy {
+			say("engine idle; unloading")
+			return true
+		}
+	}
+}
+
+// drainPostBase is the scheme://host the drain-post URL lives on, where its
+// /slots boundary would answer; empty when the URL has no usable origin.
+func drainPostBase(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
+}
+
+// slotsErr carries enough of a failed /slots read for slotBoundary to
+// tell "no boundary here" from "boundary sick". A status means the host
+// answered; badBody means the body arrived but is not a slot list;
+// timeout means the read hit its deadline without an answer.
+type slotsErr struct {
+	status  int // HTTP status, 0 when no response arrived
+	badBody bool
+	timeout bool
+	err     error
+}
+
+func (e *slotsErr) Error() string { return e.err.Error() }
+
+// failOpen reports whether a /slots failure means no boundary exists, so
+// the drain may unload at once. 404, an unreachable host, or a body that
+// is not a slot list fail open; any other status or a timeout waits.
+func failOpen(err error) bool {
+	var se *slotsErr
+	if !errors.As(err, &se) {
+		return false
+	}
+	if se.badBody {
+		return true
+	}
+	if se.status == http.StatusNotFound {
+		return true
+	}
+	if se.status != 0 {
+		return false
+	}
+	return !se.timeout
+}
+
+func slotsTimeout(err error) bool {
+	var nerr net.Error
+	if errors.As(err, &nerr) && nerr.Timeout() {
+		return true
+	}
+	return errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded)
+}
+
+// slotsBusy reports whether any llama.cpp-style slot is processing. A slot
+// counts on either shape engines serve: a "processing" state or an
+// is_processing bool, the same rule the engine reader uses. Failures come
+// back as a *slotsErr so the caller can tell "no boundary" from "sick
+// boundary" (see failOpen).
+func slotsBusy(url string) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return false, &slotsErr{err: err}
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false, &slotsErr{timeout: slotsTimeout(err), err: err}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false, &slotsErr{status: resp.StatusCode, err: fmt.Errorf("GET /slots: %s", resp.Status)}
+	}
+	var slots []struct {
+		State        string `json:"state"`
+		IsProcessing bool   `json:"is_processing"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&slots); err != nil {
+		return false, &slotsErr{badBody: true, err: fmt.Errorf("/slots: %w", err)}
+	}
+	for _, s := range slots {
+		if s.State == "processing" || s.IsProcessing {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func runUnleased(o Options, reason string) int {
 	cmd := command(o.Argv)
 	if err := cmd.Start(); err != nil {
@@ -291,13 +473,33 @@ func forwardSignals(cmd *exec.Cmd, done <-chan struct{}) {
 	}
 }
 
-// drain stops the engine politely, then less so: the drain URL (llama-swap
-// unloads the model and stops us itself), then a terminate to the process
-// group, then a kill. Each step gets Grace to work.
-func drain(o Options, cmd *exec.Cmd, done <-chan struct{}, reason string, say func(string, ...any)) {
+// drain stops the engine politely, then less so: the ComfyUI unload (models
+// out of VRAM once an empty queue proves no job is running), the drain URL
+// (llama-swap unloads the model and stops us itself, past its slot
+// boundary), then a terminate to the process group, then a kill. Each step
+// gets Grace to work.
+func drain(o Options, cmd *exec.Cmd, done <-chan struct{}, released chan<- struct{}, reason string, say func(string, ...any)) {
 	say("draining %s: %s", o.Engine, reason)
-	if o.DrainComfyUI != "" && !jobBoundary(o, done, say) {
-		return
+	if o.DrainComfyUI != "" {
+		if !jobBoundary(o, done, say) {
+			return
+		}
+		// Unload first: models leave VRAM the moment the queue is known
+		// empty. A failed unload falls through to stopping the server; a
+		// keep-up leaves it on its port for OpenWebUI instead.
+		if err := comfyFree(o.DrainComfyUI); err != nil {
+			say("ComfyUI unload (%v); stopping the server instead", err)
+		} else if o.KeepComfyUI {
+			// The server stays up with no models loaded. Run returns, the
+			// lease is released, and the broker grants once the driver
+			// shows the memory free. An idle server lingering past
+			// ReleaseGrace may still trip the broker's stuck warning.
+			say("ComfyUI models unloaded; leaving the server up")
+			close(released)
+			return
+		} else {
+			say("ComfyUI models unloaded; stopping the server")
+		}
 	}
 	wait := func() bool {
 		select {
@@ -308,6 +510,9 @@ func drain(o Options, cmd *exec.Cmd, done <-chan struct{}, reason string, say fu
 		}
 	}
 	if o.DrainPost != "" {
+		if !slotBoundary(o, done, say) {
+			return
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, o.DrainPost, strings.NewReader(""))
 		resp, err := http.DefaultClient.Do(req)

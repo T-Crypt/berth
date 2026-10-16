@@ -289,6 +289,7 @@ func run(args []string) int {
 	wait := fs.Duration("wait", 0, "how long to wait for a berth; 0 = berthd's default")
 	drainPost := fs.String("drain-post", "", "URL to POST when asked to drain, before signalling (e.g. llama-swap's unload)")
 	drainComfy := fs.String("drain-comfyui", "", "ComfyUI base URL: on drain, wait until its queue is empty before stopping it (never cuts a job off)")
+	keepComfy := fs.Bool("keep-comfyui-up", false, "with --drain-comfyui: unload its models via POST /free and leave the server up instead of stopping it")
 	grace := fs.Duration("grace", 30*time.Second, "time each drain step gets before the next")
 	failClosed := fs.Bool("fail-closed", false, "do not start CMD when berthd is unreachable")
 	fs.Parse(args)
@@ -301,10 +302,23 @@ func run(args []string) int {
 		fmt.Fprintln(os.Stderr, "berth:", err)
 		return 2
 	}
+	if err := checkRunFlags(*keepComfy, *drainComfy); err != nil {
+		fmt.Fprintln(os.Stderr, "berth:", err)
+		return 2
+	}
 	return runner.Run(runner.Options{
 		Socket: *sock, Engine: *engine, Group: *group, Priority: *prio, Needs: *needs * gpu.MiB, Wait: *wait,
-		DrainPost: *drainPost, DrainComfyUI: *drainComfy, Grace: *grace, FailClosed: *failClosed, Argv: fs.Args(), Stderr: os.Stderr,
+		DrainPost: *drainPost, DrainComfyUI: *drainComfy, KeepComfyUI: *keepComfy, Grace: *grace, FailClosed: *failClosed, Argv: fs.Args(), Stderr: os.Stderr,
 	})
+}
+
+// checkRunFlags rejects flag combinations that can never work, mirroring
+// the berth.toml validation, before anything starts.
+func checkRunFlags(keepComfy bool, drainComfy string) error {
+	if keepComfy && drainComfy == "" {
+		return fmt.Errorf("--keep-comfyui-up needs --drain-comfyui, the ComfyUI base URL to unload on drain")
+	}
+	return nil
 }
 
 func status(args []string) int {

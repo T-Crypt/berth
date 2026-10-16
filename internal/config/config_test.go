@@ -244,6 +244,39 @@ start = ["x"]
 	}
 }
 
+func TestComfyUIKeysValidated(t *testing.T) {
+	// A ComfyUI engine may carry a start command with no serves: the
+	// gateway starts it for /prompt, not for a model name.
+	c, err := Load(write(t, `
+[[engine]]
+name          = "comfyui"
+type          = "comfyui"
+url           = "http://127.0.0.1:8188"
+start         = ["comfyui"]
+drain_comfyui = "http://127.0.0.1:8188"
+keep_comfyui_up = true
+`))
+	if err != nil {
+		t.Fatalf("valid comfyui engine refused: %v", err)
+	}
+	if !c.Engine[0].KeepComfyUI || c.Engine[0].DrainComfyUI == "" {
+		t.Fatalf("comfyui drain keys not loaded: %+v", c.Engine[0])
+	}
+	for _, bad := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{"serves", "serves = [\"pic\"]\n", "not through serves"},
+		{"keep without drain", "keep_comfyui_up = true\n", "needs drain_comfyui"},
+	} {
+		_, err := Load(write(t, "[[engine]]\nname = \"c\"\ntype = \"comfyui\"\nurl = \"http://127.0.0.1:8188\"\n"+bad.body))
+		if err == nil || !strings.Contains(err.Error(), bad.want) {
+			t.Errorf("%s: error lacks %q: %v", bad.name, bad.want, err)
+		}
+	}
+}
+
 func TestPriorityValidated(t *testing.T) {
 	c, err := Load(write(t, "[priority]\norder = [\"llama-swap\", \"strata\", \"comfyui\"]\njuggle_window = \"20s\"\n"))
 	if err != nil || len(c.Priority.Order) != 3 || c.Priority.JuggleWindow.Seconds() != 20 {

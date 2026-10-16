@@ -47,6 +47,8 @@ type Engine struct {
 	NeedsRAMMiB  uint64 `toml:"needs_ram_mib"`
 	DrainPost    string `toml:"drain_post"`    // as berth run --drain-post
 	DrainComfyUI string `toml:"drain_comfyui"` // as berth run --drain-comfyui
+	// KeepComfyUI is berth run --keep-comfyui-up: unload and stay up.
+	KeepComfyUI bool `toml:"keep_comfyui_up"`
 }
 
 // Types are the engine readers that exist.
@@ -245,8 +247,14 @@ func (c *Config) Validate() error {
 				served[m] = e.Name
 			}
 		}
-		if len(e.Start) > 0 && len(e.Serves) == 0 {
+		if len(e.Start) > 0 && len(e.Serves) == 0 && e.Type != "comfyui" {
 			errs = append(errs, fmt.Errorf("%s: start needs serves, the models the gateway may start it for", where))
+		}
+		if e.Type == "comfyui" && len(e.Serves) > 0 {
+			errs = append(errs, fmt.Errorf("%s: a comfyui engine is reached at the gateway's /prompt, not through serves (ComfyUI is not OpenAI-compatible)", where))
+		}
+		if e.KeepComfyUI && e.DrainComfyUI == "" {
+			errs = append(errs, fmt.Errorf("%s: keep_comfyui_up needs drain_comfyui, the ComfyUI base URL to unload on drain", where))
 		}
 		switch e.Priority {
 		case "", "batch", "interactive", "foreground":
