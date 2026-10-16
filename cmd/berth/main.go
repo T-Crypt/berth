@@ -160,6 +160,12 @@ func daemon(args []string) int {
 		watcher = &engines.Watcher{Engines: cfg.Engine, Every: cfg.Engines.Every.Duration,
 			Discover: discover, Hosts: cfg.Engines.Hosts, Ports: cfg.Engines.Ports}
 	}
+	var comfyEngines []broker.ComfyEngine
+	for _, e := range cfg.Engine {
+		if e.Type == "comfyui" {
+			comfyEngines = append(comfyEngines, broker.ComfyEngine{Name: e.Name, URL: e.URL})
+		}
+	}
 	b := broker.New(broker.Config{
 		Poll:           *poll,
 		Reserve:        *reserve * gpu.MiB,
@@ -172,6 +178,7 @@ func daemon(args []string) int {
 		Order:          cfg.Priority.Order,
 		JuggleWindow:   cfg.Priority.JuggleWindow.Duration,
 		Busy:           watcher.Busy,
+		Comfy:          comfyEngines,
 		ReattachWindow: *reattachWin,
 		Version:        version,
 		Reporter:       rep,

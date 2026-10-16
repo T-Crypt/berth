@@ -5,10 +5,13 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -291,6 +294,84 @@ func TestKeepUpRunFreesTheReleasedLease(t *testing.T) {
 		t.Fatalf("reports = %s, want the lingering process listed as a run", got)
 	}
 	must(t, acquire(b, Request{Engine: "next"}))
+}
+
+// comfyStub is a ComfyUI whose /free counts calls.
+func comfyStub(t *testing.T) (*httptest.Server, *atomic.Int32) {
+	t.Helper()
+	frees := &atomic.Int32{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/free" {
+			frees.Add(1)
+			_, _ = w.Write([]byte("{}"))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, frees
+}
+
+// An unprotected ComfyUI squatting the card is asked to unload through its
+// own /free, and the waiter is held until the memory is actually free:
+// granting onto its weights can only produce a load that dies (live on
+// 2026-10-16).
+func TestComfySquatIsPokedAndWaited(t *testing.T) {
+	srv, frees := comfyStub(t)
+	tree := procs.Fake{Parents: map[int]int{101: 100}, Starts: map[int]uint64{100: 1, 101: 1}}
+	b, c, _ := setup(t, tree)
+	b.cfg.RunsDir = t.TempDir()
+	b.cfg.Comfy = []ComfyEngine{{Name: "comfyui", URL: srv.URL}}
+	if _, err := runs.Write(b.cfg.RunsDir, runs.Record{
+		Engine: "comfyui", PID: 100, Start: 1, Started: time.Now(), Reason: runs.ReasonKeepUp,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	c.set(gpu.Proc{PID: 101, Name: "python", Used: 17 * GiB})
+	b.Tick(context.Background())
+
+	ch := acquire(b, Request{Engine: "ninfer"})
+	pending(t, ch)
+	b.Tick(context.Background())
+	b.Tick(context.Background())
+	select {
+	case res := <-ch:
+		t.Fatalf("granted while ComfyUI squatted: %+v", res)
+	default:
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for frees.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if got := frees.Load(); got != 1 {
+		t.Fatalf("free asks = %d, want exactly 1 (rate limited)", got)
+	}
+
+	// The unload lands: the server stays alive, well under the threshold.
+	c.set(gpu.Proc{PID: 101, Name: "python", Used: 512 << 20})
+	b.Tick(context.Background())
+	must(t, ch)
+}
+
+// An unprotected run whose engine is not a configured ComfyUI keeps the
+// old behavior: nothing to ask, so a whole-card request is granted and the
+// contested counter flags the fit.
+func TestSquatWithoutComfyStillGrants(t *testing.T) {
+	srv, _ := comfyStub(t)
+	tree := procs.Fake{Parents: map[int]int{101: 100}, Starts: map[int]uint64{100: 1, 101: 1}}
+	b, c, _ := setup(t, tree)
+	b.cfg.RunsDir = t.TempDir()
+	b.cfg.Comfy = []ComfyEngine{{Name: "comfyui", URL: srv.URL}}
+	if _, err := runs.Write(b.cfg.RunsDir, runs.Record{
+		Engine: "strata", PID: 100, Start: 1, Started: time.Now(), Reason: runs.ReasonKeepUp,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	c.set(gpu.Proc{PID: 101, Name: "python", Used: 2 * GiB})
+	b.Tick(context.Background())
+	must(t, acquire(b, Request{Engine: "ninfer"}))
 }
 
 // Gap a: a PID that a lease's engine once had, reused by an unrelated

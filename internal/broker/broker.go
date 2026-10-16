@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -100,6 +102,11 @@ type Config struct {
 	// juggle; an idle one hands the card over at once. nil, or known=false,
 	// counts as busy.
 	Busy func(key string) (busy, known bool)
+	// Comfy are the node's configured ComfyUI engines (run name, base URL).
+	// When an unprotected run of one squats the card, a waiter asks it to
+	// unload its models through its own /free and waits for the memory,
+	// instead of granting a load onto weights that can only die. Empty = off.
+	Comfy []ComfyEngine
 	// ReattachWindow is how long a starting daemon holds new grants while
 	// engines that lost the previous daemon mid-run are still alive and
 	// due to re-attach.
@@ -108,6 +115,25 @@ type Config struct {
 	Reporter       Reporter
 	Log            *slog.Logger
 }
+
+// ComfyEngine names one configured ComfyUI engine: the unprotected run
+// name berth run records when a keep-up drain leaves the server behind,
+// and the base URL its /free lives on.
+type ComfyEngine struct {
+	Name string
+	URL  string
+}
+
+const (
+	// comfySquatMin is the weight of an unprotected ComfyUI that is worth
+	// freeing before a grant: an idle unloaded server holds a few hundred
+	// MiB and never blocks one.
+	comfySquatMin = 1 << 30
+	// comfyPokeEvery rate limits the unload ask per engine while a waiter
+	// is blocked. ComfyUI applies /free at its job boundary, so a busy
+	// server sees repeats only until the first ask lands.
+	comfyPokeEvery = 15 * time.Second
+)
 
 type Request struct {
 	Engine   string
@@ -176,9 +202,12 @@ type Broker struct {
 	leases    map[string]*lease // granted: active, draining, releasing
 	queue     []*lease
 	squatters map[ident]*squatter
-	runs      []runs.Record
-	nextID    int
-	started   time.Time
+	// comfyPoked is the last unload ask per ComfyUI engine, rate limiting
+	// comfyPoke while a waiter is blocked.
+	comfyPoked map[string]time.Time
+	runs       []runs.Record
+	nextID     int
+	started    time.Time
 
 	events   []proto.Event // ring, oldest first
 	seq      uint64
@@ -299,14 +328,15 @@ func New(cfg Config, probe gpu.Probe, tree procs.Tree) *Broker {
 	}
 	return &Broker{
 		cfg: cfg, probe: probe, tree: tree, log: log, runs: rs,
-		leases:    map[string]*lease{},
-		squatters: map[ident]*squatter{},
-		subs:      map[chan proto.Event]struct{}{},
-		counters:  counters,
-		saved:     counters,
-		verdicts:  map[string]verdict{},
-		usage:     use,
-		started:   time.Now(),
+		leases:     map[string]*lease{},
+		squatters:  map[ident]*squatter{},
+		comfyPoked: map[string]time.Time{},
+		subs:       map[chan proto.Event]struct{}{},
+		counters:   counters,
+		saved:      counters,
+		verdicts:   map[string]verdict{},
+		usage:      use,
+		started:    time.Now(),
 	}
 }
 
@@ -718,6 +748,69 @@ func (b *Broker) squatBytes() uint64 {
 	return n
 }
 
+// comfySquat reports what unprotected ComfyUI runs hold right now, and
+// which configured engines those are. An idle unloaded server stays under
+// comfySquatMin and never blocks a grant.
+func (b *Broker) comfySquat() (uint64, []ComfyEngine) {
+	if len(b.cfg.Comfy) == 0 {
+		return 0, nil
+	}
+	var n uint64
+	var squat []ComfyEngine
+	for _, e := range b.cfg.Comfy {
+		for _, s := range b.squatters {
+			if s.run == e.Name && s.proc.Used > 0 {
+				n += s.proc.Used
+				squat = append(squat, e)
+				break
+			}
+		}
+	}
+	if n < comfySquatMin {
+		return 0, nil
+	}
+	return n, squat
+}
+
+// comfyPoke asks a squatting ComfyUI to unload its models through its own
+// /free. Rate limited per engine: evaluate runs every tick while a waiter
+// is blocked, the engine hears about it at most once per comfyPokeEvery.
+// The request runs in the background so a slow server cannot stall the
+// scheduler; failures stay silent because the wait reason already said
+// the ask went out.
+func (b *Broker) comfyPoke(now time.Time, engines []ComfyEngine) {
+	for _, e := range engines {
+		if e.URL == "" {
+			continue
+		}
+		if last, ok := b.comfyPoked[e.Name]; ok && now.Sub(last) < comfyPokeEvery {
+			continue
+		}
+		b.comfyPoked[e.Name] = now
+		go postComfyFree(e.URL)
+	}
+}
+
+// postComfyFree is ComfyUI's own eviction call, its shape: unload_models
+// plus free_memory. It applies at the job boundary, so it never cuts a
+// running generation off.
+func postComfyFree(base string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	body := strings.NewReader(`{"unload_models":true,"free_memory":true}`)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(base, "/")+"/free", body)
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+}
+
 // cardBudget is one schedule/evaluate pass's view of the card: what the
 // card holds in total, what is already spoken for, and what is left for
 // the waiter's needs. evaluate branches on this, not on scattered uint64s.
@@ -753,15 +846,28 @@ func (b *Broker) evaluate(w *lease, now time.Time) (bool, string, []*lease) {
 		// are no victims: a sized request that does not fit the
 		// unleased remainder waits head-of-queue (nobody jumps a
 		// blocked waiter) until the driver shows the memory free.
-		// Whole-card requests still grant; squatters are report-only
-		// and the contested counter flags the fit.
+		// A configured ComfyUI squatting the card is the one squatter
+		// that can hand memory back on request: ask it to unload its
+		// models (its own /free, applied at its job boundary) and wait
+		// for the memory, instead of granting a load onto weights that
+		// can only die.
+		comfyBytes, comfy := b.comfySquat()
 		if w.needs > 0 && budget.avail() < w.needs {
 			reason := fmt.Sprintf("needs %d MiB; at most %d MiB can be freed",
 				w.needs/gpu.MiB, budget.avail()/gpu.MiB)
 			if budget.squat > 0 {
 				reason += fmt.Sprintf("; squatters hold %d MiB", budget.squat/gpu.MiB)
 			}
+			if comfyBytes > 0 {
+				b.comfyPoke(now, comfy)
+				reason += "; asked ComfyUI to free its models"
+			}
 			return false, reason, nil
+		}
+		if comfyBytes > 0 && w.needs == 0 {
+			b.comfyPoke(now, comfy)
+			return false, fmt.Sprintf("waiting for ComfyUI to free its models (%d MiB squatted)",
+				comfyBytes/gpu.MiB), nil
 		}
 		return true, "", nil
 	}
