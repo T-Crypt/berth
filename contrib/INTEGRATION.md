@@ -34,14 +34,24 @@ and starts the engine when it is granted. Give it a long `--wait` so it does not
 
 ## llama-swap
 
-Prefix each model's `cmd` with `berth run`, and use llama-swap's own unload URL as the drain so
+Every model waits for the card only if its own `cmd` runs through `berth run`. Wire the whole
+roster in one pass instead of editing one model at a time:
+
+```sh
+berth wire llama-swap --config /etc/llama-swap/config.yaml --write
+berth wire llama-swap --config /etc/llama-swap/config.yaml --check  # exit 1 when unwired
+```
+
+It keeps a backup beside the file and stays re-runnable when the roster changes; point `--api`
+at llama-swap's base URL when it listens elsewhere than `http://127.0.0.1:9090`. Under the
+hood each model's `cmd` gains one wrapper line, and llama-swap's own unload URL is the drain so
 llama-swap's state stays consistent:
 
 ```yaml
 models:
   "qwen3-30b":
     cmd: >
-      berth run --as qwen3-30b --priority foreground
+      berth run --as qwen3-30b --group llama-swap --priority foreground
       --drain-post http://127.0.0.1:8080/api/models/unload/qwen3-30b --
       llama-server --port ${PORT} -m /models/qwen3-30b.gguf --metrics
 ```

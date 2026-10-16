@@ -136,10 +136,12 @@ Linux machine, following its README and contrib/INTEGRATION.md. Steps:
    ComfyUI, LM Studio, KoboldCpp, TabbyAPI, LocalAI and so on): what runs them (systemd unit,
    llama-swap config, script) and on which port. Show me the list before changing anything.
 5. For each engine I approve, wrap its start command in `berth run` as contrib/INTEGRATION.md
-   shows (llama-swap: per-model cmd with the unload URL as --drain-post; ComfyUI: contrib/
-   comfyui.service with --drain-comfyui; Ollama: a systemd override of `ollama serve`). Ask me
-   which engine wins the card (--priority foreground) and which waits (interactive or batch).
-   Back up every file before you edit it and tell me how to undo each change.
+   shows (ComfyUI: contrib/comfyui.service with --drain-comfyui; Ollama: a systemd override of
+   `ollama serve`). For llama-swap, wire the whole roster in one pass instead of one model at a
+   time: `berth wire llama-swap --config <llama-swap config> --write` keeps a backup beside the
+   file, keeps each model's original command, and `--check` exits 1 when a model is unwired.
+   Ask me which engine wins the card (--priority foreground) and which waits (interactive or
+   batch). Back up every file before you edit it and tell me how to undo each change.
 6. Engines on non-default ports or other machines: add [[engine]] entries or
    [engines] discover_ports / discover_hosts to ~/.config/berth/berth.toml, then run
    `berth config check` and `berth engine check`.
@@ -357,10 +359,14 @@ engine's figures are its own claims and are shown apart from what the driver mea
 
 ### Interfaces
 - **CLI:** one command tree with one output contract. `berth status`, `berth events -f`,
-  `berth run`, `berth engine check`, `berth config check`, `berth config show`, `berth export`,
-  `berth gateway`, `berth key`, `berth version`. Berth runs fully headless.
+  `berth run`, `berth wire llama-swap`, `berth engine check`, `berth config check`,
+  `berth config show`, `berth export`, `berth gateway`, `berth key`, `berth version`. Berth
+  runs fully headless.
 
   ```sh
+  berth wire llama-swap --config cfg.yaml          # plan: which models lack a wrapper
+  berth wire llama-swap --config cfg.yaml --write  # apply; a backup stays beside the file
+  berth wire llama-swap --config cfg.yaml --check  # exit 1 when a model is unwired
   berth config check --strict          # a warning fails the check, exit 1
   berth config show --format toml      # the evaluated config, ready to save
   berth engine check -v                # what each engine reports, right now
