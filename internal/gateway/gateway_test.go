@@ -285,6 +285,43 @@ func TestGuard(t *testing.T) {
 	}
 }
 
+// TestAllowHosts proves a loopback gateway behind a same-machine proxy (tailscale
+// serve forwards the tailnet name as Host): the named host is admitted with the
+// key, the key and Origin checks still apply to it, and any other name stays refused.
+func TestAllowHosts(t *testing.T) {
+	sock, _ := daemon(t)
+	g := &Gateway{Socket: sock, Key: testKey, AllowHosts: []string{"box.tail1234.ts.net"}}
+	gw := httptest.NewServer(g.Handler())
+	defer gw.Close()
+	cases := []struct {
+		name   string
+		host   string
+		header map[string]string
+		want   int
+	}{
+		{"allowed name, key", "box.tail1234.ts.net:9799", map[string]string{"Authorization": "Bearer " + testKey}, http.StatusOK},
+		{"allowed name, any case", "BOX.tail1234.ts.net", map[string]string{"Authorization": "Bearer " + testKey}, http.StatusOK},
+		{"allowed name, no key", "box.tail1234.ts.net", nil, http.StatusUnauthorized},
+		{"allowed name, browser page", "box.tail1234.ts.net", map[string]string{"Authorization": "Bearer " + testKey, "Origin": "https://evil.example"}, http.StatusForbidden},
+		{"other name", "evil.example", map[string]string{"Authorization": "Bearer " + testKey}, http.StatusForbidden},
+	}
+	for _, c := range cases {
+		req, _ := http.NewRequest("GET", gw.URL+"/v1/models", nil)
+		req.Host = c.host
+		for k, v := range c.header {
+			req.Header.Set(k, v)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != c.want {
+			t.Errorf("%s: status %d, want %d", c.name, resp.StatusCode, c.want)
+		}
+	}
+}
+
 func TestDecideGuard(t *testing.T) {
 	const GiB = uint64(1 << 30)
 	cases := []struct {

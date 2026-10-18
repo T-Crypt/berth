@@ -42,8 +42,12 @@ type Gateway struct {
 	Engines []config.Engine // configured engines; those with Start can be started on demand
 	Ready   time.Duration   // how long a start may wait for a berth and then to answer; 0 = 10 min
 	Key     string          // the node's API key; required on every request
-	Log     *slog.Logger
-	Client  *http.Client
+	// AllowHosts are extra Host names the loopback gateway answers to: the name a
+	// same-machine reverse proxy (tailscale serve) forwards. The listener stays on
+	// loopback and the key and Origin checks still apply.
+	AllowHosts []string
+	Log        *slog.Logger
+	Client     *http.Client
 	// HeadroomFloor is the RAM kept for the rest of the machine on a cold
 	// start; 0 = defaultHeadroomFloor.
 	HeadroomFloor uint64
@@ -142,7 +146,7 @@ func (g *Gateway) Handler() http.Handler {
 func (g *Gateway) guard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case !loopbackHost(r.Host):
+		case !loopbackHost(r.Host) && !g.allowedHost(r.Host):
 			apiError(w, http.StatusForbidden, "call the gateway at 127.0.0.1 or localhost")
 		case r.Header.Get("Origin") != "":
 			apiError(w, http.StatusForbidden, "the gateway does not answer browser pages")
@@ -153,6 +157,20 @@ func (g *Gateway) guard(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		}
 	})
+}
+
+// allowedHost reports whether host, port stripped, is one of AllowHosts.
+func (g *Gateway) allowedHost(host string) bool {
+	name := host
+	if hh, _, err := net.SplitHostPort(host); err == nil {
+		name = hh
+	}
+	for _, a := range g.AllowHosts {
+		if a != "" && strings.EqualFold(name, a) {
+			return true
+		}
+	}
+	return false
 }
 
 func loopbackHost(host string) bool {

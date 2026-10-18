@@ -25,6 +25,8 @@ func runGateway(c *Context) int {
 	ready := fs.Duration("ready", 10*time.Minute, "how long a start may wait for a berth and then to answer")
 	headroomMiB := fs.Uint64("headroom-mib", 2048, "RAM kept for the machine on a cold start; a start leaving less available is refused")
 	keyFile := fs.String("key-file", apikey.DefaultPath(), "the node's API key, created on first start ($BERTH_API_KEY_FILE)")
+	var allow hostList
+	fs.Var(&allow, "allow-host", "extra Host name the loopback gateway answers to, for a same-machine reverse proxy such as tailscale serve (repeatable or comma-separated)")
 	if code, done := c.Parse(fs); done {
 		return code
 	}
@@ -44,7 +46,7 @@ func runGateway(c *Context) int {
 	if err != nil {
 		return c.fail(Systemf("api key: %v", err))
 	}
-	g := &gateway.Gateway{Socket: *sock, Engines: cfg.Engine, Ready: *ready, Key: key, Log: log, HeadroomFloor: *headroomMiB << 20}
+	g := &gateway.Gateway{Socket: *sock, Engines: cfg.Engine, Ready: *ready, Key: key, Log: log, HeadroomFloor: *headroomMiB << 20, AllowHosts: allow}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	srv := &http.Server{Addr: *listen, Handler: g.Handler(), ReadHeaderTimeout: 10 * time.Second}
