@@ -202,8 +202,9 @@ exits; with it, new events stream until you interrupt it.`,
 notifications. The error level, the default, shows refused requests, memory
 that never came back, stowaways and a parked engine loaded behind Berth's
 back. info adds every switch, drain, park and resume. [notify] enabled = false
-in berth.toml turns it off; [notify] level sets the level. Linux only for now:
-it uses notify-send, so any desktop or notification daemon shows it.`,
+in berth.toml turns it off; [notify] level sets the level. On Linux it uses
+notify-send, so any desktop or notification daemon shows it. On Windows it is a
+tray icon whose notifications are Windows' own toasts; a click opens the harbor.`,
 		Run: runNotify,
 	},
 	{

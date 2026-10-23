@@ -6,6 +6,13 @@ has a matching GitHub release whose body comes from its section below.
 
 ## [Unreleased]
 
+### Added
+
+- On Windows, `berth notify` is a tray icon in the taskbar. Its notifications are Windows' own toasts, and a click
+  opens the harbor. The tooltip shows the latest event, and keeps it after explorer restarts. The menu opens the
+  harbor, turns the toasts off and on, lists the last 10 events and quits. `berth service install --notify`
+  starts it at logon for the current user ([#186](https://github.com/T-Crypt/berth/pull/186)).
+
 ## [v0.5.0] - 2026-11-08
 
 v0.5.0 puts the switchboard on a phone and lets one node send a request to another. The harbor's SWITCH tab

@@ -1,16 +1,17 @@
 // Copyright 2026 Trevin Tindall (T-Crypt)
 // SPDX-License-Identifier: Apache-2.0
 
-//go:build !linux
+//go:build !linux && !windows
 
 package notify
 
 import (
+	"context"
 	"errors"
 	"runtime"
 )
 
-// Desktop has no notification service on this system yet.
-func Desktop() (Sender, error) {
-	return nil, errors.New("desktop notifications are not supported on " + runtime.GOOS + " yet")
+// Serve has no notification service on this system yet.
+func Serve(context.Context, string, func(Sender)) error {
+	return errors.New("desktop notifications are not supported on " + runtime.GOOS + " yet")
 }

@@ -4,19 +4,22 @@
 package notify
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 )
 
-// Desktop is the desktop's notification service: notify-send, which
-// speaks the freedesktop notification interface every Linux desktop and
-// notification daemon (mako, dunst, swaync, KDE, GNOME) serves.
-func Desktop() (Sender, error) {
+// Serve shows the notes follow sends through notify-send, which speaks
+// the freedesktop notification interface every Linux desktop and
+// notification daemon (mako, dunst, swaync, KDE, GNOME) serves. harbor is
+// unused here: a Linux notification has no click target.
+func Serve(_ context.Context, _ string, follow func(Sender)) error {
 	bin, err := exec.LookPath("notify-send")
 	if err != nil {
-		return nil, fmt.Errorf("notify-send is not installed (libnotify): %w", err)
+		return fmt.Errorf("notify-send is not installed (libnotify): %w", err)
 	}
-	return notifySend(bin), nil
+	follow(notifySend(bin))
+	return nil
 }
 
 type notifySend string
