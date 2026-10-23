@@ -181,7 +181,7 @@ func runServiceInstall(c *Context) int {
 	fs := c.FlagSet()
 	gateway := fs.Bool("gateway", false, "also install the gateway")
 	harbor := fs.Bool("harbor", false, "also install the harbor")
-	notifyToo := fs.Bool("notify", false, "also install berth notify, desktop notifications (Linux)")
+	notifyToo := fs.Bool("notify", false, "also start berth notify, desktop notifications: a user unit on Linux, the tray at logon on Windows")
 	dryRun := fs.Bool("dry-run", false, "print what would be written and run, change nothing")
 	backend := fs.String("gpu-backend", "auto", "daemon GPU probe: auto, nvidia or amd")
 	card := fs.String("gpu", "0", "daemon GPU index (AMD: DRM cardN number), or an NVIDIA card's PCI address (0000:02:00.0)")
@@ -209,13 +209,21 @@ func runServiceInstall(c *Context) int {
 		return c.fail(Systemf("find the berth binary: %v", err))
 	}
 	units := serviceUnitsForGPU(exe, *gateway, *harbor, *backend, *card)
-	if *notifyToo {
-		if runtime.GOOS != "linux" {
-			return c.fail(Failf("--notify installs a Linux user unit; on %s, run berth notify in your own session", runtime.GOOS))
-		}
+	switch {
+	case !*notifyToo:
+	case runtime.GOOS == "linux":
 		units = append(units, notifyUnit(exe))
+	case runtime.GOOS != "windows":
+		return c.fail(Failf("--notify is for Linux and Windows; on %s, run berth notify in your own session", runtime.GOOS))
 	}
 	doc, e := serviceInstall(context.Background(), liveServiceOps(), units, *dryRun)
+	if e == nil && *notifyToo && runtime.GOOS == "windows" {
+		line, err := notifyAtLogon(exe, true, *dryRun)
+		doc.Commands = append(doc.Commands, line)
+		if err != nil {
+			e = Systemf("start berth notify at logon: %v", err)
+		}
+	}
 	return c.Write(serviceView{verb: "install", doc: *doc}, e)
 }
 
@@ -229,6 +237,13 @@ func runServiceUninstall(c *Context) int {
 		return code
 	}
 	doc, e := serviceUninstall(context.Background(), liveServiceOps(), allUnits(), *dryRun)
+	if e == nil && runtime.GOOS == "windows" {
+		line, err := notifyAtLogon("", false, *dryRun)
+		doc.Commands = append(doc.Commands, line)
+		if err != nil {
+			e = Systemf("stop starting berth notify at logon: %v", err)
+		}
+	}
 	return c.Write(serviceView{verb: "uninstall", doc: *doc}, e)
 }
 

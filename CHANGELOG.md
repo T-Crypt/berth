@@ -11,7 +11,10 @@ has a matching GitHub release whose body comes from its section below.
 - `berth notify` shows berthd's events as desktop notifications, so a refused request, a stuck lease, a stowaway
   or a parked engine loaded behind Berth's back shows up without the harbor open. `[notify] level = "info"` adds
   every switch, drain, park and resume; `[notify] enabled = false` turns it off. `berth service install --notify`
-  runs it as a user unit. Linux only for now, through `notify-send`.
+  runs it as a user unit. Linux shows them through `notify-send`.
+- On Windows, `berth notify` is a tray icon in the taskbar. Its notifications are Windows' own toasts, and a click
+  opens the harbor. The menu opens the harbor, turns the toasts off and on, lists the last 10 events and quits.
+  `berth service install --notify` starts it at logon for the current user.
 - `berth gateway --comfyui-listen ADDR` serves ComfyUI's own port behind Berth: the web UI, API, websocket and
   custom node routes pass through with no key, and a queued workflow (`/prompt` or the web UI's `/api/prompt`)
   first wakes or starts ComfyUI under its lease as a person's switch. A client or a LAN forwarder pointed there

@@ -102,3 +102,20 @@ func (g *Gate) Let(n Note, now time.Time) bool {
 	g.last[key] = now
 	return true
 }
+
+// Recent is the last few notes shown, newest first: the tray's menu.
+type Recent struct {
+	Max   int
+	notes []Note
+}
+
+// Add puts n first and drops the oldest past Max.
+func (r *Recent) Add(n Note) {
+	r.notes = append([]Note{n}, r.notes...)
+	if len(r.notes) > r.Max {
+		r.notes = r.notes[:r.Max]
+	}
+}
+
+// Notes are the notes, newest first.
+func (r *Recent) Notes() []Note { return r.notes }

@@ -5,6 +5,7 @@ package cli
 
 import (
 	"context"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -44,15 +45,19 @@ func runNotify(c *Context) int {
 	if err != nil {
 		return c.fail(Failf("%v", err))
 	}
-	sender, err := notify.Desktop()
-	if err != nil {
-		return c.fail(Systemf("%v", err))
-	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	log := c.Log()
 	log.Info("notifications on", "level", raw, "socket", *sock)
-	notify.Follow(ctx, eventSource(*sock), sender, level, time.Now(), 2*time.Second, log)
+	harbor := localURL(resolveListen("", cfg.Harbor.Listen, DefaultHarborListen))
+	start := time.Now()
+	err = notify.Serve(ctx, harbor, func(s notify.Sender) {
+		notify.Follow(ctx, eventSource(*sock), s, level, start, 2*time.Second, log)
+		stop()
+	})
+	if err != nil {
+		return c.fail(Systemf("%v", err))
+	}
 	return ExitOK
 }
 
@@ -89,4 +94,13 @@ func eventSource(sock string) notify.Source {
 		}()
 		return out, nil
 	}
+}
+
+// localURL is the harbor's address as this machine opens it: a wildcard
+// listen is reached on loopback.
+func localURL(addr string) string {
+	if host, port, err := net.SplitHostPort(addr); err == nil && (host == "" || host == "0.0.0.0" || host == "::") {
+		addr = net.JoinHostPort("127.0.0.1", port)
+	}
+	return "http://" + addr + "/"
 }
