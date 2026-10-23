@@ -117,8 +117,11 @@ for a phone.
   lease, a refused park and a parked engine loaded behind Berth's back. `level = "info"`
   adds every switch, drain, park, resume and VM handoff. A burst of one event shows once.
   Set it in `berth.toml` (`[notify] enabled = false` turns it off) or with `--level`.
-  `berth service install --notify` runs it as a user unit. It is Linux only for now and
-  uses `notify-send`, so any desktop or notification daemon shows it.
+  On Linux it uses `notify-send`, so any desktop or notification daemon shows it, and
+  `berth service install --notify` runs it as a user unit. On Windows it is a tray icon in
+  the taskbar: its notifications are Windows' own toasts (a click opens the harbor), its
+  tooltip is the latest event, and its menu opens the harbor, turns the toasts off and on,
+  lists the last 10 events and quits. `berth service install --notify` starts it at logon.
 
 ## The harbor's views
 Everything the node collects shows in one of three tabs, and every panel answers a
