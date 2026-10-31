@@ -278,7 +278,9 @@ curl -s http://127.0.0.1:9799/v1/berth/stop   -H "Authorization: Bearer $(berth 
 free, held, draining, in a VM or failing its probe), then every engine in `berth.toml` with its state (up, offline,
 waiting, starting, failed), whether it can be switched to (`launch`) or stopped (`stoppable`), and its models with a
 `loaded` flag from the engine's own reader. `cards` lists every card the node governs, each with its name
-on the node (`card`, such as `gpu1`) and the holders on that card alone.
+on the node (`card`, such as `gpu1`), its base URL on this gateway (`base`, `/cards/gpu1/v1`), `cordoned` when
+`berth cordon` closed it, and the holders on that card alone. Each engine names the cards its entry runs on
+(`cards`), so a board for several cards can put each engine under its card.
 
 ## One URL per card
 
@@ -433,6 +435,8 @@ Point the bookmark (or a home-page tile) at `http://127.0.0.1:9796/gui/comfyui` 
 - `/gui/` lists every engine in `berth.toml` with its live state. Any engine with a `start` command gets a Launch
   button there, with or without a `gui` URL, so a phone on the tailnet can switch the card to Strata or a
   llama-server too. An engine with no web UI shows **Running** once it answers.
+- On a node with several cards, each row in `/gui/` also names its card. With one engine per card for a model
+  ([One URL per card](#one-url-per-card)), the row you launch is the card you pick.
 
 <p align="center"><img src="https://raw.githubusercontent.com/T-Crypt/berth/main/assets/preview-wake.png" alt="The gateway's wake page for comfyui: comfyui is offline and the card is free, with a Launch comfyui button" width="560"></p>
 

@@ -146,6 +146,9 @@ type guiRow struct {
 	Detail  string    `json:"detail,omitempty"` // the start's last log line, or its error
 	Code    string    `json:"code,omitempty"`
 	Card    []guiHold `json:"card,omitempty"`
+	// Cards are the cards the engine's entry runs on, by name; empty while
+	// berthd does not answer.
+	Cards []string `json:"cards,omitempty"`
 }
 
 // guiRowFor is the static part of an engine's row: what it is. The state
@@ -181,6 +184,9 @@ func (g *Gateway) guiRows(ctx context.Context, status *proto.Status) []guiRow {
 	for i := range g.Engines {
 		e := &g.Engines[i]
 		row := guiRowFor(e)
+		if status != nil {
+			row.Cards = node.CardsOf(status, e.GPU)
+		}
 		if g.probe(ctx, e) {
 			row.State = "up"
 			row.Message = e.Name + " is ready"
