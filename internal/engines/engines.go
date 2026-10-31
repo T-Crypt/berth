@@ -153,9 +153,9 @@ func (w *Watcher) Poll(ctx context.Context) {
 	w.mu.Unlock()
 }
 
-// Finished records that the engine named name exited cleanly, so it
-// stopped answering on purpose: its latch clears, and a reading taken
-// before the exit cannot latch it again.
+// Finished records that the engine named name ended on purpose (exit 0,
+// or a stop its run carried out), so it stopped answering on purpose: its
+// latch clears, and a reading taken before the exit cannot latch it again.
 func (w *Watcher) Finished(name string) {
 	if w == nil {
 		return
