@@ -15,6 +15,7 @@ import (
 
 	"github.com/T-Crypt/berth/internal/broker"
 	"github.com/T-Crypt/berth/internal/eventlog"
+	"github.com/T-Crypt/berth/internal/gpu"
 	"github.com/T-Crypt/berth/internal/node"
 	"github.com/T-Crypt/berth/internal/procs"
 	"github.com/T-Crypt/berth/internal/proto"
@@ -25,33 +26,59 @@ import (
 // event log as berthd's cards do, and notes one event on the last card.
 func startNode(t *testing.T, names ...string) string {
 	t.Helper()
+	sock, brokers := serveNode(t, names...)
+	brokers[len(brokers)-1].Note(proto.Event{Kind: proto.EvAlertRaised, Detail: "too hot"})
+	return sock
+}
+
+// serveNode runs a real berthd over one broker per named card, the card at
+// position i reading as nvidia-smi index i, and returns the brokers in order.
+func serveNode(t *testing.T, names ...string) (string, []*broker.Broker) {
+	t.Helper()
 	sock := filepath.Join(t.TempDir(), "berth.sock")
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	events, ids := eventlog.New(), &atomic.Uint64{}
 	var cards []*node.Card
-	for _, name := range names {
+	var brokers []*broker.Broker
+	for i, name := range names {
 		b := broker.New(broker.Config{
 			Card: name, Events: events, IDs: ids,
 			Poll: 20 * time.Millisecond, DefaultWait: 5 * time.Second, JuggleWindow: -1,
 			Version: "test", Log: log,
-		}, emptyCard{}, procs.System{})
+		}, indexCard(i), procs.System{})
 		b.Tick(ctx)
 		go b.Run(ctx)
 		cards = append(cards, &node.Card{Name: name, B: b})
+		brokers = append(brokers, b)
 	}
 	n, err := node.New(events, ids, cards...)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cards[len(cards)-1].B.Note(proto.Event{Kind: proto.EvAlertRaised, Detail: "too hot"})
 	ln, err := server.Listen(sock)
 	if err != nil {
 		t.Fatal(err)
 	}
 	go server.Serve(ctx, ln, n, server.Extras{}, log)
-	return sock
+	return sock, brokers
+}
+
+// indexCard is an empty card that nvidia-smi numbers with its value.
+type indexCard int
+
+func (i indexCard) Read(context.Context) (gpu.Snapshot, error) {
+	return gpu.Snapshot{Index: int(i), Total: 24 << 30, Free: 24 << 30, At: time.Now()}, nil
+}
+
+// leaseNames is the engines holding a lease on b.
+func leaseNames(b *broker.Broker) []string {
+	var out []string
+	for _, l := range b.Status().Leases {
+		out = append(out, l.Engine)
+	}
+	return out
 }
 
 // An event line names its card once berthd runs more than one, as the CARD

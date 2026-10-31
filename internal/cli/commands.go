@@ -240,11 +240,13 @@ device for the actions.`,
 	{
 		Name:    "hold",
 		Summary: "keep the card free for a game or a call; engines wait",
-		Args:    "[--for D] [--reason R] [--needs-mib N] [--wait D]",
+		Args:    "[--gpu CARD] [--for D] [--reason R] [--needs-mib N] [--wait D]",
 		Help: `Hold the card for yourself. Every engine on it is drained the usual way,
 none starts while the hold lasts, and nothing drains the hold: it is a pinned
 lease at the top priority. It ends on Ctrl-C, after --for, or when this
 process dies, so a forgotten terminal never strands the card for long.
+--gpu names the card on a node with several (gpu1, its PCI address, or a comma
+list); without it the hold takes the node's first card.
 
 Games you launch from Steam, Lutris or gamescope are held for automatically
 by the built-in claims (see berth claims); berth hold is for everything else.`,
@@ -605,11 +607,13 @@ docs/vfio.md has the requirements and an example script.`,
 			{
 				Name:    "run",
 				Summary: "hold the card, run the switch script, wait for the card back",
-				Args:    "[--reason NAME] [--wait D] [--before CMD] [--after CMD] -- CMD [ARGS...]",
+				Args:    "[--gpu CARD] [--reason NAME] [--wait D] [--before CMD] [--after CMD] -- CMD [ARGS...]",
 				Help: `Acquire the VFIO hold the way berth hold does: engines drain at their
 boundaries and none starts. Then the script runs with the terminal attached, so
 its sudo prompt reaches you, and with BERTH_VFIO_DEVICES set to the card's PCI
-functions, so it hardcodes no address.
+functions, so it hardcodes no address. --gpu names the card on a node with
+several (gpu1 or its PCI address); without it the run takes the node's first
+card.
 
 --before runs once the engines are off the card: stop your own services that
 hold it there. --after runs once the hold has ended, whenever --before ran,

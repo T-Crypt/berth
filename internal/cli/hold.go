@@ -28,12 +28,18 @@ func runHold(c *Context) int {
 	reason := fs.String("reason", "", "shown on the lease, e.g. game or call (default: hold)")
 	dur := fs.Duration("for", 0, "end the hold after this long; 0 = until Ctrl-C")
 	needs := fs.Uint64("needs-mib", 0, "hold only this much memory instead of the whole card")
+	card := fs.String("gpu", "", "card to hold: its name on the node (gpu1) or its PCI address, or a comma list of them for one hold on several cards; default the node's first card")
 	wait := fs.Duration("wait", 10*time.Minute, "how long to wait for engines to drain; 0 = berthd's default; negative = no deadline")
 	if code, done := c.Parse(fs); done {
 		return code
 	}
 	if code, done := c.noArgs(); done {
 		return code
+	}
+	if *card != "" {
+		if err := gpu.CheckCard(*card); err != nil {
+			return c.fail(Systemf("%v", err))
+		}
 	}
 	name := "hold"
 	if r := strings.TrimSpace(*reason); r != "" {
@@ -49,7 +55,7 @@ func runHold(c *Context) int {
 	}
 	defer raw.Close()
 	go func() { <-ctx.Done(); raw.Close() }()
-	if err := conn.Send(proto.Msg{Op: proto.OpAcquire, Engine: name, Group: "hold", Priority: "hold",
+	if err := conn.Send(proto.Msg{Op: proto.OpAcquire, Engine: name, Card: *card, Group: "hold", Priority: "hold",
 		Needs: *needs * gpu.MiB, Wait: wait.Seconds(), Pinned: true}); err != nil {
 		return c.fail(Systemf("berthd on %s: %v", *sock, err))
 	}
@@ -78,7 +84,11 @@ func runHold(c *Context) int {
 			until = "for " + dur.String()
 			timer = time.After(*dur)
 		}
-		fmt.Fprintf(c.Err, "berth: card held as %s (%s); engines wait until it ends\n", m.Lease, until)
+		held := "card"
+		if *card != "" {
+			held = *card
+		}
+		fmt.Fprintf(c.Err, "berth: %s held as %s (%s); engines wait until it ends\n", held, m.Lease, until)
 		if m.Reason != "" {
 			fmt.Fprintf(c.Err, "berth: note: %s\n", m.Reason)
 		}

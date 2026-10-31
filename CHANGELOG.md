@@ -8,6 +8,9 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Added
 
+- `berth hold --gpu CARD` and `berth vfio run --gpu CARD` name the card on a node with several. `hold` takes a
+  comma list for one hold on several cards, and `vfio run` takes one card. Before, both always took the node's
+  first card. Without `--gpu` they still do.
 - `slice = "NAME.slice"` on an engine entry, or `berth run --slice NAME.slice` (which wins), starts the engine's
   transient scope under that systemd slice on a Linux user manager: the slice unit's resource policy, CPU, memory
   and swap limits, applies to the engine and everything it forks, not only to the wrapper that asked for the card.

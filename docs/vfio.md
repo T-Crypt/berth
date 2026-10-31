@@ -47,8 +47,9 @@ group and the driver bound to each function, the processes holding the card's de
 berthd reports. While the card is bound to `vfio-pci`, `nvidia-smi` cannot see it, so pass the card's
 address yourself (`berth vfio status 0000:01:00.0`).
 
-`berth vfio run [--reason NAME] [--before CMD] [--after CMD] -- CMD` holds the card and runs your
-script:
+`berth vfio run [--gpu CARD] [--reason NAME] [--before CMD] [--after CMD] -- CMD` holds the card and
+runs your script. On a node with several cards it takes the first one. `--gpu gpu1` (or the card's PCI
+address) passes another card through, and only that card's engines drain:
 
 ```sh
 berth vfio run --reason galaxy \

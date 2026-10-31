@@ -215,18 +215,6 @@ func startVfioDaemon(t *testing.T) (string, *broker.Broker) {
 	return sock, b
 }
 
-// waitUntil polls until f is true, so async daemon-side releases settle.
-func waitUntil(t *testing.T, f func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for !f() {
-		if time.Now().After(deadline) {
-			t.Fatal("the condition never became true")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-}
-
 // none is true when the daemon holds no lease.
 func none(b *broker.Broker) func() bool {
 	return func() bool { return len(b.Status().Leases) == 0 }
@@ -668,5 +656,74 @@ func TestVfioStatusNamesTheVMNotAStaleReading(t *testing.T) {
 	got := out.String()
 	if !strings.Contains(got, "passed through to a VM (vfio-pci) (last memory reading 1400 s ago)") || strings.Contains(got, "used of") {
 		t.Errorf("berthd's line = %q, want the VM state and no current-looking memory figure", got)
+	}
+}
+
+// TestVfioRunTakesTheCardItNames: on a node of two cards, --gpu gpu1 holds
+// gpu1 alone and passes through the card at nvidia-smi index 1. Index 0 is
+// another card with no functions in the tree, so a run that resolved the
+// first card would fail its preflight.
+func TestVfioRunTakesTheCardItNames(t *testing.T) {
+	isolate(t)
+	sock, brokers := serveNode(t, "gpu0", "gpu1")
+	tr := newVfioTree(t)
+	tr.function(vfioAddr, "nvidia")
+	tr.group()
+	smi := tr.script("nvidia-smi", "case \" $* \" in *\" -i 0 \"*) echo 00000000:02:00.0; exit 0;; esac\nexec "+tr.smi()+" \"$@\"\n")
+	held, resume := filepath.Join(t.TempDir(), "held"), filepath.Join(t.TempDir(), "resume")
+	cmd := tr.script("switch", fmt.Sprintf("touch %s\nwhile [ ! -e %s ]; do sleep 0.01; done\n%s%sexit 0\n",
+		held, resume, tr.flip("vfio-pci"), tr.flip("nvidia")))
+	done := make(chan string, 1)
+	go func() {
+		code, _, errOut := runVfioRunIn(t, tr, smi, vfioRunOpts{settle: time.Millisecond, poll: 5 * time.Millisecond},
+			"--socket", sock, "--gpu", "gpu1", "--", cmd)
+		done <- fmt.Sprintf("exit %d: %s", code, errOut)
+	}()
+	waitUntil(t, func() bool {
+		select {
+		case out := <-done:
+			t.Fatalf("the run ended before its script held the card: %s", out)
+		default:
+		}
+		_, err := os.Stat(held)
+		return err == nil
+	})
+	if got := leaseNames(brokers[1]); len(got) != 1 || got[0] != "vfio" {
+		t.Errorf("gpu1 leases = %v, want the vfio hold", got)
+	}
+	if got := leaseNames(brokers[0]); len(got) != 0 {
+		t.Errorf("gpu0 leases = %v, want none", got)
+	}
+	if err := os.WriteFile(resume, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out := <-done; !strings.HasPrefix(out, "exit 0:") || !strings.Contains(out, "the card is back; hold released") {
+		t.Errorf("run = %q, want exit 0 with the card back", out)
+	}
+	waitUntil(t, none(brokers[1]))
+}
+
+// TestVfioRunRefusesSeveralCardsOrOneTheNodeLacks: a passthrough moves one
+// card berthd schedules; anything else is refused before a hold is asked.
+func TestVfioRunRefusesSeveralCardsOrOneTheNodeLacks(t *testing.T) {
+	isolate(t)
+	sock, brokers := serveNode(t, "gpu0", "gpu1")
+	tr := newVfioTree(t)
+	tr.function(vfioAddr, "nvidia")
+	tr.group()
+	for _, tc := range []struct{ gpu, want string }{
+		{"gpu0,gpu1", "a passthrough moves one card"},
+		{"gpu7", "berthd has no card gpu7"},
+	} {
+		code, _, errOut := runVfioRunIn(t, tr, tr.smi(), vfioRunOpts{settle: time.Millisecond},
+			"--socket", sock, "--gpu", tc.gpu, "--", "true")
+		if code == ExitOK || !strings.Contains(errOut, tc.want) {
+			t.Errorf("--gpu %s: exit = %d, stderr %q; want %q", tc.gpu, code, errOut, tc.want)
+		}
+	}
+	for i, b := range brokers {
+		if n := leaseNames(b); len(n) > 0 {
+			t.Errorf("gpu%d holds %v after a refused run", i, n)
+		}
 	}
 }

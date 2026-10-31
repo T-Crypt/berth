@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/T-Crypt/berth/internal/gpu"
 	"github.com/T-Crypt/berth/internal/proto"
 	"github.com/T-Crypt/berth/internal/runner"
 	"github.com/T-Crypt/berth/internal/server"
@@ -114,6 +115,7 @@ func vfioRun(c *Context, o vfioRunOpts) int {
 	wait := fs.Duration("wait", 10*time.Minute, "how long to wait for engines to drain; 0 = berthd's default; negative = no deadline")
 	before := fs.String("before", "", "shell command run once the engines are off the card, before the check that nothing holds it (stop your own services here)")
 	after := fs.String("after", "", "shell command run once the hold has ended, whenever --before ran (start those services again)")
+	gpuKey := fs.String("gpu", "", "card to pass through: its name on the node (gpu1) or its PCI address; default the node's first card")
 	if code, done := c.Parse(fs); done {
 		return code
 	}
@@ -122,9 +124,17 @@ func vfioRun(c *Context, o vfioRunOpts) int {
 			WithHint("usage: berth vfio run [--reason NAME] -- CMD [ARGS...]"))
 	}
 	argv := c.Args
+	if *gpuKey != "" {
+		if err := gpu.CheckCard(*gpuKey); err != nil {
+			return c.fail(Systemf("%v", err))
+		}
+		if strings.Contains(*gpuKey, ",") {
+			return c.fail(Systemf("--gpu %s names several cards; a passthrough moves one card", *gpuKey))
+		}
+	}
 
 	// The card, by way of berthd's scheduled index and nvidia-smi.
-	card, e := vfioCardAt(*sock, "", o.smiBin)
+	card, e := vfioCardAt(*sock, "", *gpuKey, o.smiBin)
 	if e != nil {
 		return c.fail(e)
 	}
@@ -176,7 +186,7 @@ func vfioRun(c *Context, o vfioRunOpts) int {
 			raw.Close()
 		}
 	}()
-	if err := conn.Send(proto.Msg{Op: proto.OpAcquire, Engine: name, Group: proto.GroupVFIO, Priority: "hold",
+	if err := conn.Send(proto.Msg{Op: proto.OpAcquire, Engine: name, Card: *gpuKey, Group: proto.GroupVFIO, Priority: "hold",
 		Wait: wait.Seconds(), Pinned: true}); err != nil {
 		return c.fail(Systemf("berthd on %s: %v", *sock, err))
 	}
