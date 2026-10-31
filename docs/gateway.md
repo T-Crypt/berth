@@ -280,6 +280,42 @@ waiting, starting, failed), whether it can be switched to (`launch`) or stopped 
 `loaded` flag from the engine's own reader. `cards` lists every card the node governs, each with its name
 on the node (`card`, such as `gpu1`) and the holders on that card alone.
 
+## One URL per card
+
+On a node with several cards, each card has its own base URL on the gateway: `/cards/CARD/v1`, where `CARD` is
+the card's name on the node (`gpu1`) or its PCI address. A request through it only reaches engines whose entry
+runs on that card, and `GET /cards/CARD/v1/models` lists only their models. Chat, completions, embeddings and
+`/v1/berth/wait` take the prefix.
+
+One model can be served on several cards, one engine entry per card, each on its own port:
+
+```toml
+[[engine]]
+name   = "qwen-gpu0"
+type   = "llamacpp"
+url    = "http://127.0.0.1:8080"
+gpu    = "gpu0"
+start  = ["llama-server", "-m", "/models/qwen.gguf", "--port", "8080"]
+serves = ["qwen"]
+
+[[engine]]
+name   = "qwen-gpu1"
+type   = "llamacpp"
+url    = "http://127.0.0.1:8081"
+gpu    = "gpu1"
+start  = ["llama-server", "-m", "/models/qwen.gguf", "--port", "8081"]
+serves = ["qwen"]
+```
+
+A client that works on gpu1 sets its base URL to `http://127.0.0.1:9799/cards/gpu1/v1` and keeps the model name.
+`berth config check` still refuses two entries that serve one model on the same card, or where either names no
+card. A request without the prefix goes to the first engine in `berth.toml` that serves the model, as before.
+
+- A card the node does not have answers `404` with the node's cards.
+- A model no engine on that card serves answers `404` naming the card.
+- An engine berthd finds that has no entry in `berth.toml` belongs to no card here, so only the plain `/v1` URL
+  reaches it.
+
 ## Run an engine whenever the card is free
 
 Some work has no request to start it: a photo tagger on a schedule, an indexer, a transcription queue. Mark its
