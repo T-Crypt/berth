@@ -144,6 +144,6 @@ to undo.
 | A2, shipped in v0.4 (experimental) | lends on one card through the protocol, with a stub engine | a sized borrower runs beside a lending holder; the return waits for the driver |
 | B, shipped in v0.4 | one berthd for every card; leases with one share per card | a two-card engine leases both; the cards of a mixed box schedule apart |
 | C, planned | parks and lends per share on multi-card leases | Maya on five cards lends from one card while the other four serve (#189) |
-| D, v0.5 | gateways joined over the tailnet | a request to one node runs on another and the leases stay per node |
+| D, v0.6 | gateways joined over the tailnet | a request to one node runs on another and the leases stay per node |
 
 A stage that finds the model wrong changes this page first.

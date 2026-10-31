@@ -12,7 +12,7 @@
 | P5.5 | Harbor router: one URL serves models from any node in the fleet | Planned |
 | P6 | ComfyUI job-boundary handoff on Linux (**done**); ComfyUI started on demand through the gateway (**done**); Windows node (**experimental**) | Partly done |
 | P7 | Offers: a waiting request can offer for an idle card on another machine; the holder decides | Planned |
-| P8 | Multi-GPU scheduling: a lease table per card, "any card that fits" | Started: one berthd for every card, an engine on one card or a lease on several (experimental) |
+| P8 | Multi-GPU scheduling: a lease table per card, "any card that fits" | Started: one berthd for every card, an engine on one card or a lease on several (experimental); per-card gateway URLs in v0.5 |
 | P9 | Organisations: single sign-on, role-based access, audit log, Postgres, regional federation; a mobile app after | Planned |
 | P10 | Opt-in auto-yield: a card's owner can pre-approve offers for their own card | Later |
 
@@ -93,7 +93,31 @@ v0.4.0 puts a whole machine under one berthd. Testers ran it first as pre-releas
 
 The [CHANGELOG](https://github.com/T-Crypt/berth/blob/main/CHANGELOG.md) has every entry.
 
-## Next
+## On `next`, for v0.4.1
+
+Merged to the `next` branch and in no release yet. Testers get them in a `v0.4.1-rc.N` pre-release first
+([Testing a pre-release](prerelease.md)).
+
+- **The card for holds, VFIO runs and claims.** `berth hold --gpu`, `berth vfio run --gpu` and `gpu = ...` on a
+  `[[claim]]` take only the cards they name on a node with several, so the other cards keep serving.
+- **Engines under a systemd slice.** `slice = "NAME.slice"` on an engine entry, or `berth run --slice`, puts the
+  engine's scope under that slice's CPU, memory and swap policy on Linux.
+- **The harbor.** A CLAIMS panel on the card tab, a rewritten About tab, and a header that no longer clips.
+- **Status after a stop.** An engine Berth stopped shows as offline, not unresponsive.
+
+## Next: v0.5, per-card gateway endpoints
+
+v0.5 lets a client choose the card on a node with several. Each slice ships on its own, in this order:
+
+1. **One base URL per card** ([#278](https://github.com/T-Crypt/berth/pull/278)). `/cards/CARD/v1` reaches only
+   the engines on that card, and one model can be served on several cards, one engine entry per card.
+2. **Placement for a plain `/v1` request.** When several cards serve the model, the gateway picks one: the card
+   where it already runs, then one where it is parked, then a free card, then the cheapest measured switch.
+3. **Cordon a card.** A cordoned card takes no new grants until it is uncordoned, so it can be drained for
+   maintenance or a VM while the others serve.
+4. **A card picker on the board.** The harbor and `GET /v1/berth/board` name the card each engine can run on.
+
+## Also queued
 
 Each item has its building blocks merged or a spec written:
 
@@ -117,7 +141,7 @@ Not started, and in no release yet: `berth fit` and scenes, so engines that fit 
 | next | Parks and lends on a lease that holds several cards, one share per card ([Design](design.md)) |
 | next | Broader AMD Linux hardware validation beyond the experimental RDNA3/RDNA4 probe; the Windows node out of experimental (a packaged installer, a locked-down control pipe) |
 | next | Proxmox in every common layout. Berth detects whether it runs on a Proxmox host, in an LXC container or in a VM and says where it belongs (`berth env`). Engines in LXC containers lease the host's card, and a system service covers hosts without a user session |
-| later | Cards you name yourself, and "any card that fits" placement |
+| later | Cards you name yourself, and "any card that fits" for leases outside the gateway |
 | v0.6 | The fleet: Berth on every machine, one harbor, one URL for every model |
 | later | Offers: a waiting request can ask for an idle card on another machine, and its holder decides |
 

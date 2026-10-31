@@ -102,6 +102,11 @@ Rules for a workflow:
 - Lease states: `waiting` (with its place in line), `active` (HOT), `draining`, `parking`, `parked` (WARM: the
   engine moved its weights to RAM and holds only a small residual; `berth resume` or a request brings it back),
   `releasing`, `stuck` (its memory never left: see below).
+- The UP column in `berth status`: `yes` answers. `LATCHED` answered before and stopped without its run ending it:
+  a crash or a hang worth reporting. `NO` never answered here, or ended on purpose (exit 0, or a stop Berth carried
+  out).
+- `berth stop` and `POST /v1/berth/stop` act on leases. An engine with no running lease is refused with `no running
+  engine named NAME under a lease` (409 over HTTP): there is nothing to stop, and the next request starts it again.
 - `berth status` shows EST. VRAM per engine: the peak its last run measured. An estimate, never a reservation.
 - `berth models` shows CACHED per model: how much of its file the kernel still holds in RAM (COOL) or not (COLD).
 - A streaming request to the gateway gets `: berth: loading ...` comment lines while its engine starts; that is
