@@ -116,7 +116,7 @@ func View(st *proto.Status, key string) *proto.Status {
 	if st == nil {
 		return nil
 	}
-	cards := cardsOf(st, key)
+	cards := CardsOf(st, key)
 	if cards == nil {
 		return nil
 	}
@@ -176,9 +176,9 @@ func inVM(gpus []proto.GPU) *proto.Passthrough {
 	return first
 }
 
-// cardsOf is the names of the cards key picks in a node's status: "" is
+// CardsOf is the names of the cards key picks in a node's status: "" is
 // the first card. nil when a name in key is no card in st.
-func cardsOf(st *proto.Status, key string) []string {
+func CardsOf(st *proto.Status, key string) []string {
 	var cards []proto.GPU
 	for _, g := range st.GPUs {
 		if g.Scheduled {

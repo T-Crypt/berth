@@ -621,7 +621,7 @@ func (c *Config) Validate() error {
 		ordered[o] = true
 	}
 	seen := map[string]bool{}
-	served := map[string]string{} // model -> the engine that serves it
+	served := map[string][]*Engine{} // model -> the engines that serve it
 	for i, e := range c.Engine {
 		where := fmt.Sprintf("engine[%d] %q", i, e.Name)
 		if e.Name == "" {
@@ -662,11 +662,13 @@ func (c *Config) Validate() error {
 			errs = append(errs, fmt.Errorf("%s: a custom engine needs at least one of health, models, metrics, slots or [engine.map]", where))
 		}
 		for _, m := range e.Serves {
-			if other, ok := served[m]; ok {
-				errs = append(errs, fmt.Errorf("%s: serves %q, which %q already serves; the gateway would never pick this one", where, m, other))
-			} else {
-				served[m] = e.Name
+			// One model on several cards is one engine per card, which a
+			// per-card gateway URL picks between. Two on one card, or one
+			// that names no card, leave the gateway nothing to pick by.
+			if j := slices.IndexFunc(served[m], func(o *Engine) bool { return sharesCard(o.GPU, e.GPU) }); j >= 0 {
+				errs = append(errs, fmt.Errorf("%s: serves %q, which %q already serves; the gateway would never pick this one", where, m, served[m][j].Name))
 			}
+			served[m] = append(served[m], &c.Engine[i])
 		}
 		// A background engine starts when the card is free, not for a model.
 		if len(e.Start) > 0 && len(e.Serves) == 0 && e.Type != "comfyui" && !e.Background {
@@ -869,6 +871,21 @@ func shelfValid(s string) bool {
 	switch s {
 	case "text", "chat", "image", "audio":
 		return true
+	}
+	return false
+}
+
+// sharesCard is whether two engines' gpu keys may name one card: either
+// names no card (the first card), or their comma lists have a key in common.
+func sharesCard(a, b string) bool {
+	if a == "" || b == "" {
+		return true
+	}
+	bs := strings.Split(strings.ReplaceAll(b, " ", ""), ",")
+	for _, k := range strings.Split(strings.ReplaceAll(a, " ", ""), ",") {
+		if slices.Contains(bs, k) {
+			return true
+		}
 	}
 	return false
 }
