@@ -8,6 +8,10 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Added
 
+- Each card has its own base URL on the gateway, `/cards/CARD/v1`, named by the card's name or PCI address. A
+  request through it only reaches engines on that card, and `GET /cards/CARD/v1/models` lists only theirs. One
+  model can now be served on several cards, one engine entry per card, and `berth config check` still refuses two
+  entries that serve it on one card. A request without the prefix is routed as before.
 - `gpu = "gpu1"` on a `[[claim]]` holds only the cards it names, as `berth run --gpu` names them, on a node with
   several cards. Engines on the other cards keep running, and the gateway starts background engines there. A
   claim without `gpu` still holds every card. `berth config check` refuses a bad card name and a `gpu` on a
