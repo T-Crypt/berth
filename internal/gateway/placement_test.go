@@ -42,6 +42,9 @@ func TestPlainRequestPicksTheCheapestCard(t *testing.T) {
 			acquire(t, gpu0, broker.Request{Engine: "game", Priority: broker.Hold, Pinned: true})
 			acquire(t, gpu1, broker.Request{Engine: "tts", Priority: broker.Batch})
 		}, "on-gpu1"},
+		{"gpu0 cordoned", func(t *testing.T, gpu0, _ *broker.Broker) {
+			gpu0.Cordon(true)
+		}, "on-gpu1"},
 		{"qwen parked on gpu1", func(t *testing.T, _, gpu1 *broker.Broker) {
 			pid := os.Getpid()
 			l, err := gpu1.Reattach(broker.Request{Engine: "qwen-b", Parked: true}, pid, procs.System{}.StartTime(pid))

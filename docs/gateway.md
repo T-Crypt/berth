@@ -317,11 +317,13 @@ Otherwise the gateway takes the card that costs least to reach, in this order:
 1. the card where the model's engine is parked in RAM;
 2. a free card: no lease, waiter, stowaway or active claim, and not in a VM;
 3. a card whose holder drains the usual way;
-4. a card a VM or a pinned lease (a game, a hold) keeps, where the request waits.
+4. a card a VM, a pinned lease (a game, a hold) or a cordon keeps, where the request waits.
 
 Two cards of the same rank go to the entry that comes first in `berth.toml`.
 
 - A card the node does not have answers `404` with the node's cards.
+- A cordoned card ([Cordon a card](leasing.md#cordon-a-card)) still takes requests through its URL, and they wait
+  in line.
 - A model no engine on that card serves answers `404` naming the card.
 - An engine berthd finds that has no entry in `berth.toml` belongs to no card here, so only the plain `/v1` URL
   reaches it.

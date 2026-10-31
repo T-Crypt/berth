@@ -51,6 +51,9 @@ func (v statusView) Human(c *Context, ok bool) error {
 		role := "inventory only"
 		if g.Scheduled {
 			role = "leased by berth, baseline " + server.MiB(g.Baseline)
+			if g.Cordoned {
+				role = c.Style.Err("CORDONED") + ", holds only; " + role
+			}
 		}
 		c.Printf("gpu%d    %s: %s used of %s, %s free (%s, read %s ago)\n", g.Index, g.Name,
 			server.MiB(g.Used), server.MiB(g.Total), server.MiB(g.Free), role, age(g.Age))

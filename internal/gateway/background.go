@@ -31,7 +31,7 @@ const DefaultIdleAfter = 60 * time.Second
 // beside it is the collision Berth exists to prevent.
 func cardFree(st *proto.Status) bool {
 	if st == nil || st.Passthrough != nil || st.ProbeErr != "" ||
-		len(st.Leases) > 0 || len(st.Waiting) > 0 || len(st.Squatters) > 0 {
+		len(st.Leases) > 0 || len(st.Waiting) > 0 || len(st.Squatters) > 0 || cordoned(st) {
 		return false
 	}
 	// Status lists every claim rule; only one matching right now is in use.

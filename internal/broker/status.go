@@ -66,7 +66,7 @@ func (b *Broker) Status() proto.Status {
 			Util: d.Util, Temp: d.Temp, Power: d.Power, PowerLimit: d.PowerLimit, Fan: d.Fan,
 			ClockSM: d.ClockSM, ClockMem: d.ClockMem, PCIeGen: d.PCIeGen, PCIeWidth: d.PCIeWidth}
 		if d.Index == b.snap.Index {
-			g.Scheduled, g.Baseline = true, b.snap.Baseline()
+			g.Scheduled, g.Baseline, g.Cordoned = true, b.snap.Baseline(), b.cordoned
 			g.UnobservedPIDs = append([]int(nil), b.snap.Unobserved...)
 			g.GTTBaseline = b.snap.GTTBaseline()
 		}

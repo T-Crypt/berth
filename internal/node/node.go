@@ -219,6 +219,21 @@ func (n *Node) Pick(key string) ([]*Card, error) {
 	return out, nil
 }
 
+// Cordon stops (on) or resumes new grants on the cards key picks, as Pick
+// picks them, and returns their names.
+func (n *Node) Cordon(key string, on bool) ([]string, error) {
+	cards, err := n.Pick(key)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, len(cards))
+	for i, c := range cards {
+		c.B.Cordon(on)
+		names[i] = c.Name
+	}
+	return names, nil
+}
+
 // Stop drains every lease of engine on every card.
 func (n *Node) Stop(engine string) ([]string, error) {
 	var ids []string
