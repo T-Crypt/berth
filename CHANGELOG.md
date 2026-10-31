@@ -6,6 +6,15 @@ has a matching GitHub release whose body comes from its section below.
 
 ## [Unreleased]
 
+### Added
+
+- Round-robin turns, off by default (`[turns]` in `berth.toml`, [docs/leasing.md](docs/leasing.md)):
+  `max_turn` (and `max_turn_by` per engine) lets a waiting lower priority drain a holder that has had the card
+  that long, `cycle` serves waiters of one priority in a set order, and `preempt` with `preempt_gap` lets a
+  higher priority cut a `min_turn` short at most once per gap ([#275](https://github.com/T-Crypt/berth/issues/275)).
+- `[gateway] reply_timeout`: an engine that takes a request and sends no headers in that time gets it once more,
+  then the client gets a 504 with the code `no_reply` instead of waiting forever. Off by default.
+
 ## [v0.4.0] - 2026-10-29
 
 One berthd now governs every card on a machine. `berth run --gpu gpu1` puts an engine on one card,

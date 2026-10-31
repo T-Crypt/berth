@@ -398,6 +398,22 @@ loopback, accepts loopback Host names plus the gateway's `--allow-host` names (f
 front), and takes a start only as a POST from its own page, so another site cannot make a visitor's
 browser drain the card.
 
+## An engine that takes a request and says nothing
+
+By default a chat request waits for the engine as long as the client does. A wedged engine then leaves the
+client hanging. Set a reply timeout to bound that:
+
+```toml
+[gateway]
+reply_timeout = "150s"   # 0 or unset = off, wait as long as the client does
+```
+
+If a live engine sends no response headers within `reply_timeout`, the gateway sends the same request once
+more (starting the engine again first if it went away). A second silence answers `504` with the error code
+`no_reply` naming the engine; a streaming request gets the same error as one SSE event. A request the engine
+did reply to is never replayed. Choose a value above the longest prompt processing time you expect before the
+first token, since the timer covers it.
+
 ## Drain a server at its request boundary
 
 An engine with `/slots` but no unload URL (Strata, a bare llama-server) would otherwise get SIGTERM mid-request when

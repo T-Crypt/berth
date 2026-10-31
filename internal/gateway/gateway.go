@@ -50,6 +50,10 @@ type Gateway struct {
 	Engines []config.Engine // configured engines; those with Start can be started on demand
 	Ready   time.Duration   // how long a start may wait for a berth and then to answer; 0 = 10 min
 	Key     string          // the node's API key; required on every request
+	// ReplyTimeout is how long a live engine may take to start replying to a
+	// chat request before the gateway sends it once more, then answers 504;
+	// 0 = wait for the engine as long as the client does.
+	ReplyTimeout time.Duration
 	// AllowHosts are extra Host names the loopback gateway answers to: the name a
 	// same-machine reverse proxy (tailscale serve) forwards. The listener stays on
 	// loopback and the key and Origin checks still apply.
@@ -597,16 +601,81 @@ func (g *Gateway) forward(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusInternalServerError, "engine url: "+err.Error())
 		return
 	}
+	rw := w
+	if preamble {
+		rw = bodyOnly{w} // the SSE preamble owns the headers
+	}
+	if g.ReplyTimeout <= 0 {
+		g.proxyTo(rw, r, u, body, nil)
+		return
+	}
+	// A reply timeout is set: an engine that takes the request and says
+	// nothing is asked once more (started again if it went away), then
+	// answered 504, instead of leaving the client hanging.
+	var silent bool
+	g.proxyTo(rw, r, u, body, &silent)
+	if !silent || r.Context().Err() != nil {
+		return
+	}
+	g.log().Warn("engine did not reply, replaying the request once", "engine", engineName(t.engine), "request", req.Model, "after", g.ReplyTimeout)
+	if t.engine != nil {
+		if err := g.ensure(r.Context(), t.engine, false); err != nil {
+			g.replayFailed(w, preamble, engineName(t.engine), req.Model, err)
+			return
+		}
+	}
+	silent = false
+	g.proxyTo(rw, r, u, body, &silent)
+	if silent && r.Context().Err() == nil {
+		g.replayFailed(w, preamble, engineName(t.engine), req.Model,
+			fmt.Errorf("the engine did not reply in %s, twice", g.ReplyTimeout))
+	}
+}
+
+// proxyTo sends the buffered request to the engine at u. With silent set,
+// an engine that sends no response headers within ReplyTimeout is reported
+// there and nothing is written, so the caller may send the request again.
+func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, u *url.URL, body []byte, silent *bool) {
 	p := httputil.NewSingleHostReverseProxy(u)
 	p.FlushInterval = -1 // stream tokens as the engine sends them
+	if silent != nil {
+		tr := http.DefaultTransport.(*http.Transport).Clone()
+		tr.ResponseHeaderTimeout = g.ReplyTimeout
+		p.Transport = tr
+		p.ErrorHandler = func(rw http.ResponseWriter, _ *http.Request, err error) {
+			var ne net.Error
+			if errors.As(err, &ne) && ne.Timeout() {
+				*silent = true
+				return
+			}
+			g.log().Warn("gateway proxy", "err", err)
+			rw.WriteHeader(http.StatusBadGateway)
+		}
+	}
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	r.ContentLength = int64(len(body))
 	r.Host = u.Host
+	p.ServeHTTP(w, r)
+}
+
+func engineName(e *config.Engine) string {
+	if e == nil {
+		return "engine"
+	}
+	return e.Name
+}
+
+// replayFailed answers a request the engine never replied to, a 504 with
+// the reason; a streaming request gets the same error as an SSE event.
+func (g *Gateway) replayFailed(w http.ResponseWriter, preamble bool, engine, what string, err error) {
+	g.log().Warn("gateway request not answered", "engine", engine, "request", what, "err", err)
 	if preamble {
-		p.ServeHTTP(bodyOnly{w}, r) // the SSE preamble owns the headers
+		b, _ := json.Marshal(berthError("no_reply", err.Error()))
+		fmt.Fprintf(w, "data: %s\ndata: [DONE]\n\n", b)
+		_ = http.NewResponseController(w).Flush()
 		return
 	}
-	p.ServeHTTP(w, r)
+	apiErrorCode(w, http.StatusGatewayTimeout, "no_reply", err.Error())
 }
 
 // keepAliveEvery is how often a streaming request that waits for its
