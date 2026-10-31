@@ -10,6 +10,18 @@
   // The last state each row showed, so a click knows which button it pressed.
   const seen = new Map();
 
+  // On a node with several cards each row names its card, so launching the
+  // copy of a model on gpu1 is how a phone picks the card.
+  function showCards(list) {
+    const several = new Set(list.flatMap((s) => s.cards || [])).size > 1;
+    for (const s of list) {
+      const chip = rows.find((r) => r.dataset.name === s.name)?.querySelector(".gpu");
+      if (!chip) continue;
+      chip.textContent = (s.cards || []).join(", ");
+      chip.hidden = !several || !chip.textContent;
+    }
+  }
+
   function showRow(s) {
     const li = rows.find((r) => r.dataset.name === s.name);
     if (!li) return; // the engine left berth.toml while the page is open
@@ -89,6 +101,7 @@
       list = await r.json();
       gw.hidden = true;
       for (const s of list) showRow(s);
+      showCards(list);
     } catch {
       gw.hidden = false;
       setTimeout(poll, 2000);

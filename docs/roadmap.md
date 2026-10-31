@@ -116,7 +116,9 @@ v0.5 lets a client choose the card on a node with several. Each slice ships on i
    parked, then a free card, then one whose holder drains, and last a card a VM, a game or a cordon keeps.
 3. **Cordon a card.** `berth cordon gpu1` stops new grants on the card, holds aside, until `berth uncordon`, so it
    can be drained for maintenance or a VM while the others serve.
-4. **A card picker on the board.** The harbor and `GET /v1/berth/board` name the card each engine can run on.
+4. **A card picker on the board.** `GET /v1/berth/board` names each engine's cards and each card's base URL and
+   cordon, and the gateway's `/gui/` page names each engine's card, so launching an engine picks its card. The
+   harbor's own SWITCH tab is still to come.
 
 ## Also queued
 

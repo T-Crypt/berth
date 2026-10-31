@@ -27,6 +27,7 @@
       <div class="row-main">
         {{- if and .GUI .Launch}}<a class="name" href="/gui/{{.Name}}">{{.Name}}</a>{{else}}<span class="name">{{.Name}}</span>{{end}}
         {{- if not .GUI}}<span class="chip noui">No UI</span>{{end}}
+        <span class="chip gpu" hidden></span>
         <span class="chip state"></span>
       </div>
       <p class="row-status status"></p>

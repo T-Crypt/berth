@@ -8,6 +8,9 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Added
 
+- `GET /v1/berth/board` names the cards each engine's entry runs on (`cards`), and each card's base URL on the
+  gateway (`base`) and whether it is cordoned. On a node with several cards, the gateway's `/gui/` page names each
+  engine's card, so launching the copy of a model on gpu1 picks that card from a phone.
 - `berth cordon CARD` stops new grants on a card, holds aside, while the node's other cards serve; `berth uncordon
   CARD` lifts it. What holds the card keeps running. Waiters say the card is cordoned, `berth status` marks it
   `CORDONED`, and the gateway treats it as out of reach: no background engine starts there and a ComfyUI job for it

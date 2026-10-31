@@ -31,7 +31,11 @@ type boardCard struct {
 	Name  string `json:"name"`
 	// State is free, held, draining (a holder is giving it back),
 	// passthrough (in a VM) or probe-failed.
-	State   string    `json:"state"`
+	State string `json:"state"`
+	// Cordoned: berth cordon closed the card to new work but holds.
+	Cordoned bool `json:"cordoned,omitempty"`
+	// Base is the card's own gateway base URL, a path on this gateway.
+	Base    string    `json:"base,omitempty"`
 	Total   uint64    `json:"total"`
 	Used    uint64    `json:"used"`
 	Holders []guiHold `json:"holders"`
@@ -77,7 +81,11 @@ func boardOf(host string, status *proto.Status, rows []guiRow, listed map[string
 			if !gp.Scheduled {
 				continue
 			}
-			c := boardCard{Card: gp.Card, Index: gp.Index, Name: gp.Name, State: "free", Total: gp.Total, Used: gp.Used, Holders: []guiHold{}}
+			c := boardCard{Card: gp.Card, Index: gp.Index, Name: gp.Name, State: "free", Cordoned: gp.Cordoned,
+				Total: gp.Total, Used: gp.Used, Holders: []guiHold{}}
+			if gp.Card != "" { // a berthd older than card names has no per-card URL
+				c.Base = "/cards/" + gp.Card + "/v1"
+			}
 			for _, l := range node.View(status, gp.Card).Leases {
 				c.Holders = append(c.Holders, guiHold{Name: holderName(l), State: l.State, Pinned: l.Pinned})
 				if c.State == "free" {

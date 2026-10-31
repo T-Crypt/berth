@@ -78,6 +78,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--cyan); outline-
 .row-main a { color: var(--cyan); text-decoration: none; }
 .row-main a:hover { text-decoration: underline; }
 .chip.noui { background: transparent; color: var(--dim); border: 1px solid var(--hair); }
+.chip.gpu { background: transparent; color: var(--cyan); border: 1px solid var(--cyan); }
 .chip.up { background: var(--green); }
 .chip.offline { background: var(--dim); }
 .chip.waiting, .chip.starting { background: var(--cyan); animation: pulse 1.2s ease-in-out infinite; }
