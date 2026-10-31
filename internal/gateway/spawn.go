@@ -47,7 +47,9 @@ func (g *Gateway) spawnRun(name string, s *started, o runner.Options) (int, erro
 	}
 	full = append(full, "--")
 	full = append(full, o.Argv...)
-	full = sysd.ScopeArgv("berth-engine", name, full)
+	// The gateway's own run wrapper: the engine's scope comes from the
+	// run's --slice, which runArgv carries from the entry.
+	full = sysd.ScopeArgv("berth-engine", name, "", full)
 	cmd := exec.Command(full[0], full[1:]...)
 	detach(cmd)
 	cmd.Stdout, cmd.Stderr = logFile, logFile
@@ -129,6 +131,9 @@ func runArgv(o runner.Options) []string {
 	}
 	if o.FailClosed {
 		args = append(args, "--fail-closed")
+	}
+	if o.Slice != "" {
+		args = append(args, "--slice", o.Slice)
 	}
 	return args
 }

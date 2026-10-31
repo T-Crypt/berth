@@ -6,6 +6,14 @@ has a matching GitHub release whose body comes from its section below.
 
 ## [Unreleased]
 
+### Added
+
+- `slice = "NAME.slice"` on an engine entry, or `berth run --slice NAME.slice` (which wins), starts the engine's
+  transient scope under that systemd slice on a Linux user manager: the slice unit's resource policy, CPU, memory
+  and swap limits, applies to the engine and everything it forks, not only to the wrapper that asked for the card.
+  `berth config check` refuses a slice name no unit can take. An entry with no slice starts its scope exactly as
+  before, on every platform.
+
 ## [v0.4.0] - 2026-10-29
 
 One berthd now governs every card on a machine. `berth run --gpu gpu1` puts an engine on one card,

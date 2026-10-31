@@ -26,6 +26,7 @@ import (
 	"github.com/T-Crypt/berth/internal/notify"
 	"github.com/T-Crypt/berth/internal/park"
 	"github.com/T-Crypt/berth/internal/proto"
+	"github.com/T-Crypt/berth/internal/sysd"
 )
 
 // Engine is one inference engine this node reads metrics from. Reading is
@@ -129,6 +130,13 @@ type Engine struct {
 	// sets CUDA_VISIBLE_DEVICES to their UUIDs unless the engine's
 	// environment sets it. "" = the node's first card.
 	GPU string `toml:"gpu,omitempty" json:"gpu,omitempty" yaml:"gpu,omitempty"`
+	// Slice names a systemd slice (NAME.slice) to place the engine's
+	// transient scope under, so the slice unit's resource policy, CPU,
+	// memory and swap limits, applies to the engine and everything it
+	// forks, not only to the wrapper. systemd user manager, Linux;
+	// elsewhere the key is accepted and unused. berth run --slice wins
+	// over it.
+	Slice string `toml:"slice,omitempty" json:"slice,omitempty" yaml:"slice,omitempty"`
 	// Park picks the RAM tier on a drain: off (the default) runs the
 	// plain drain, hook asks the engine to move its weights to system
 	// RAM instead, so the next use resumes in seconds. Engines with a
@@ -676,6 +684,11 @@ func (c *Config) Validate() error {
 		}
 		if e.KVSnapshots != "" && !filepath.IsAbs(e.KVSnapshots) {
 			errs = append(errs, fmt.Errorf("%s: kv_snapshots %q must be an absolute path: the gateway starts engines from its own working directory", where, e.KVSnapshots))
+		}
+		if e.Slice != "" {
+			if err := sysd.CheckSlice(e.Slice); err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", where, err))
+			}
 		}
 		if e.DrainMax.Duration < 0 {
 			errs = append(errs, fmt.Errorf("%s: drain_max %s must be >= 0", where, e.DrainMax))

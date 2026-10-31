@@ -508,6 +508,37 @@ ttl = "-5s"
 	}
 }
 
+func TestEngineSliceKeyValidated(t *testing.T) {
+	c, err := Load(write(t, `
+[[engine]]
+name  = "strata"
+type  = "llamacpp"
+url   = "http://127.0.0.1:8080"
+slice = "strata.slice"
+[[engine]]
+name = "plain"
+type = "llamacpp"
+url  = "http://127.0.0.1:8081"
+`))
+	if err != nil {
+		t.Fatalf("valid slice keys refused: %v", err)
+	}
+	if c.Engine[0].Slice != "strata.slice" || c.Engine[1].Slice != "" {
+		t.Fatalf("slice keys not loaded: %+v", c.Engine)
+	}
+	for _, bad := range []string{`slice = "strata"`, `slice = "a/b.slice"`, `slice = ".slice"`} {
+		_, err := Load(write(t, `
+[[engine]]
+name = "s"
+type = "llamacpp"
+url  = "http://127.0.0.1:8080"
+`+bad+"\n"))
+		if err == nil || !strings.Contains(err.Error(), "slice") {
+			t.Errorf("%s: got %v, want a slice error", bad, err)
+		}
+	}
+}
+
 func TestEngineParkKeysValidated(t *testing.T) {
 	c, err := Load(write(t, `
 [[engine]]

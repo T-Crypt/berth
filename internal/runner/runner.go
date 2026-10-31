@@ -146,6 +146,12 @@ type Options struct {
 	// nothing else is ever stopped. Container and Compose are mutually
 	// exclusive, and config.Validate keeps them so.
 	Compose string
+	// Slice is the systemd slice (NAME.slice) the engine's scope is
+	// created under (berth run --slice, the entry's slice): the slice
+	// unit carries resource policy, CPU, memory and swap limits, so the
+	// engine and everything it forks inherit them. Linux user manager
+	// only; elsewhere the engine runs where the run leaves it.
+	Slice string
 	// CLI is the runtime CLI exec: every docker or podman inspect, list and
 	// stop runs through it, under the timeout the caller names, and it
 	// returns the command's combined output; nil = the real CLI, tests fake
@@ -750,7 +756,7 @@ func visibleDevices(card string, granted proto.Msg, env func(string) (string, bo
 }
 
 func command(o Options, out io.Writer) *exec.Cmd {
-	argv := scopeToChild(o.Engine, o.Argv, o.Log)
+	argv := scopeToChild(o.Engine, o.Slice, o.Argv, o.Log)
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if out != nil {

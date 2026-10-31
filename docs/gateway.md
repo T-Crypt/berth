@@ -398,6 +398,22 @@ loopback, accepts loopback Host names plus the gateway's `--allow-host` names (f
 front), and takes a start only as a POST from its own page, so another site cannot make a visitor's
 browser drain the card.
 
+## Run an engine under a resource-policy slice
+
+`slice = "NAME.slice"` on an engine entry (or `berth run --slice NAME.slice`, which wins) places the engine's
+transient scope under that slice: the slice unit's CPU, memory and swap limits cover the engine and every child
+it forks, where the wrapper's own unit limits cover only the wrapper. The slice unit is your file: for example
+a `[Slice]` drop with `MemorySwapMax = 0` keeps a model-resident engine from paging at all. Berth refuses a slice
+name no unit can take before the engine starts; entries with no slice behave exactly as before, on every platform.
+
+```toml
+[[engine]]
+name  = "llm"
+type  = "llamacpp"
+url   = "http://127.0.0.1:8080"
+slice = "llm.slice"
+```
+
 ## Drain a server at its request boundary
 
 An engine with `/slots` but no unload URL (Strata, a bare llama-server) would otherwise get SIGTERM mid-request when

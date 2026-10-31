@@ -8,6 +8,30 @@
 // processes for attribution even when they escape the process tree.
 package sysd
 
+import "fmt"
+
+// CheckSlice accepts the slice name ScopeArgv passes to systemd-run: a
+// unit name ending in .slice, carrying only what unit names take (ASCII
+// letters, digits, and . - _ : @). systemd-run takes the name verbatim;
+// a run that would fail its scope start says so at once, while the
+// engine is still untouched.
+func CheckSlice(name string) error {
+	const suffix = ".slice"
+	if len(name) <= len(suffix) || name[len(name)-len(suffix):] != suffix {
+		return fmt.Errorf("slice %q must name a .slice unit, such as app-berth.slice", name)
+	}
+	for i := 0; i < len(name)-len(suffix); i++ {
+		c := name[i]
+		switch {
+		case c >= 'A' && c <= 'Z', c >= 'a' && c <= 'z', c >= '0' && c <= '9',
+			c == '.', c == '_', c == '-', c == ':', c == '@':
+		default:
+			return fmt.Errorf("slice %q has byte %q, which no unit name takes", name, c)
+		}
+	}
+	return nil
+}
+
 // UnitName maps an engine name onto what a systemd unit name may carry
 // (ASCII letters, digits, and . - _ :), replacing every other byte with
 // _ and capping the length so a long name still leaves room for the

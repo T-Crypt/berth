@@ -30,3 +30,18 @@ func TestUnitName(t *testing.T) {
 		t.Errorf("UnitName length = %d, want at most 64", len(got))
 	}
 }
+
+// A slice name reaches systemd-run verbatim, so it is validated here
+// while the run can still refuse and the engine stays untouched.
+func TestCheckSlice(t *testing.T) {
+	for _, ok := range []string{"strata.slice", "app-berth.slice", "foo@bar.slice", "a.slice", "x-1_2:.slice"} {
+		if err := CheckSlice(ok); err != nil {
+			t.Errorf("CheckSlice(%q) = %v, want nil", ok, err)
+		}
+	}
+	for _, bad := range []string{"", ".slice", "strata", "a b.slice", "a/b.slice", "app.slice/x", "strata.SLICE"} {
+		if err := CheckSlice(bad); err == nil {
+			t.Errorf("CheckSlice(%q) = nil, want an error", bad)
+		}
+	}
+}

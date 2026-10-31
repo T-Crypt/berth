@@ -35,13 +35,26 @@ func ScopeReady() bool {
 // <prefix>-<name>-<rand>, --collect drops the scope when the run ends,
 // --quiet keeps systemd-run's own notice out of the output. With --scope
 // systemd-run execs the command in place, so its PID is unchanged.
-func ScopeArgv(prefix, name string, argv []string) []string {
+// slice, when set, is a validated .slice unit name: the scope is placed
+// under it, so the slice unit's resource policy (CPU, memory and swap
+// limits) applies to the engine and everything it forks.
+func ScopeArgv(prefix, name, slice string, argv []string) []string {
 	// Tests start fake engines: never in the developer's own user manager.
 	if testing.Testing() || !ScopeReady() {
 		return argv
 	}
 	var rnd [4]byte
 	_, _ = rand.Read(rnd[:])
-	unit := fmt.Sprintf("%s-%s-%x", prefix, UnitName(name), rnd)
-	return append([]string{"systemd-run", "--user", "--scope", "--unit", unit, "--collect", "--quiet", "--"}, argv...)
+	return scopeArgv(fmt.Sprintf("%s-%s-%x", prefix, UnitName(name), rnd), slice, argv)
+}
+
+// scopeArgv is the argv builder ScopeArgv runs when a manager is
+// reachable: tests drive it directly, so the shape (and the slice
+// placement) is asserted without touching a real manager.
+func scopeArgv(unit, slice string, argv []string) []string {
+	args := []string{"systemd-run", "--user", "--scope", "--unit", unit, "--collect", "--quiet"}
+	if slice != "" {
+		args = append(args, "--slice", slice)
+	}
+	return append(args, append([]string{"--"}, argv...)...)
 }

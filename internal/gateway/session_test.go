@@ -36,3 +36,19 @@ func TestRunArgvCarriesTheCard(t *testing.T) {
 		t.Fatalf("an entry with no card gained one: %q", bare)
 	}
 }
+
+// A detached gateway launch carries the entry's slice: the engine scope
+// the run creates takes it, so the slice's policy covers the engine.
+func TestRunArgvCarriesSlice(t *testing.T) {
+	e := config.Engine{Name: "fixture", Slice: "strata.slice"}
+	o := runner.OptionsFor(&e, runner.Over{})
+	args := runArgv(o)
+	i := slices.Index(args, "--slice")
+	if i < 0 || i+1 >= len(args) || args[i+1] != "strata.slice" {
+		t.Fatalf("lost slice: %q", args)
+	}
+	bare := runArgv(runner.OptionsFor(&config.Engine{Name: "plain"}, runner.Over{}))
+	if slices.Contains(bare, "--slice") {
+		t.Fatalf("an entry with no slice gained one: %q", bare)
+	}
+}

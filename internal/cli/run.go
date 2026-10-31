@@ -17,6 +17,7 @@ import (
 	"github.com/T-Crypt/berth/internal/gpu"
 	"github.com/T-Crypt/berth/internal/runner"
 	"github.com/T-Crypt/berth/internal/suite"
+	"github.com/T-Crypt/berth/internal/sysd"
 )
 
 func runRun(c *Context) int {
@@ -44,6 +45,7 @@ func runRun(c *Context) int {
 	container := fs.String("container", "", "NAME of the one container CMD runs in: the drain stops it via docker/podman stop instead of signalling the wrapper")
 	card := fs.String("gpu", "", "card to run on: its name on the node (gpu1) or its PCI address, or a comma list of them for one lease on several cards; the lease goes there and the engine gets CUDA_VISIBLE_DEVICES set to the cards' UUIDs unless its environment sets it; over the entry's gpu; default the node's first card")
 	composeFile := fs.String("compose", "", "absolute PATH of the Compose file CMD's project runs from: the lease covers every container of the project and the drain stops it with compose stop, never down; exclusive with --container")
+	sliceName := fs.String("slice", "", "NAME.slice to start the engine's scope under (systemd user manager, Linux): the slice unit's CPU, memory and swap policy applies to the engine and everything it forks; over the entry's slice")
 	grace := fs.Duration("grace", 30*time.Second, "time each drain step gets before the next")
 	failClosed := fs.Bool("fail-closed", false, "do not start CMD without berthd or stop it without a safe boundary")
 	cfgPath := fs.String("config", config.DefaultPath(), "berth.toml: the engine entry matching --as (or --group) supplies the settings a flag does not set; a set flag wins and says so; missing = no defaults ($BERTH_CONFIG)")
@@ -86,6 +88,17 @@ func runRun(c *Context) int {
 	}
 	if c.Changed("api-key-file") {
 		e.APIKeyFile = *keyFile
+	}
+	if c.Changed("slice") {
+		if e.Slice != "" && e.Slice != *sliceName {
+			fmt.Fprintf(c.Err, "berth: --slice overrides berth.toml slice = %s for %s\n", e.Slice, e.Name)
+		}
+		e.Slice = *sliceName
+	}
+	if e.Slice != "" {
+		if err := sysd.CheckSlice(e.Slice); err != nil {
+			return c.fail(Systemf("%v", err))
+		}
 	}
 	if e.APIKeyEnv != "" && e.APIKeyFile != "" {
 		return c.fail(Systemf("api_key_env and api_key_file are mutually exclusive"))
