@@ -117,7 +117,8 @@
   `reaper SteamLaunch AppId=...`, so the REAPER DAW, also named `reaper`, holds nothing.
 - **`berth hold [--for 2h] [--reason game]`** takes the card for you. It is a pinned lease at
   the top priority, so nothing drains it, and it ends on Ctrl-C, after `--for`, or when the
-  process dies.
+  process dies. On a node with several cards it takes the first one. `--gpu gpu1` holds another
+  card, and `--gpu gpu0,gpu1` holds both under one lease.
 - **`berth run --pinned`** gives an app a lease that is never drained (it keeps the card until
   it exits).
 - A hold cannot free memory held by something outside Berth: that memory is still reported,

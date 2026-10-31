@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // isolate points every path the CLI reads at a temp dir, so a test never
@@ -112,4 +113,16 @@ func boolInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// waitUntil polls until f is true, so async daemon-side releases settle.
+func waitUntil(t *testing.T, f func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !f() {
+		if time.Now().After(deadline) {
+			t.Fatal("the condition never became true")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
