@@ -20,6 +20,9 @@ has a matching GitHub release whose body comes from its section below.
   and swap limits, applies to the engine and everything it forks, not only to the wrapper that asked for the card.
   `berth config check` refuses a slice name no unit can take. An entry with no slice starts its scope exactly as
   before, on every platform.
+- The harbor's card tab has a CLAIMS panel: the claim rules matching now, as `berth claims` lists them. A hold
+  names its lease or says it is waiting, a track gives the card memory it names, and on a machine with several
+  cards each row names its card. Before, a tracked app such as OBS did not show in the harbor at all.
 
 ### Changed
 
