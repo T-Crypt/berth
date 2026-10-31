@@ -439,13 +439,36 @@ func (g *Gateway) resolve(ctx context.Context, model, card string) (target, bool
 			return target{url: e.URL, live: true}, true
 		}
 	}
+	var serving []*config.Engine
 	for i := range g.Engines {
-		e := &g.Engines[i]
-		if g.engineOn(st, e.Name, card) && slices.Contains(e.Serves, model) {
-			return target{url: e.URL, engine: e}, true
+		if e := &g.Engines[i]; g.engineOn(st, e.Name, card) && slices.Contains(e.Serves, model) {
+			serving = append(serving, e)
 		}
 	}
-	return target{}, false
+	if len(serving) == 0 {
+		return target{}, false
+	}
+	// One engine per card serves the model: the cheapest card to reach
+	// wins, and berth.toml's order breaks a tie.
+	e := slices.MinFunc(serving, func(a, b *config.Engine) int { return reach(st, a) - reach(st, b) })
+	return target{url: e.URL, engine: e}, true
+}
+
+// reach ranks what it takes to bring e up on its card, cheapest first: a
+// resume from RAM, a free card, a drain of the holder, then a wait for a
+// card a VM or a pinned lease (a game, a hold) keeps.
+func reach(st *proto.Status, e *config.Engine) int {
+	v := node.View(st, e.GPU)
+	switch {
+	case parkedIn(st, e.Name):
+		return 0
+	case cardFree(v):
+		return 1
+	case v != nil && outOfReach(v) == "":
+		return 2
+	default:
+		return 3
+	}
 }
 
 // notServed is the 404 for a model no engine serves, on card when one is
