@@ -170,8 +170,10 @@ question an operator actually asks.
   recent requests and context residency** answer the questions behind the request
   log, and the storage panel (advanced) says what the harbor's own store keeps.
 
-**The ABOUT tab** is this page's own documentation: the modes, the shortcut keys,
-and what every state word and figure means.
+**The ABOUT tab** is this page's own documentation: the node's version, links to these docs and the
+changelog, several cards, the modes, the shortcut keys, and what every state word and figure means. A
+section rail jumps between its sections, as on the other tabs. A section link, from any tab's rail,
+opens the tab that holds the section when you share or reload it.
 
 ## Telemetry (built in, no other tool needed)
 - **GPU:** memory, utilisation, temperature, power against its limit, fan, SM and memory
