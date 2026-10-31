@@ -490,9 +490,12 @@ function wireTabs() {
   const target = h ? document.getElementById(h) : null;
   const key = target ? Object.keys(panels).find((k) => panels[k].contains(target)) : undefined;
   show(key);
-  if (key) requestAnimationFrame(() => target.scrollIntoView({ block: "start" }));
+  if (key) pendingSection = target;
 }
 let pendingTicket = location.hash.startsWith("#ticket=") ? decodeURIComponent(location.hash.slice(8)) : null;
+// A linked section waits for the first status, whose alerts and panels move
+// it down the page.
+let pendingSection = null;
 
 // ---------------- page chrome ----------------
 // The sub-navigation, the collapsible panels, the keyboard shortcuts, the
@@ -1201,6 +1204,11 @@ function onStatus(s) {
   setText($("about-version"), nodeVersion.textContent);
   renderAll(s);
   paintOverall();
+  if (pendingSection) {
+    const target = pendingSection;
+    pendingSection = null;
+    requestAnimationFrame(() => target.scrollIntoView({ block: "start" }));
+  }
   if (pendingTicket) {
     const key = pendingTicket;
     pendingTicket = null;
