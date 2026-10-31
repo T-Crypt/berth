@@ -165,6 +165,7 @@ func runDaemon(c *Context) int {
 			FootprintFile:  cardFile(*footprintFile, i, name),
 			Order:          cfg.Priority.Order,
 			JuggleWindow:   cfg.Priority.JuggleWindow.Duration,
+			Turns:          turnPolicy(cfg.Turns),
 			Busy:           watcher.Busy,
 			Comfy:          comfy,
 			ReattachWindow: *reattachWin,
@@ -452,6 +453,18 @@ func cardFile(path string, i int, name string) string {
 
 // parkFloorBytes is the RAM a park must leave the machine: the [park]
 // floor_gib plus the headroom floor, in bytes.
+// turnPolicy is the broker's round-robin policy from the [turns] table.
+func turnPolicy(t config.TurnsConfig) broker.Turns {
+	p := broker.Turns{MaxTurn: t.MaxTurn.Duration, Cycle: t.Cycle, Preempt: t.Preempt, PreemptGap: t.PreemptGap.Duration}
+	if len(t.MaxTurnBy) > 0 {
+		p.MaxTurnBy = make(map[string]time.Duration, len(t.MaxTurnBy))
+		for k, d := range t.MaxTurnBy {
+			p.MaxTurnBy[k] = d.Duration
+		}
+	}
+	return p
+}
+
 func parkFloorBytes(cfg config.Config, headroomMib uint64) uint64 {
 	floor := cfg.ParkFloorGiB() + float64(headroomMib)/1024
 	return uint64(floor * float64(gpu.GiB))

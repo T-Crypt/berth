@@ -126,6 +126,9 @@ type Config struct {
 	// JuggleWindow: an equal-priority drain of a holder granted less than
 	// this ago is a juggle, decided by rank. 0 = DefaultJuggleWindow; < 0 = off.
 	JuggleWindow time.Duration
+	// Turns is the round-robin policy (maximum turn, rotation, preemption);
+	// the zero value is off.
+	Turns Turns
 	// UsageFile keeps the card-hours per engine across restarts; "" = memory only.
 	UsageFile string
 	// FootprintFile keeps the VRAM footprints measured per engine across
@@ -479,6 +482,10 @@ type Broker struct {
 	saveFailed bool
 
 	verdicts map[string]verdict // loser engine key -> the juggle it lost
+	// lastKey is the engine key of the last grant, and preemptedAt the last
+	// time a waiter cut a minimum turn short (Turns).
+	lastKey     string
+	preemptedAt time.Time
 	// tracked is the claim watcher's last scan: a process (and every child)
 	// a track claim names. Its card memory is the claim's, never a stowaway.
 	tracked    map[int]string
@@ -1117,6 +1124,9 @@ func (b *Broker) schedule(now time.Time) {
 			continue
 		}
 		for _, v := range victims {
+			if w.prio != Hold && v.inTurn(now) {
+				b.notePreemption(now)
+			}
 			v.state = draining
 			// Its memory goes with the drain: an open lend is dropped, and
 			// never asked back, since the borrower still holds it (rule 2).
@@ -1142,6 +1152,7 @@ func (b *Broker) grant(w *lease, now time.Time) {
 	w.state = active
 	w.granted = now
 	w.grantedN = b.order()
+	b.lastKey = w.key()
 	w.releaseBaseline = b.snap.Baseline()
 	w.releaseGTTBaseline = b.snap.GTTBaseline()
 	w.contested = b.squatBytes()
@@ -1185,6 +1196,11 @@ func (b *Broker) sortQueue() {
 	sort.SliceStable(b.queue, func(i, j int) bool {
 		if b.queue[i].prio != b.queue[j].prio {
 			return b.queue[i].prio > b.queue[j].prio
+		}
+		if len(b.cfg.Turns.Cycle) > 0 {
+			if ri, rj := b.cycleRank(b.queue[i].key()), b.cycleRank(b.queue[j].key()); ri != rj {
+				return ri < rj
+			}
 		}
 		return b.queue[i].arrivedN < b.queue[j].arrivedN
 	})
@@ -1400,14 +1416,25 @@ func (b *Broker) evaluate(w *lease, now time.Time) (bool, string, []*lease) {
 			// for it to become parked (or fall back to a drain); evicting
 			// it mid-park would throw the park away.
 			pending = append(pending, h)
-		case h.pinned || h.prio > w.prio:
+		case h.pinned || (h.prio > w.prio && !b.turnExpired(h, now)):
+			// (a holder past its maximum turn no longer blocks a lower priority)
 			blockers = append(blockers, h)
 		case w.prio != Hold && h.inTurn(now):
 			// A minimum turn: the holder keeps the card until its turn
 			// ends, whatever the waiter's priority; only a hold (a game,
-			// a call, the operator's own berth hold) takes it out before.
+			// a call, the operator's own berth hold) takes it out before,
+			// or a higher-priority waiter when preemption is on and its
+			// gap has passed.
+			ok, why := b.preempts(h, w, now)
+			if ok {
+				drainable = append(drainable, h)
+				continue
+			}
 			kept = append(kept, h)
 			keptWhy = h.turnWhy(now)
+			if why != "" {
+				keptWhy += "; " + why
+			}
 			continue
 		case h.prio == w.prio:
 			if keep, why := b.keeps(h, w, now); keep {

@@ -997,3 +997,29 @@ func TestSquattersAllow(t *testing.T) {
 		t.Errorf("allow = %q, want chrome,WindowsTerminal", got)
 	}
 }
+
+// Every [turns] and reply_timeout setting is off until the file sets it.
+func TestTurnsOffByDefaultAndValidated(t *testing.T) {
+	c, err := Load(write(t, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Turns.MaxTurn.Duration != 0 || c.Turns.Preempt || len(c.Turns.Cycle) != 0 || c.Gateway.ReplyTimeout.Duration != 0 {
+		t.Fatalf("defaults are not off: %+v %v", c.Turns, c.Gateway.ReplyTimeout)
+	}
+	c, err = Load(write(t, "[turns]\nmax_turn = \"15m\"\ncycle = [\"llm\", \"image\"]\npreempt = true\npreempt_gap = \"45s\"\n[turns.max_turn_by]\nimage = \"30m\"\n[gateway]\nreply_timeout = \"150s\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Turns.MaxTurn.Minutes() != 15 || c.Turns.MaxTurnBy["image"].Minutes() != 30 || !c.Turns.Preempt ||
+		c.Turns.PreemptGap.Seconds() != 45 || len(c.Turns.Cycle) != 2 || c.Gateway.ReplyTimeout.Seconds() != 150 {
+		t.Fatalf("turns = %+v reply = %v", c.Turns, c.Gateway.ReplyTimeout)
+	}
+	_, err = Load(write(t, "[turns]\nmax_turn = \"-1m\"\npreempt_gap = \"-1s\"\ncycle = [\"a\", \"\", \"a\"]\n[turns.max_turn_by]\nx = \"-2m\"\n[gateway]\nreply_timeout = \"-1s\"\n"))
+	for _, want := range []string{"turns.max_turn -1m0s must be >= 0", "turns.preempt_gap", "turns.cycle[1] is empty",
+		`turns.cycle lists "a" twice`, "turns.max_turn_by.x", "gateway.reply_timeout"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("error lacks %q: %v", want, err)
+		}
+	}
+}
