@@ -107,9 +107,11 @@ func answers(name, addr, key string) bool {
 }
 
 // View is a node's status narrowed to the cards key picks, as Pick picks
-// them: their readings, leases, waiters and squatters. What holds every card
-// (claims, a passthrough, a probe error) stays. nil when st is nil or key
-// names a card st does not have.
+// them: their readings, leases, waiters and squatters. A claim stays listed,
+// active only when it is active on one of them (a claim with no cards, from
+// an older berthd, counts as on every card). What holds every card (a
+// passthrough, a probe error) stays. nil when st is nil or key names a card
+// st does not have.
 func View(st *proto.Status, key string) *proto.Status {
 	if st == nil {
 		return nil
@@ -124,6 +126,12 @@ func View(st *proto.Status, key string) *proto.Status {
 	v.Leases = slices.DeleteFunc(slices.Clone(st.Leases), func(l proto.Lease) bool { return !on(l.Card) })
 	v.Waiting = slices.DeleteFunc(slices.Clone(st.Waiting), func(l proto.Lease) bool { return !on(l.Card) })
 	v.Squatters = slices.DeleteFunc(slices.Clone(st.Squatters), func(s proto.Squatter) bool { return !on(s.Card) })
+	v.Claims = slices.Clone(st.Claims)
+	for i, cl := range v.Claims {
+		if len(cl.Cards) > 0 && !slices.ContainsFunc(cl.Cards, on) {
+			v.Claims[i].Active, v.Claims[i].Lease = false, ""
+		}
+	}
 	v.Passthrough = inVM(v.GPUs)
 	// A view of some cards carries only their probe errors. One that keeps
 	// every card keeps the status's own, which a berthd older than per-card

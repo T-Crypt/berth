@@ -35,7 +35,8 @@
 - **Several cards.** One berthd governs every card by default. A foreground request on one card never drains a
   holder on another. `berth run --gpu gpu1` puts a lease on one card, and `--gpu gpu0,gpu1` holds one lease on
   both (see [Training runs](#training-runs)). A running game holds every card, because Berth cannot tell which
-  card it will use. A lease on several cards cannot park or lend yet.
+  card it will use. A `[[claim]]` with `gpu = "gpu1"` holds only the cards it names. A lease on several cards
+  cannot park or lend yet.
 - **Fail-open, never silent.** If the daemon is down, `berth run` still starts the engine
   but records it as an *unprotected run* that status shows (`--fail-closed` refuses).
 - **Survives a daemon restart.** A running engine stays up when berthd restarts or is
@@ -106,6 +107,7 @@
   cmdline = 'train\.py'      # regex; on Windows it sees the exe's full path
   action = "hold"            # or "track"
   linger = "30s"
+  gpu = "gpu1"               # hold only these cards (names or PCI addresses, comma list); default every card
 
   [claims]
   builtin = false            # turn the built-in pack off

@@ -260,7 +260,8 @@ func TestViewIsTheCardsAKeyNames(t *testing.T) {
 		Leases:    []proto.Lease{{Engine: "chat", Card: "gpu0"}, {Engine: "maya", Card: "gpu1"}},
 		Waiting:   []proto.Lease{{Engine: "voice", Card: "gpu1"}},
 		Squatters: []proto.Squatter{{PID: 7, Card: "gpu0"}},
-		Claims:    []proto.Claim{{Name: "steam-game", Active: true}},
+		Claims: []proto.Claim{{Name: "steam-game", Active: true}, {Name: "sim", Active: true, Lease: "l-4", Cards: []string{"gpu1"}},
+			{Name: "blender", Action: "track"}},
 	}
 	engines := func(ls []proto.Lease) string {
 		var out []string
@@ -270,14 +271,14 @@ func TestViewIsTheCardsAKeyNames(t *testing.T) {
 		return strings.Join(out, ",")
 	}
 	for _, tc := range []struct {
-		key, gpus, leases, waiting string
-		squatters                  int
+		key, gpus, leases, waiting, active string
+		squatters                          int
 	}{
-		{"", "gpu0", "chat", "", 1},
-		{"gpu1", "gpu1", "maya", "voice", 0},
-		{"0000:09:00.0", "gpu1", "maya", "voice", 0},
-		{"00000000:09:00.0", "gpu1", "maya", "voice", 0},
-		{"gpu1,0000:01:00.0", "gpu0,gpu1", "chat,maya", "voice", 1},
+		{"", "gpu0", "chat", "", "steam-game", 1},
+		{"gpu1", "gpu1", "maya", "voice", "steam-game,sim", 0},
+		{"0000:09:00.0", "gpu1", "maya", "voice", "steam-game,sim", 0},
+		{"00000000:09:00.0", "gpu1", "maya", "voice", "steam-game,sim", 0},
+		{"gpu1,0000:01:00.0", "gpu0,gpu1", "chat,maya", "voice", "steam-game,sim", 1},
 	} {
 		v := View(st, tc.key)
 		var gpus []string
@@ -296,14 +297,20 @@ func TestViewIsTheCardsAKeyNames(t *testing.T) {
 		if len(v.Squatters) != tc.squatters {
 			t.Errorf("%q: %d squatters, want %d", tc.key, len(v.Squatters), tc.squatters)
 		}
-		if len(v.Claims) != 1 {
-			t.Errorf("%q: claims %v, want the active claim kept", tc.key, v.Claims)
+		var active []string
+		for _, cl := range v.Claims {
+			if cl.Active {
+				active = append(active, cl.Name)
+			}
+		}
+		if got := strings.Join(active, ","); len(v.Claims) != 3 || got != tc.active {
+			t.Errorf("%q: active claims %s of %d, want %s of 3", tc.key, got, len(v.Claims), tc.active)
 		}
 	}
 	if v := View(st, "gpu9"); v != nil {
 		t.Errorf("gpu9: %+v, want nil for a card the node lacks", v)
 	}
-	if len(st.Leases) != 2 || len(st.Squatters) != 1 {
+	if len(st.Leases) != 2 || len(st.Squatters) != 1 || !st.Claims[1].Active {
 		t.Errorf("View changed the status it read: %+v", st)
 	}
 }

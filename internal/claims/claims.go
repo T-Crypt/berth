@@ -25,6 +25,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/T-Crypt/berth/internal/gpu"
 )
 
 const (
@@ -51,7 +53,12 @@ type Rule struct {
 	Action        string        // hold | track
 	NeedsMiB      uint64        // hold only: 0 = the whole card
 	Linger        time.Duration // hold only: 0 = DefaultLinger
-	Builtin       bool
+	// GPU is the cards a hold takes, as berth run --gpu names them; "" is
+	// every card. Cards is GPU resolved to positions in the watcher's
+	// cards, nil for every card.
+	GPU     string
+	Cards   []int
+	Builtin bool
 
 	cmdline       *regexp.Regexp
 	not           *regexp.Regexp
@@ -109,6 +116,14 @@ func (r *Rule) Compile() error {
 	case ActionHold, ActionTrack:
 	default:
 		return fmt.Errorf("claim %q: action %q (hold, track)", r.Name, r.Action)
+	}
+	if r.GPU != "" {
+		if r.Action != ActionHold {
+			return fmt.Errorf("claim %q: gpu names the cards a hold takes; a %s claim holds none", r.Name, r.Action)
+		}
+		if err := gpu.CheckCard(r.GPU); err != nil {
+			return fmt.Errorf("claim %q: %v", r.Name, err)
+		}
 	}
 	if len(r.Exe) == 0 && r.Cmdline == "" && len(r.Parent) == 0 {
 		return fmt.Errorf("claim %q: give exe, cmdline or parent to match on", r.Name)

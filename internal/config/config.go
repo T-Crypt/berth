@@ -286,6 +286,9 @@ type ClaimRule struct {
 	Action        string   `toml:"action,omitempty" json:"action,omitempty" yaml:"action,omitempty"`
 	NeedsMiB      uint64   `toml:"needs_mib,omitzero" json:"needs_mib,omitempty" yaml:"needs_mib,omitempty"`
 	Linger        Duration `toml:"linger,omitempty" json:"linger,omitempty" yaml:"linger,omitempty"`
+	// GPU is the cards a hold takes on a node with several, as berth run
+	// --gpu names them; "" is every card.
+	GPU string `toml:"gpu,omitempty" json:"gpu,omitempty" yaml:"gpu,omitempty"`
 }
 
 // ClaimRules is the rule list berthd runs: the configured rules first (a
@@ -296,7 +299,7 @@ func (c *Config) ClaimRules() ([]claims.Rule, error) {
 	names := map[string]bool{}
 	for _, r := range c.Claim {
 		rule := claims.Rule{Name: r.Name, Exe: r.Exe, Cmdline: r.Cmdline, Not: r.Not, Parent: r.Parent, ParentCmdline: r.ParentCmdline,
-			Action: r.Action, NeedsMiB: r.NeedsMiB, Linger: r.Linger.Duration}
+			Action: r.Action, NeedsMiB: r.NeedsMiB, Linger: r.Linger.Duration, GPU: r.GPU}
 		if err := rule.Compile(); err != nil {
 			return nil, err
 		}
