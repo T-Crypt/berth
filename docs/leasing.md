@@ -87,6 +87,86 @@
     or job boundary, and a minimum turn never cuts a request off. After a daemon restart, a
     re-attach starts a fresh turn.
 
+## Round-robin turns
+
+Two engines that share a card, say an LLM server and an image generator, each want it for a while and
+neither should starve the other. Berth already hands the card over at the request boundary and keeps a
+`min_turn`. The `[turns]` table adds three opt-in rules on top; with none of them set, nothing above changes.
+None of them cuts a request off: a drain still starts at the slot or job boundary, a pinned lease or a hold is
+never drained by them, and the driver must still show the memory free before the next grant.
+
+```toml
+[turns]
+max_turn    = "15m"                    # the longest a holder keeps the card against a lower priority
+cycle       = ["llm", "image"]         # who is served next among equal priorities
+preempt     = true                     # a higher priority may cut a min_turn short...
+preempt_gap = "45s"                    # ...at most once per this long (default 45s)
+
+[turns.max_turn_by]                    # per engine (its name, or --group), over max_turn
+image = "30m"
+```
+
+- **Maximum turn.** Priorities keep a lower-priority waiter out for as long as the holder runs. With
+  `max_turn`, a holder that has had the card that long stops outranking a waiting lower priority: the waiter
+  drains it at the next boundary. `0` (the default) is no limit.
+- **Rotation.** Waiters of one priority are normally served by arrival. With `cycle`, the engine after the
+  last one granted goes first, so `llm`, `image`, `llm`, `image` alternate even when `llm` asks more often.
+  Engines not listed go after the listed ones, by arrival.
+- **Preemption.** A `min_turn` keeps every waiter out, however urgent. With `preempt = true` a waiter of a
+  strictly higher priority (a person at the keyboard, say) may drain a holder inside its `min_turn`. Each such
+  cut makes the engine it empties reload from cold, so Berth allows one per `preempt_gap`; a second waiter
+  inside the gap is told when the next preemption is allowed. A waiter of equal or lower priority still waits
+  out the turn.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> Turn: grant (a waiter reaches the head of the queue)
+    state Turn {
+        [*] --> Protected
+        Protected --> Open: min_turn ends
+        Open --> Expired: max_turn ends
+        note right of Protected
+            equal, lower priority: wait
+            higher priority: preempts if allowed,
+            once per preempt_gap
+        end note
+        note right of Open
+            equal priority drains the holder,
+            lower priority waits
+        end note
+        note right of Expired
+            any waiting lower priority
+            may drain the holder
+        end note
+    }
+    Turn --> Draining: a waiter may take the card
+    Draining --> Idle: the driver shows the memory free
+    Idle --> Turn: next waiter (the cycle picks among equal priorities)
+```
+
+The timeline of one card with two engines, `min_turn = 45s` and `preempt_gap = 45s`:
+
+```mermaid
+sequenceDiagram
+    participant A as LLM (interactive)
+    participant B as image generator (batch)
+    participant C as person (foreground)
+    A->>A: granted, turn starts
+    B-->>A: waits (lower priority, held)
+    Note over A: max_turn ends
+    A->>B: drained at the next boundary
+    B->>B: granted, min_turn 45 s protects it
+    C-->>B: asks for the card at 20 s
+    Note over B: preempt = true: the turn is cut short
+    B->>C: drained
+    C->>C: granted
+    Note over C: another foreground request within 45 s of this preemption waits for the gap to pass
+```
+
+`berth config show` prints the settings that are on. A wait reason names what the waiter is waiting for:
+"has its minimum turn, 3m12s left", or "a turn was preempted 10s ago; the next preemption is allowed in 35s".
+
 ## Games, apps and holds
 - **Claims cover work Berth does not start.** berthd scans the process table every 2 s.
   A *hold* claim keeps the card while its process runs: engines are drained and wait, with a

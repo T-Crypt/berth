@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/T-Crypt/berth/internal/broker"
 	"github.com/T-Crypt/berth/internal/config"
 	"github.com/T-Crypt/berth/internal/proto"
 	"github.com/T-Crypt/berth/internal/suite"
@@ -106,6 +107,7 @@ func configBullets(c *Context, cfg config.Config) {
 	harborGatewayBlock(c, cfg)
 	if len(cfg.Priority.Order) > 0 || c.Verbose {
 		priorityBullet(c, cfg)
+		turnsBullet(c, cfg)
 	}
 	if cfg.AlertsSet() || c.Verbose {
 		alertsBullet(c, cfg)
@@ -205,6 +207,29 @@ func priorityBullet(c *Context, cfg config.Config) {
 		window = "off"
 	}
 	c.Bullet("Priority: %s, juggle window %s", rank, window)
+}
+
+// turnsBullet names the round-robin settings that are on; with none set it
+// says nothing, since the broker then decides as it always did.
+func turnsBullet(c *Context, cfg config.Config) {
+	t := cfg.Turns
+	var parts []string
+	if t.MaxTurn.Duration > 0 || len(t.MaxTurnBy) > 0 {
+		parts = append(parts, "max turn "+t.MaxTurn.String())
+	}
+	if len(t.Cycle) > 0 {
+		parts = append(parts, "cycle ["+strings.Join(t.Cycle, " ")+"]")
+	}
+	if t.Preempt {
+		gap := t.PreemptGap.String()
+		if t.PreemptGap.Duration == 0 {
+			gap = broker.DefaultPreemptGap.String()
+		}
+		parts = append(parts, "preemption every "+gap+" at most")
+	}
+	if len(parts) > 0 {
+		c.Bullet("Turns: %s", strings.Join(parts, ", "))
+	}
 }
 
 func alertsBullet(c *Context, cfg config.Config) {

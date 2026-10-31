@@ -82,7 +82,7 @@ func runGateway(c *Context) int {
 	if err != nil {
 		return c.fail(Systemf("api key: %v", err))
 	}
-	g := &gateway.Gateway{Socket: *sock, Engines: cfg.Engine, Ready: *ready, Key: key, Log: log, HeadroomFloor: *headroomMiB << 20,
+	g := &gateway.Gateway{Socket: *sock, Engines: cfg.Engine, Ready: *ready, ReplyTimeout: cfg.Gateway.ReplyTimeout.Duration, Key: key, Log: log, HeadroomFloor: *headroomMiB << 20,
 		AllowHosts: allow, StateFile: defaultStateFile("gateway-engines.json"),
 		CostFile: defaultStateFile("swapcost.json"), DeferredFile: defaultStateFile("comfyui-queue.json"), ConfigPath: *cfgPath}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

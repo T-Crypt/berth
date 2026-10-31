@@ -202,6 +202,11 @@ type Config struct {
 		// --listen. Loopback only until the API has authentication.
 		// Empty = the built-in default.
 		Listen string `toml:"listen" json:"listen,omitempty" yaml:"listen,omitempty"`
+		// ReplyTimeout: an engine that takes a request and sends no response
+		// headers for this long gets it once more (started again if it went
+		// away), then the client gets a 504 naming the engine. 0 = off, the
+		// default: the request waits for the engine as long as the client does.
+		ReplyTimeout Duration `toml:"reply_timeout,omitzero" json:"reply_timeout,omitempty" yaml:"reply_timeout,omitempty"`
 	} `toml:"gateway,omitempty" json:"gateway" yaml:"gateway"`
 	Notify struct {
 		// Enabled turns berth notify's desktop notifications on or off;
@@ -225,6 +230,7 @@ type Config struct {
 	Engine    []Engine        `toml:"engine,omitempty" json:"engine,omitempty" yaml:"engine,omitempty"`
 	Alerts    AlertsConfig    `toml:"alerts" json:"alerts" yaml:"alerts"`
 	Priority  PriorityConfig  `toml:"priority,omitempty" json:"priority" yaml:"priority"`
+	Turns     TurnsConfig     `toml:"turns,omitempty" json:"turns" yaml:"turns"`
 	Claims    ClaimsConfig    `toml:"claims,omitempty" json:"claims" yaml:"claims"`
 	Squatters SquattersConfig `toml:"squatters,omitempty" json:"squatters" yaml:"squatters"`
 	Claim     []ClaimRule     `toml:"claim,omitempty" json:"claim,omitempty" yaml:"claim,omitempty"`
@@ -444,6 +450,25 @@ type PriorityConfig struct {
 	JuggleWindow Duration `toml:"juggle_window" json:"juggle_window" yaml:"juggle_window"`
 }
 
+// TurnsConfig is the round-robin policy, [turns] in berth.toml. Every
+// setting is off by default; with none set the broker decides as it always
+// did (priority, then arrival, with each engine's own min_turn).
+type TurnsConfig struct {
+	// MaxTurn is the longest a holder keeps the card against a waiter of
+	// lower priority: past it, the holder is drained for the waiter (at a
+	// job boundary; a request is never cut off). 0 = no limit. MaxTurnBy
+	// sets it per engine, keyed by name (or --group).
+	MaxTurn   Duration            `toml:"max_turn,omitzero" json:"max_turn,omitempty" yaml:"max_turn,omitempty"`
+	MaxTurnBy map[string]Duration `toml:"max_turn_by,omitempty" json:"max_turn_by,omitempty" yaml:"max_turn_by,omitempty"`
+	// Cycle serves waiters of one priority in this order of engine keys,
+	// starting with the one after the last granted. Empty = by arrival.
+	Cycle []string `toml:"cycle,omitempty" json:"cycle,omitempty" yaml:"cycle,omitempty"`
+	// Preempt lets a waiter of a higher priority drain a holder inside its
+	// min_turn, at most once per PreemptGap (default 45s). Off by default.
+	Preempt    bool     `toml:"preempt,omitzero" json:"preempt,omitempty" yaml:"preempt,omitempty"`
+	PreemptGap Duration `toml:"preempt_gap,omitzero" json:"preempt_gap,omitempty" yaml:"preempt_gap,omitempty"`
+}
+
 // AlertsConfig is the threshold table the node evaluates on its sample cycle.
 // A key with no entry is not watched. probe and stuck are built in; they
 // cannot be configured off.
@@ -608,6 +633,30 @@ func (c *Config) Validate() error {
 			errs = append(errs, fmt.Errorf("priority.order lists %q twice", o))
 		}
 		ordered[o] = true
+	}
+	if c.Gateway.ReplyTimeout.Duration < 0 {
+		errs = append(errs, fmt.Errorf("gateway.reply_timeout %s must be >= 0", c.Gateway.ReplyTimeout))
+	}
+	if c.Turns.MaxTurn.Duration < 0 {
+		errs = append(errs, fmt.Errorf("turns.max_turn %s must be >= 0", c.Turns.MaxTurn))
+	}
+	if c.Turns.PreemptGap.Duration < 0 {
+		errs = append(errs, fmt.Errorf("turns.preempt_gap %s must be >= 0", c.Turns.PreemptGap))
+	}
+	for k, d := range c.Turns.MaxTurnBy {
+		if d.Duration < 0 {
+			errs = append(errs, fmt.Errorf("turns.max_turn_by.%s: %s must be >= 0", k, d))
+		}
+	}
+	cycled := map[string]bool{}
+	for i, k := range c.Turns.Cycle {
+		switch {
+		case strings.TrimSpace(k) == "":
+			errs = append(errs, fmt.Errorf("turns.cycle[%d] is empty", i))
+		case cycled[k]:
+			errs = append(errs, fmt.Errorf("turns.cycle lists %q twice", k))
+		}
+		cycled[k] = true
 	}
 	seen := map[string]bool{}
 	served := map[string]string{} // model -> the engine that serves it
