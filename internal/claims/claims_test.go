@@ -7,6 +7,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -77,6 +78,8 @@ func TestCompileRejects(t *testing.T) {
 		{Name: "x", Exe: []string{"["}},
 		{Name: "x", Exe: []string{"a"}, ParentCmdline: "SteamLaunch"},
 		{Name: "x", Parent: []string{"reaper"}, ParentCmdline: "("},
+		{Name: "x", Exe: []string{"a"}, GPU: "card 1"},
+		{Name: "x", Exe: []string{"a"}, GPU: "gpu1", Action: ActionTrack},
 	} {
 		if err := r.Compile(); err == nil {
 			t.Errorf("%+v compiled", r)
@@ -189,6 +192,50 @@ func TestWatcherHoldsEveryCard(t *testing.T) {
 	}
 	if len(gpu1.events) != 0 {
 		t.Errorf("gpu1 events = %v, want none: the node has one event log", gpu1.events)
+	}
+}
+
+// A hold whose rule names gpu1 asks gpu1 alone, and only gpu1 reports the
+// claim active; a rule without cards still holds every card.
+func TestWatcherHoldsTheCardsItNames(t *testing.T) {
+	cards := []*fakeBroker{{held: make(chan struct{}, 4)}, {held: make(chan struct{}, 4)}, {held: make(chan struct{}, 4)}}
+	w := &Watcher{Cards: []Broker{cards[0], cards[1], cards[2]}, Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Scan: func() ([]Proc, error) { return steam, nil }, holds: map[string]*hold{}}
+	w.Rules = compiled(t,
+		Rule{Name: "elden", Exe: []string{"eldenring.exe"}, GPU: "gpu1", Cards: []int{1}},
+		Rule{Name: "trainer", Exe: []string{"python3"}})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	w.Tick(ctx, time.Now())
+	asked := func(i int) []string {
+		var out []string
+		for range 2 {
+			select {
+			case <-cards[i].held:
+			case <-time.After(200 * time.Millisecond):
+			}
+		}
+		cards[i].mu.Lock()
+		defer cards[i].mu.Unlock()
+		for _, r := range cards[i].asked {
+			out = append(out, r.Engine)
+		}
+		slices.Sort(out)
+		return out
+	}
+	for i, want := range []string{"claim:trainer", "claim:elden,claim:trainer", "claim:trainer"} {
+		if got := strings.Join(asked(i), ","); got != want {
+			t.Errorf("gpu%d asked for %s, want %s", i, got, want)
+		}
+		cards[i].mu.Lock()
+		if elden := cards[i].states[0]; elden.Name != "elden" || elden.Active != (i == 1) {
+			t.Errorf("gpu%d reports %+v, want elden active only on gpu1", i, elden)
+		}
+		if trainer := cards[i].states[1]; !trainer.Active {
+			t.Errorf("gpu%d reports %+v, want trainer active", i, trainer)
+		}
+		cards[i].mu.Unlock()
 	}
 }
 
