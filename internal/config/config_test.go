@@ -1054,3 +1054,21 @@ gpu  = "gpu1,0000:41:00.0"
 		}
 	}
 }
+
+// One model may be served on two cards, one engine on each, so a per-card
+// gateway URL can reach either. Two engines that serve it on the same card,
+// or where one names no card, still conflict.
+func TestOneModelOnTwoCards(t *testing.T) {
+	entry := func(name, gpu string, port int) string {
+		return fmt.Sprintf("[[engine]]\nname = %q\ntype = \"llamacpp\"\nurl = \"http://127.0.0.1:%d\"\ngpu = %q\nserves = [\"qwen\"]\n", name, port, gpu)
+	}
+	if _, err := Load(write(t, entry("a", "gpu0", 8080)+entry("b", "gpu1", 8081))); err != nil {
+		t.Errorf("qwen on gpu0 and gpu1: %v", err)
+	}
+	for _, pair := range [][2]string{{"gpu1", "gpu1"}, {"", "gpu1"}} {
+		_, err := Load(write(t, entry("a", pair[0], 8080)+entry("b", pair[1], 8081)))
+		if err == nil || !strings.Contains(err.Error(), `serves "qwen", which "a" already serves`) {
+			t.Errorf("qwen on %q and %q: %v, want the conflict", pair[0], pair[1], err)
+		}
+	}
+}
