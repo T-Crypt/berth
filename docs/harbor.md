@@ -146,8 +146,10 @@ question an operator actually asks.
   in RAM), the queue rows, the container a run is in, and the exact terminal order
   for the lease beside it as a copy button (`berth stop ENGINE`, `berth resume
   ENGINE`, `berth reclaim LEASE`).
-- **The berths, the machine, stowaways and no ticket** answer "what else is on the
-  card and the host, and who holds memory without a ticket?"
+- **The berths, the machine, claims, stowaways and no ticket** answer "what else is on the
+  card and the host, and who holds memory without a ticket?" The claims panel lists the claim
+  rules matching now, as `berth claims` does: a hold names its lease or says it is waiting, and a
+  track gives the card memory it names. Idle rules are only counted.
 - **Several cards.** When berthd governs more than one card, each card has its own berth panel that lists
   only the leases and stowaways on that card. Each lease line names the model its engine reports
   loaded, and a lease on several cards adds its card list (`on gpu0..gpu4`). A board row and a stowaway name their card (`gpu1`), a lease
