@@ -17,6 +17,21 @@ has a matching GitHub release whose body comes from its section below.
   `berth config check` refuses a slice name no unit can take. An entry with no slice starts its scope exactly as
   before, on every platform.
 
+### Changed
+
+- The harbor's About tab is rewritten for v0.4. It leads with the node's version and links to the docs,
+  changelog, issues and source, adds a section on machines with several cards, and drops the list of planned
+  features that had shipped or changed. Its sections are cards in two columns on a wide screen, with the same
+  section rail as the other tabs.
+- The harbor header no longer clips the ADVANCED switch or cuts its tagline off: below 1600 px the tagline
+  and the "& REQUESTS" half of the engines tab are hidden. On a phone an alert's message wraps instead of
+  ending in an ellipsis, with its time on its own line.
+
+### Fixed
+
+- A harbor link to a section, such as `#sec-library` from the engines tab's rail, opened the card tab on a
+  reload. It now opens the tab that holds the section and scrolls to it.
+
 ## [v0.4.0] - 2026-10-29
 
 One berthd now governs every card on a machine. `berth run --gpu gpu1` puts an engine on one card,

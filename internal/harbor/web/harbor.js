@@ -483,10 +483,19 @@ function wireTabs() {
       show(key);
     });
   }
+  // A hash is a tab, a ticket, or a section the rail wrote: a section opens
+  // the tab that holds it, so a shared or reloaded link lands where it says.
   const h = location.hash.slice(1);
-  show(h.startsWith("ticket=") ? "harbor" : h);
+  if (tabs[h] || h.startsWith("ticket=")) return show(h);
+  const target = h ? document.getElementById(h) : null;
+  const key = target ? Object.keys(panels).find((k) => panels[k].contains(target)) : undefined;
+  show(key);
+  if (key) pendingSection = target;
 }
 let pendingTicket = location.hash.startsWith("#ticket=") ? decodeURIComponent(location.hash.slice(8)) : null;
+// A linked section waits for the first status, whose alerts and panels move
+// it down the page.
+let pendingSection = null;
 
 // ---------------- page chrome ----------------
 // The sub-navigation, the collapsible panels, the keyboard shortcuts, the
@@ -502,6 +511,12 @@ const ENGINES_SECTIONS = [
   ["sec-throughput", "Throughput"], ["sec-ledger", "Ledger"], ["sec-lb", "Leaderboard"],
   ["sec-recent", "Recent"], ["sec-residency", "Residency"], ["sec-storage", "Storage"],
 ];
+const ABOUT_SECTIONS = [
+  ["about-top", "Berth"], ["about-cards", "Cards"], ["about-modes", "Modes"], ["about-nav", "Getting around"],
+  ["about-keys", "Keyboard"], ["about-states", "Status words"], ["about-kpis", "KPIs"], ["about-counters", "Counters"],
+  ["about-kv", "Context and KV"], ["about-telemetry", "GPU and machine"], ["about-library", "Library"],
+  ["about-holders", "Games and stowaways"], ["about-next", "Terminal"],
+];
 function wireChrome() {
   try {
     const stored = localStorage.getItem(COLLAPSE_KEY);
@@ -509,6 +524,7 @@ function wireChrome() {
   } catch (e) { state.collapsed = []; }
   buildSubnav($("subnav-harbor"), HARBOR_SECTIONS);
   buildSubnav($("subnav-engines"), ENGINES_SECTIONS);
+  buildSubnav($("subnav-about"), ABOUT_SECTIONS);
   wireCollapse();
   wireShortcuts();
   wireRailMenu();
@@ -1185,8 +1201,14 @@ function demoInsights(range) {
 }
 function onStatus(s) {
   nodeVersion.textContent = "node " + (s.version || "") + (s.harbor_version ? " / harbor " + s.harbor_version : "");
+  setText($("about-version"), nodeVersion.textContent);
   renderAll(s);
   paintOverall();
+  if (pendingSection) {
+    const target = pendingSection;
+    pendingSection = null;
+    requestAnimationFrame(() => target.scrollIntoView({ block: "start" }));
+  }
   if (pendingTicket) {
     const key = pendingTicket;
     pendingTicket = null;
