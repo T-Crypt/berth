@@ -186,6 +186,8 @@ func handle(ctx context.Context, c net.Conn, n *node.Node, x Extras, log *slog.L
 		reclaim(conn, log, first, n)
 	case proto.OpStop:
 		stop(conn, log, first, n)
+	case proto.OpCordon, proto.OpUncordon:
+		cordon(conn, log, first, n)
 	case proto.OpPairCode, proto.OpPairRedeem, proto.OpPairCheck, proto.OpPairList, proto.OpPairRevoke:
 		pairing(conn, log, first, x.Pair)
 	case proto.OpResume:

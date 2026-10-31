@@ -8,6 +8,10 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Added
 
+- `berth cordon CARD` stops new grants on a card, holds aside, while the node's other cards serve; `berth uncordon
+  CARD` lifts it. What holds the card keeps running. Waiters say the card is cordoned, `berth status` marks it
+  `CORDONED`, and the gateway treats it as out of reach: no background engine starts there and a ComfyUI job for it
+  queues. A berthd restart clears the cordon.
 - Each card has its own base URL on the gateway, `/cards/CARD/v1`, named by the card's name or PCI address. A
   request through it only reaches engines on that card, and `GET /cards/CARD/v1/models` lists only theirs. One
   model can now be served on several cards, one engine entry per card, and `berth config check` still refuses two

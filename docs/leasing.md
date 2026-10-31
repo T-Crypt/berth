@@ -126,6 +126,20 @@
 - A hold cannot free memory held by something outside Berth: that memory is still reported,
   as contested.
 
+## Cordon a card
+
+On a node with several cards, `berth cordon gpu1` stops new grants on that card while the others keep serving, for
+maintenance or before a VM takes it. Name the card by its name or its PCI address.
+
+- What holds the card keeps running. A cordon drains nothing: `berth stop ENGINE` does that.
+- Waiters stay in line, and their reason says the card is cordoned. A hold (`berth hold`, a game claim) is still
+  granted.
+- The gateway treats the card as out of reach. A plain `/v1` request goes to another card that serves its model,
+  a background engine for the card does not start, and a ComfyUI job for it queues.
+- `berth status` marks the card `CORDONED`, and `berth events` records `card.cordoned` and `card.uncordoned`.
+- `berth uncordon gpu1` lets new work in, and the card's waiters are scheduled at once. A berthd restart also
+  clears the cordon.
+
 ## Training runs
 
 A training run that loses its cards loses everything since its last checkpoint. Run it under one pinned lease:

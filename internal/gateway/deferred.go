@@ -19,6 +19,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -58,6 +59,9 @@ func outOfReach(st *proto.Status) string {
 	}
 	if st.Passthrough != nil {
 		return "the card is passed through to a VM"
+	}
+	if cordoned(st) {
+		return "the card is cordoned"
 	}
 	for _, l := range st.Leases {
 		if l.Pinned {
@@ -261,4 +265,9 @@ func (g *Gateway) deferredHistory(w http.ResponseWriter, r *http.Request, id str
 		out[job.ID] = v
 	}
 	_ = json.NewEncoder(w).Encode(out)
+}
+
+// cordoned is whether berth cordon closed a card the status covers.
+func cordoned(st *proto.Status) bool {
+	return slices.ContainsFunc(st.GPUs, func(g proto.GPU) bool { return g.Scheduled && g.Cordoned })
 }

@@ -521,6 +521,28 @@ unpairs every device.`,
 		Run:     runPair,
 	},
 	{
+		Name:    "cordon",
+		Summary: "stop new grants on a card; what holds it keeps running",
+		Args:    "CARD [--socket P] [--format F]",
+		Help: `Stop new grants on the named card, by its name (gpu1) or PCI address, for
+maintenance or before a VM takes it, while the node's other cards keep
+serving. Waiters stay in line with a reason that names the cordon, and
+the gateway sends a plain /v1 request to another card that serves its
+model. A hold (berth hold, a game claim) is still granted. What holds the
+card keeps running: berth stop ENGINE drains it. The cordon lasts until
+berth uncordon or until berthd restarts.`,
+		Formats: []Format{FormatHuman, FormatJSON, FormatYAML},
+		Run:     runCordon,
+	},
+	{
+		Name:    "uncordon",
+		Summary: "let new work get a cordoned card again",
+		Args:    "CARD [--socket P] [--format F]",
+		Help:    `Lift berth cordon from the named card. Its waiters are scheduled at once.`,
+		Formats: []Format{FormatHuman, FormatJSON, FormatYAML},
+		Run:     runUncordon,
+	},
+	{
 		Name:    "stop",
 		Summary: "stop an engine on purpose: its leases drain through their own wrappers",
 		Args:    "ENGINE [--wait] [--socket P] [--format F]",

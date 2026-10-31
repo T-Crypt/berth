@@ -113,8 +113,8 @@ v0.5 lets a client choose the card on a node with several. Each slice ships on i
    the engines on that card, and one model can be served on several cards, one engine entry per card.
 2. **Placement for a plain `/v1` request.** When several cards serve the model, the gateway picks one: the card
    where it already runs, then one where it is parked, then a free card, then the cheapest measured switch.
-3. **Cordon a card.** A cordoned card takes no new grants until it is uncordoned, so it can be drained for
-   maintenance or a VM while the others serve.
+3. **Cordon a card.** `berth cordon gpu1` stops new grants on the card, holds aside, until `berth uncordon`, so it
+   can be drained for maintenance or a VM while the others serve.
 4. **A card picker on the board.** The harbor and `GET /v1/berth/board` name the card each engine can run on.
 
 ## Also queued

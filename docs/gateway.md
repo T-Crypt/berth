@@ -312,6 +312,8 @@ A client that works on gpu1 sets its base URL to `http://127.0.0.1:9799/cards/gp
 card. A request without the prefix goes to the first engine in `berth.toml` that serves the model, as before.
 
 - A card the node does not have answers `404` with the node's cards.
+- A cordoned card ([Cordon a card](leasing.md#cordon-a-card)) still takes requests through its URL, and they wait
+  in line.
 - A model no engine on that card serves answers `404` naming the card.
 - An engine berthd finds that has no entry in `berth.toml` belongs to no card here, so only the plain `/v1` URL
   reaches it.
