@@ -315,7 +315,7 @@ idle_after = "60s"                 # how long the card must stay free first (def
 - A card back from a VM is a free card, so a background engine also picks up after a VFIO session.
 - On a machine with more than one card, the card is the one the entry's `gpu` names (the first card when it names
   none). A lease, a waiter or a stowaway on another card does not keep it out. A running claimed app does, because a
-  claim holds every card.
+  claim holds every card unless its `gpu` names other cards.
 - A background engine needs `start`, runs at `batch` only, and needs no `serves`.
 
 An engine whose work needs a sidecar runs the same way as a Compose project. Set `compose` instead
