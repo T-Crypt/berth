@@ -109,7 +109,7 @@ Merged to the `next` branch and in no release yet. Testers get them in a `v0.4.1
 
 v0.5 lets a client choose the card on a node with several. Each slice ships on its own, in this order:
 
-1. **One base URL per card** ([#278](https://github.com/T-Crypt/berth/pull/278)). `/cards/CARD/v1` reaches only
+1. **One base URL per card**, merged in [#278](https://github.com/T-Crypt/berth/pull/278). `/cards/CARD/v1` reaches only
    the engines on that card, and one model can be served on several cards, one engine entry per card.
 2. **Placement for a plain `/v1` request.** When several cards serve the model, the gateway picks one: the card
    where it already runs, then one where it is parked, then a free card, then the cheapest measured switch.
