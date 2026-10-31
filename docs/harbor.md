@@ -189,7 +189,9 @@ opens the tab that holds the section when you share or reload it.
   "no window / no slot data", never an error. An engine that was up and stops
   answering is shown as **unresponsive** (latched), distinct from one that never ran. A
   `berth run` engine that exits 0 shows as offline, since a batch job that finishes stops
-  answering on purpose. One that exits with any other code stays unresponsive.
+  answering on purpose. So does one that Berth stopped: a drain, `berth stop`, a failed wake,
+  or a stop signal from its supervisor. One that exits with any other code on its own stays
+  unresponsive.
 - **Requests:** a 24-hour request log from llama-swap and Strata (a Strata entry needs
   `type = "strata"`, and each request lands under the model its `/health` names); requests per minute, p50 and p95
   latency, prefill time, time per output token, cache and re-ingest share, a token ledger

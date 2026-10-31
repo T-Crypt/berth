@@ -36,6 +36,10 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Fixed
 
+- An engine that Berth stopped no longer shows as unresponsive (LATCHED) in `berth status` and the harbor. A
+  drain, `berth stop`, a wake that failed or a stop signal from a supervisor such as llama-swap ends the engine on
+  purpose, and it now shows as offline, as an engine that exits 0 already did. An engine that exits non-zero on
+  its own still shows as unresponsive.
 - A harbor link to a section, such as `#sec-library` from the engines tab's rail, opened the card tab on a
   reload. It now opens the tab that holds the section and scrolls to it.
 

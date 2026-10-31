@@ -43,6 +43,10 @@ type leaseLine struct {
 	conn    *proto.Conn
 	replies chan proto.Msg
 	parked  bool
+	// stopped is set once the run itself sets out to end the engine (a
+	// drain past the park, a failed wake, a forwarded stop signal), so the
+	// exit that follows is on purpose whatever its code.
+	stopped bool
 	probed  *parkVerdict
 	lends   map[string]lend.Ticket
 	// the 503 watch's pacing: how long it reads the engine's ledger and how
@@ -65,6 +69,18 @@ func (l *leaseLine) isParked() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.parked
+}
+
+func (l *leaseLine) askStop() {
+	l.mu.Lock()
+	l.stopped = true
+	l.mu.Unlock()
+}
+
+func (l *leaseLine) stopWasAsked() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.stopped
 }
 
 func (l *leaseLine) setConn(conn *proto.Conn) {
@@ -234,13 +250,13 @@ func (l *leaseLine) resume(o Options, cmd *exec.Cmd, done <-chan struct{}, say f
 		cancel()
 		if err != nil {
 			say("resuming %s failed (%v); stopping it", o.Engine, err)
-			stopNow(o, cmd, done, say)
+			l.stopNow(o, cmd, done, say)
 			return
 		}
 	}
 	if !o.parkReady() {
 		say("%s never answered after the wake; stopping it", o.Engine)
-		stopNow(o, cmd, done, say)
+		l.stopNow(o, cmd, done, say)
 		return
 	}
 	if o.front != nil {
@@ -289,7 +305,8 @@ func askReady(url, key string) bool {
 
 // stopNow runs the stop ladder's tail: terminate, then kill after Grace.
 // The engine exits, the wait returns, and the lease is released with it.
-func stopNow(o Options, cmd *exec.Cmd, done <-chan struct{}, say func(string, ...any)) {
+func (l *leaseLine) stopNow(o Options, cmd *exec.Cmd, done <-chan struct{}, say func(string, ...any)) {
+	l.askStop()
 	terminate(cmd)
 	select {
 	case <-done:

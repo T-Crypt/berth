@@ -274,7 +274,7 @@ func Run(o Options) int {
 	// line is the lease's live conn and park state; the drain, the resume
 	// and the container resolver ride it across reattach loops.
 	line := newLine(conn)
-	go forwardSignals(cmd, done, func() bool { return o.Checkpoint && line.isParked() })
+	go forwardSignals(cmd, done, func() bool { return o.Checkpoint && line.isParked() }, line.askStop)
 
 	// A container engine resolves its containers to their full IDs and names
 	// them on the lease, so the broker attributes the engine's GPU processes
@@ -395,7 +395,7 @@ func Run(o Options) int {
 		err = nil // exited cleanly; a grandchild still held the output copy
 	}
 	code := exitCode(cmd, err)
-	if code == 0 {
+	if code == 0 || line.stopWasAsked() {
 		_ = line.send(proto.Msg{Op: proto.OpFinished})
 	}
 	close(done)
@@ -712,7 +712,7 @@ func runUnleased(o Options, reason string) int {
 	afterStart(cmd)
 	defer record(o, cmd, reason)()
 	done := make(chan struct{})
-	go forwardSignals(cmd, done, func() bool { return false })
+	go forwardSignals(cmd, done, func() bool { return false }, func() {})
 	err := cmd.Wait()
 	afterWait(cmd)
 	close(done)
@@ -777,7 +777,8 @@ func ExitCode(cmd *exec.Cmd, err error) int { return exitCode(cmd, err) }
 // to the engine's whole process group. A checkpointed engine is killed
 // instead: its CUDA calls block until a restore, so its own shutdown never
 // finishes, and the supervisor kills this wrapper before a grace would end.
-func forwardSignals(cmd *exec.Cmd, done <-chan struct{}, locked func() bool) {
+// asked records each one as a stop on purpose.
+func forwardSignals(cmd *exec.Cmd, done <-chan struct{}, locked func() bool, asked func()) {
 	ch := make(chan os.Signal, 4)
 	signal.Notify(ch, stopSignals...)
 	defer signal.Stop(ch)
@@ -786,6 +787,7 @@ func forwardSignals(cmd *exec.Cmd, done <-chan struct{}, locked func() bool) {
 		case <-done:
 			return
 		case s := <-ch:
+			asked()
 			if locked() {
 				kill(cmd)
 				continue
@@ -875,6 +877,7 @@ func drain(o Options, cmd *exec.Cmd, line *leaseLine, done <-chan struct{}, reas
 	if o.Park != nil || o.Hook {
 		if line.isParked() && o.Checkpoint {
 			say("killing checkpointed %s: it cannot shut down while its CUDA calls are locked", o.Engine)
+			line.askStop()
 			kill(cmd)
 			return
 		}
@@ -884,6 +887,8 @@ func drain(o Options, cmd *exec.Cmd, line *leaseLine, done <-chan struct{}, reas
 			return
 		}
 	}
+	// From here every step ends the engine.
+	line.askStop()
 	if o.DrainPost != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, o.DrainPost, strings.NewReader(""))

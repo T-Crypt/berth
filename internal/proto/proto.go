@@ -18,8 +18,9 @@ import (
 const (
 	OpAcquire = "acquire" // client: ask for a berth; blocks until granted or refused
 	OpAttach  = "attach"  // client: the engine is running as this PID
-	// OpFinished: client: the engine exited 0, so it stopped answering on
-	// purpose. Sent just before the hang-up that ends the lease.
+	// OpFinished: client: the engine stopped answering on purpose: it exited
+	// 0, or the run ended it (a drain, a failed wake, a stop signal it
+	// forwarded). Sent just before the hang-up that ends the lease.
 	OpFinished = "finished"
 	// OpReattach: client: an engine already running under berth run (PID plus
 	// PIDStart) lost its daemon and asks the new one to lease it the card again.
