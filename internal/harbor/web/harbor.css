@@ -1023,6 +1023,13 @@ body.ready #panel-engines > :nth-child(n+2) { animation-delay: 60ms; }
 .sq .name { font-size: var(--fs-body); color: var(--magenta); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sq .meta, .nr .meta { color: var(--dim); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .sq .noticket { color: var(--amber); }
+/* a claim is not a stowaway: a hold reads in the attention amber, a track in
+   the passive cyan, and the rule's name never in the stowaway magenta */
+.sq.claim-hold { border-left-color: var(--amber); }
+.sq.claim-track { border-left-color: var(--cyan); }
+.sq.claim-hold .name { color: var(--amber); }
+.sq.claim-track .name { color: var(--cyan); }
+.sq .claim-builtin { color: var(--dim-2); font-size: var(--fs-small); }
 .empty-note {
   border: 1px dashed var(--hair-2);
   border-radius: var(--r1);

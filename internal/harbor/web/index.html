@@ -167,6 +167,13 @@
             <div id="machine-charts" class="machine-charts adv-only"></div>
             <div class="socket-line" id="socket-line" role="status"></div>
           </section>
+          <section class="panel claims-section" id="sec-claims" aria-label="claims">
+            <div class="panel-head">
+              <h2 class="panel-title">CLAIMS</h2>
+              <span class="panel-meta" id="claims-meta">games and apps</span>
+            </div>
+            <div id="claims"></div>
+          </section>
           <section class="panel stowaways-section" id="sec-stow" aria-label="stowaways">
             <div class="panel-head">
               <h2 class="panel-title">STOWAWAYS</h2>
@@ -393,8 +400,8 @@
         </section>
 
         <section class="about-sec" id="about-holders" aria-labelledby="about-holders-h">
-          <h2 class="section-title" id="about-holders-h">GAMES, STOWAWAYS AND NO TICKET</h2>
-          <p>A game that a hold claim matches holds the card under a <code>claim:NAME</code> lease, so engines drain and wait until it exits. <code>berth hold</code> does the same by hand. A stowaway is any process holding VRAM without a lease: Berth reports it and never stops it. A NO TICKET run is an engine started while the node was down, so it holds the card outside any lease.</p>
+          <h2 class="section-title" id="about-holders-h">CLAIMS, STOWAWAYS AND NO TICKET</h2>
+          <p>A game that a hold claim matches holds the card under a <code>claim:NAME</code> lease, so engines drain and wait until it exits. <code>berth hold</code> does the same by hand. A track claim names an app's card memory (OBS, Blender) so it is not reported as a stowaway. The CLAIMS panel lists the rules matching now, as <code>berth claims</code> does, with the card on a machine with several, and counts the idle ones. A stowaway is any process holding VRAM without a lease: Berth reports it and never stops it. A NO TICKET run is an engine started while the node was down, so it holds the card outside any lease.</p>
         </section>
 
         <section class="about-sec" id="about-next" aria-labelledby="about-next-h">
