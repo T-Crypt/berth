@@ -309,7 +309,17 @@ serves = ["qwen"]
 
 A client that works on gpu1 sets its base URL to `http://127.0.0.1:9799/cards/gpu1/v1` and keeps the model name.
 `berth config check` still refuses two entries that serve one model on the same card, or where either names no
-card. A request without the prefix goes to the first engine in `berth.toml` that serves the model, as before.
+card.
+
+A request without the prefix picks the card itself. An engine that is up and lists the model answers first.
+Otherwise the gateway takes the card that costs least to reach, in this order:
+
+1. the card where the model's engine is parked in RAM;
+2. a free card: no lease, waiter, stowaway or active claim, and not in a VM;
+3. a card whose holder drains the usual way;
+4. a card a VM, a pinned lease (a game, a hold) or a cordon keeps, where the request waits.
+
+Two cards of the same rank go to the entry that comes first in `berth.toml`.
 
 - A card the node does not have answers `404` with the node's cards.
 - A cordoned card ([Cordon a card](leasing.md#cordon-a-card)) still takes requests through its URL, and they wait
