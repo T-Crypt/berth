@@ -222,8 +222,9 @@ on any of the cards stops the engine, and its exit frees every card. A lease on 
 yet: a drain stops it the usual way.
 
 The gateway judges each engine against the cards it runs on, and each card has its own base URL on the gateway,
-`/cards/gpu1/v1`, so a client can choose the card ([One URL per card](docs/gateway.md#one-url-per-card)). Choosing
-a card for a plain `/v1` request is v0.5 work.
+`/cards/gpu1/v1`, so a client can choose the card ([One URL per card](docs/gateway.md#one-url-per-card)). A plain
+`/v1` request for a model served on several cards goes to the cheapest card to reach: a parked copy, then a free
+card, then one whose holder drains.
 
 `berth hold --gpu gpu1`, `berth vfio run --gpu gpu1` and `gpu = "gpu1"` on a `[[claim]]` take only the cards they
 name, so the other cards keep serving.
