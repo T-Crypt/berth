@@ -8,6 +8,10 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Added
 
+- `gpu = "gpu1"` on a `[[claim]]` holds only the cards it names, as `berth run --gpu` names them, on a node with
+  several cards. Engines on the other cards keep running, and the gateway starts background engines there. A
+  claim without `gpu` still holds every card. `berth config check` refuses a bad card name and a `gpu` on a
+  `track` claim. A name the node does not have is logged when berthd starts, and that claim holds every card.
 - `berth hold --gpu CARD` and `berth vfio run --gpu CARD` name the card on a node with several. `hold` takes a
   comma list for one hold on several cards, and `vfio run` takes one card. Before, both always took the node's
   first card. Without `--gpu` they still do.

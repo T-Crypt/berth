@@ -1028,3 +1028,29 @@ func TestSquattersAllow(t *testing.T) {
 		t.Errorf("allow = %q, want chrome,WindowsTerminal", got)
 	}
 }
+
+func TestClaimGPUKeyValidated(t *testing.T) {
+	c, err := Load(write(t, `
+[[claim]]
+name = "sim"
+exe  = ["sim.exe"]
+gpu  = "gpu1,0000:41:00.0"
+`))
+	if err != nil {
+		t.Fatalf("valid claim gpu refused: %v", err)
+	}
+	rules, err := c.ClaimRules()
+	if err != nil || rules[0].Name != "sim" || rules[0].GPU != "gpu1,0000:41:00.0" {
+		t.Fatalf("claim gpu not carried to the rule: %+v, %v", rules, err)
+	}
+	for _, bad := range []struct{ toml, want string }{
+		{`gpu = "card 1"`, "must be a card name"},
+		{`gpu = "gpu1,gpu1"`, "names gpu1 twice"},
+		{"gpu = \"gpu1\"\naction = \"track\"", "a track claim holds none"},
+	} {
+		_, err := Load(write(t, "[[claim]]\nname = \"sim\"\nexe = [\"sim.exe\"]\n"+bad.toml+"\n"))
+		if err == nil || !strings.Contains(err.Error(), bad.want) {
+			t.Errorf("%s: got %v, want %q", bad.toml, err, bad.want)
+		}
+	}
+}
