@@ -508,6 +508,37 @@ ttl = "-5s"
 	}
 }
 
+func TestEngineSliceKeyValidated(t *testing.T) {
+	c, err := Load(write(t, `
+[[engine]]
+name  = "strata"
+type  = "llamacpp"
+url   = "http://127.0.0.1:8080"
+slice = "strata.slice"
+[[engine]]
+name = "plain"
+type = "llamacpp"
+url  = "http://127.0.0.1:8081"
+`))
+	if err != nil {
+		t.Fatalf("valid slice keys refused: %v", err)
+	}
+	if c.Engine[0].Slice != "strata.slice" || c.Engine[1].Slice != "" {
+		t.Fatalf("slice keys not loaded: %+v", c.Engine)
+	}
+	for _, bad := range []string{`slice = "strata"`, `slice = "a/b.slice"`, `slice = ".slice"`} {
+		_, err := Load(write(t, `
+[[engine]]
+name = "s"
+type = "llamacpp"
+url  = "http://127.0.0.1:8080"
+`+bad+"\n"))
+		if err == nil || !strings.Contains(err.Error(), "slice") {
+			t.Errorf("%s: got %v, want a slice error", bad, err)
+		}
+	}
+}
+
 func TestEngineParkKeysValidated(t *testing.T) {
 	c, err := Load(write(t, `
 [[engine]]
@@ -995,5 +1026,49 @@ func TestSquattersAllow(t *testing.T) {
 	}
 	if got := strings.Join(c.Squatters.Allow, ","); got != "chrome,WindowsTerminal" {
 		t.Errorf("allow = %q, want chrome,WindowsTerminal", got)
+	}
+}
+
+func TestClaimGPUKeyValidated(t *testing.T) {
+	c, err := Load(write(t, `
+[[claim]]
+name = "sim"
+exe  = ["sim.exe"]
+gpu  = "gpu1,0000:41:00.0"
+`))
+	if err != nil {
+		t.Fatalf("valid claim gpu refused: %v", err)
+	}
+	rules, err := c.ClaimRules()
+	if err != nil || rules[0].Name != "sim" || rules[0].GPU != "gpu1,0000:41:00.0" {
+		t.Fatalf("claim gpu not carried to the rule: %+v, %v", rules, err)
+	}
+	for _, bad := range []struct{ toml, want string }{
+		{`gpu = "card 1"`, "must be a card name"},
+		{`gpu = "gpu1,gpu1"`, "names gpu1 twice"},
+		{"gpu = \"gpu1\"\naction = \"track\"", "a track claim holds none"},
+	} {
+		_, err := Load(write(t, "[[claim]]\nname = \"sim\"\nexe = [\"sim.exe\"]\n"+bad.toml+"\n"))
+		if err == nil || !strings.Contains(err.Error(), bad.want) {
+			t.Errorf("%s: got %v, want %q", bad.toml, err, bad.want)
+		}
+	}
+}
+
+// One model may be served on two cards, one engine on each, so a per-card
+// gateway URL can reach either. Two engines that serve it on the same card,
+// or where one names no card, still conflict.
+func TestOneModelOnTwoCards(t *testing.T) {
+	entry := func(name, gpu string, port int) string {
+		return fmt.Sprintf("[[engine]]\nname = %q\ntype = \"llamacpp\"\nurl = \"http://127.0.0.1:%d\"\ngpu = %q\nserves = [\"qwen\"]\n", name, port, gpu)
+	}
+	if _, err := Load(write(t, entry("a", "gpu0", 8080)+entry("b", "gpu1", 8081))); err != nil {
+		t.Errorf("qwen on gpu0 and gpu1: %v", err)
+	}
+	for _, pair := range [][2]string{{"gpu1", "gpu1"}, {"", "gpu1"}} {
+		_, err := Load(write(t, entry("a", pair[0], 8080)+entry("b", pair[1], 8081)))
+		if err == nil || !strings.Contains(err.Error(), `serves "qwen", which "a" already serves`) {
+			t.Errorf("qwen on %q and %q: %v, want the conflict", pair[0], pair[1], err)
+		}
 	}
 }

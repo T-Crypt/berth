@@ -212,7 +212,9 @@ func (g *Gateway) Handler() http.Handler {
 	g.adoptOnce.Do(g.adopt)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/models", g.models)
+	mux.HandleFunc("GET /cards/{card}/v1/models", g.onCard(g.models))
 	mux.HandleFunc("GET /v1/berth/wait", g.wait)
+	mux.HandleFunc("GET /cards/{card}/v1/berth/wait", g.onCard(g.wait))
 	mux.HandleFunc("GET /v1/berth/cost", g.cost)
 	mux.HandleFunc("POST /v1/berth/plan", g.plan)
 	mux.HandleFunc("GET /v1/berth/board", g.board)
@@ -220,6 +222,7 @@ func (g *Gateway) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/berth/stop", g.apiStop)
 	for _, p := range []string{"/v1/chat/completions", "/v1/completions", "/v1/embeddings"} {
 		mux.HandleFunc("POST "+p, g.forward)
+		mux.HandleFunc("POST /cards/{card}"+p, g.onCard(g.forward))
 	}
 	mux.HandleFunc("POST /prompt", func(w http.ResponseWriter, r *http.Request) { g.comfyPrompt(w, r, false) })
 	mux.HandleFunc("/ws", g.comfyProxy)
@@ -384,37 +387,114 @@ func (g *Gateway) listed(ctx context.Context, base string) []string {
 	return out
 }
 
-// resolve finds the engine for model: an engine that is up and lists it
-// first (it loads the model itself, under its own leases), else a configured
-// engine that serves it and can be started.
-func (g *Gateway) resolve(ctx context.Context, model string) (target, bool) {
+// onCard serves a /cards/{card}/v1/... route: the card is named by its
+// name or PCI address, the path the engine sees loses the prefix, and the
+// handler finds the card's name under PathValue("card").
+func (g *Gateway) onCard(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		key := r.PathValue("card")
+		st := g.nodeStatus()
+		if st == nil {
+			apiErrorCode(w, http.StatusServiceUnavailable, "no_berth", "berthd is not answering, so the gateway cannot tell which card "+key+" is")
+			return
+		}
+		cards := node.CardsOf(st, key)
+		if len(cards) != 1 {
+			var names []string
+			for _, c := range st.GPUs {
+				if c.Scheduled {
+					names = append(names, c.Card)
+				}
+			}
+			apiError(w, http.StatusNotFound, fmt.Sprintf("no card %s on this node (cards: %s)", key, strings.Join(names, ", ")))
+			return
+		}
+		r.SetPathValue("card", cards[0])
+		r.URL.Path = r.URL.Path[strings.Index(r.URL.Path, "/v1/"):]
+		r.URL.RawPath = ""
+		h(w, r)
+	}
+}
+
+// engineOn is whether the engine runs on the card named card; "" (no card
+// asked) takes every engine. An engine berthd sees that has no entry in
+// berth.toml is on no card the gateway knows.
+func (g *Gateway) engineOn(st *proto.Status, name, card string) bool {
+	if card == "" {
+		return true
+	}
+	e := g.engineByName(name)
+	return e != nil && st != nil && slices.Contains(node.CardsOf(st, e.GPU), card)
+}
+
+// resolve finds the engine for model, on card when one is named: an engine
+// that is up and lists it first (it loads the model itself, under its own
+// leases), else a configured engine that serves it and can be started.
+func (g *Gateway) resolve(ctx context.Context, model, card string) (target, bool) {
 	st := g.nodeStatus()
 	for _, e := range g.live() {
 		// A parked engine answers its list with the weights in RAM; the
 		// resume, not the list, says when it may be proxied.
-		if e.Up && !parkedIn(st, e.Name) && slices.Contains(g.listed(ctx, e.URL), model) {
+		if e.Up && g.engineOn(st, e.Name, card) && !parkedIn(st, e.Name) && slices.Contains(g.listed(ctx, e.URL), model) {
 			return target{url: e.URL, live: true}, true
 		}
 	}
+	var serving []*config.Engine
 	for i := range g.Engines {
-		e := &g.Engines[i]
-		if slices.Contains(e.Serves, model) {
-			return target{url: e.URL, engine: e}, true
+		if e := &g.Engines[i]; g.engineOn(st, e.Name, card) && slices.Contains(e.Serves, model) {
+			serving = append(serving, e)
 		}
 	}
-	return target{}, false
+	if len(serving) == 0 {
+		return target{}, false
+	}
+	// One engine per card serves the model: the cheapest card to reach
+	// wins, and berth.toml's order breaks a tie.
+	e := slices.MinFunc(serving, func(a, b *config.Engine) int { return reach(st, a) - reach(st, b) })
+	return target{url: e.URL, engine: e}, true
 }
 
-func (g *Gateway) catalog(ctx context.Context) []string {
+// reach ranks what it takes to bring e up on its card, cheapest first: a
+// resume from RAM, a free card, a drain of the holder, then a wait for a
+// card a VM or a pinned lease (a game, a hold) keeps.
+func reach(st *proto.Status, e *config.Engine) int {
+	v := node.View(st, e.GPU)
+	switch {
+	case parkedIn(st, e.Name):
+		return 0
+	case cardFree(v):
+		return 1
+	case v != nil && outOfReach(v) == "":
+		return 2
+	default:
+		return 3
+	}
+}
+
+// notServed is the 404 for a model no engine serves, on card when one is
+// named.
+func notServed(w http.ResponseWriter, model, card string) {
+	if card == "" {
+		apiError(w, http.StatusNotFound, fmt.Sprintf("no engine on this node serves %q (GET /v1/models lists what does)", model))
+		return
+	}
+	apiError(w, http.StatusNotFound, fmt.Sprintf("no engine on %s serves %q (GET /cards/%s/v1/models lists what does)", card, model, card))
+}
+
+func (g *Gateway) catalog(ctx context.Context, card string) []string {
+	st := g.nodeStatus()
 	seen := map[string]bool{}
 	for _, e := range g.live() {
-		if e.Up {
+		if e.Up && g.engineOn(st, e.Name, card) {
 			for _, m := range g.listed(ctx, e.URL) {
 				seen[m] = true
 			}
 		}
 	}
 	for _, e := range g.Engines {
+		if !g.engineOn(st, e.Name, card) {
+			continue
+		}
 		for _, m := range e.Serves {
 			seen[m] = true
 		}
@@ -437,7 +517,7 @@ func (g *Gateway) models(w http.ResponseWriter, r *http.Request) {
 		Object string  `json:"object"`
 		Data   []model `json:"data"`
 	}{Object: "list", Data: []model{}}
-	for _, m := range g.catalog(r.Context()) {
+	for _, m := range g.catalog(r.Context(), r.PathValue("card")) {
 		out.Data = append(out.Data, model{ID: m, Object: "model", OwnedBy: "berth"})
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -554,9 +634,9 @@ func (g *Gateway) forward(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusBadRequest, "the request needs a model")
 		return
 	}
-	t, ok := g.resolve(r.Context(), req.Model)
+	t, ok := g.resolve(r.Context(), req.Model, r.PathValue("card"))
 	if !ok {
-		apiError(w, http.StatusNotFound, fmt.Sprintf("no engine on this node serves %q (GET /v1/models lists what does)", req.Model))
+		notServed(w, req.Model, r.PathValue("card"))
 		return
 	}
 	preamble := false
@@ -654,9 +734,9 @@ func (g *Gateway) wait(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusBadRequest, "name the model to wait for: /v1/berth/wait?model=NAME")
 		return
 	}
-	t, ok := g.resolve(r.Context(), model)
+	t, ok := g.resolve(r.Context(), model, r.PathValue("card"))
 	if !ok {
-		apiError(w, http.StatusNotFound, fmt.Sprintf("no engine on this node serves %q (GET /v1/models lists what does)", model))
+		notServed(w, model, r.PathValue("card"))
 		return
 	}
 	if !t.live {

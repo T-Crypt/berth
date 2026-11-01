@@ -1,7 +1,7 @@
 # Testing a pre-release
 
 Work for the next release lands on the `next` branch before it reaches `main`. When it is ready for testers, it is
-tagged as a pre-release (`v0.4.0-rc.1`, then `rc.2` and so on) on the
+tagged as a pre-release (`v0.4.1-rc.1`, then `rc.2` and so on) on the
 [releases page](https://github.com/T-Crypt/berth/releases), marked **Pre-release**.
 
 Your normal install is not affected. The README's download link, `go install ...@latest` and `berth update` all stay
@@ -15,7 +15,7 @@ how it works. Back up `berth.toml` before you switch.
 Pick the tag from the releases page, then on Linux:
 
 ```sh
-TAG=v0.4.0-rc.1
+TAG=v0.4.1-rc.1
 cd /tmp
 curl -fLO https://github.com/T-Crypt/berth/releases/download/$TAG/berth-linux-amd64
 curl -fLO https://github.com/T-Crypt/berth/releases/download/$TAG/SHA256SUMS
@@ -31,7 +31,7 @@ it where your current `berth.exe` is, and restart Berth the way you started it.
 Or build it with Go 1.27 or newer:
 
 ```sh
-go install github.com/T-Crypt/berth/cmd/berth@v0.4.0-rc.1   # a tagged pre-release
+go install github.com/T-Crypt/berth/cmd/berth@v0.4.1-rc.1   # a tagged pre-release
 go install github.com/T-Crypt/berth/cmd/berth@next          # the newest commit on next
 ```
 

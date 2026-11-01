@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -236,6 +237,7 @@ func runDaemon(c *Context) int {
 	// Claims: games and apps Berth does not run hold the card or have their
 	// memory named, from the process table. Validate already compiled them.
 	if rules, err := cfg.ClaimRules(); err == nil && len(rules) > 0 {
+		claimCards(rules, n, log)
 		cw := &claims.Watcher{Rules: rules, Every: cfg.Claims.Every.Duration, Cards: brokers, Log: log}
 		go cw.Run(ctx)
 		hold, track := 0, 0
@@ -463,4 +465,24 @@ func parkMaxBytes(cfg config.Config) uint64 {
 		return 0
 	}
 	return uint64(cfg.Park.MaxGiB * float64(gpu.GiB))
+}
+
+// claimCards resolves each hold rule's gpu to positions in the node's cards.
+// A gpu the node does not have is logged, and that rule holds every card: a
+// game that is running is better held on too many cards than on none.
+func claimCards(rules []claims.Rule, n *node.Node, log *slog.Logger) {
+	for i := range rules {
+		r := &rules[i]
+		if r.GPU == "" {
+			continue
+		}
+		picked, err := n.Pick(r.GPU)
+		if err != nil {
+			log.Error("claim names a card this node does not have; it holds every card", "claim", r.Name, "err", err)
+			continue
+		}
+		for _, c := range picked {
+			r.Cards = append(r.Cards, slices.Index(n.Cards(), c))
+		}
+	}
 }

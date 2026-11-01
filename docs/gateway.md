@@ -278,7 +278,57 @@ curl -s http://127.0.0.1:9799/v1/berth/stop   -H "Authorization: Bearer $(berth 
 free, held, draining, in a VM or failing its probe), then every engine in `berth.toml` with its state (up, offline,
 waiting, starting, failed), whether it can be switched to (`launch`) or stopped (`stoppable`), and its models with a
 `loaded` flag from the engine's own reader. `cards` lists every card the node governs, each with its name
-on the node (`card`, such as `gpu1`) and the holders on that card alone.
+on the node (`card`, such as `gpu1`), its base URL on this gateway (`base`, `/cards/gpu1/v1`), `cordoned` when
+`berth cordon` closed it, and the holders on that card alone. Each engine names the cards its entry runs on
+(`cards`), so a board for several cards can put each engine under its card.
+
+## One URL per card
+
+On a node with several cards, each card has its own base URL on the gateway: `/cards/CARD/v1`, where `CARD` is
+the card's name on the node (`gpu1`) or its PCI address. A request through it only reaches engines whose entry
+runs on that card, and `GET /cards/CARD/v1/models` lists only their models. Chat, completions, embeddings and
+`/v1/berth/wait` take the prefix.
+
+One model can be served on several cards, one engine entry per card, each on its own port:
+
+```toml
+[[engine]]
+name   = "qwen-gpu0"
+type   = "llamacpp"
+url    = "http://127.0.0.1:8080"
+gpu    = "gpu0"
+start  = ["llama-server", "-m", "/models/qwen.gguf", "--port", "8080"]
+serves = ["qwen"]
+
+[[engine]]
+name   = "qwen-gpu1"
+type   = "llamacpp"
+url    = "http://127.0.0.1:8081"
+gpu    = "gpu1"
+start  = ["llama-server", "-m", "/models/qwen.gguf", "--port", "8081"]
+serves = ["qwen"]
+```
+
+A client that works on gpu1 sets its base URL to `http://127.0.0.1:9799/cards/gpu1/v1` and keeps the model name.
+`berth config check` still refuses two entries that serve one model on the same card, or where either names no
+card.
+
+A request without the prefix picks the card itself. An engine that is up and lists the model answers first.
+Otherwise the gateway takes the card that costs least to reach, in this order:
+
+1. the card where the model's engine is parked in RAM;
+2. a free card: no lease, waiter, stowaway or active claim, and not in a VM;
+3. a card whose holder drains the usual way;
+4. a card a VM, a pinned lease (a game, a hold) or a cordon keeps, where the request waits.
+
+Two cards of the same rank go to the entry that comes first in `berth.toml`.
+
+- A card the node does not have answers `404` with the node's cards.
+- A cordoned card ([Cordon a card](leasing.md#cordon-a-card)) still takes requests through its URL, and they wait
+  in line.
+- A model no engine on that card serves answers `404` naming the card.
+- An engine berthd finds that has no entry in `berth.toml` belongs to no card here, so only the plain `/v1` URL
+  reaches it.
 
 ## Run an engine whenever the card is free
 
@@ -315,7 +365,7 @@ idle_after = "60s"                 # how long the card must stay free first (def
 - A card back from a VM is a free card, so a background engine also picks up after a VFIO session.
 - On a machine with more than one card, the card is the one the entry's `gpu` names (the first card when it names
   none). A lease, a waiter or a stowaway on another card does not keep it out. A running claimed app does, because a
-  claim holds every card.
+  claim holds every card unless its `gpu` names other cards.
 - A background engine needs `start`, runs at `batch` only, and needs no `serves`.
 
 An engine whose work needs a sidecar runs the same way as a Compose project. Set `compose` instead
@@ -385,6 +435,8 @@ Point the bookmark (or a home-page tile) at `http://127.0.0.1:9796/gui/comfyui` 
 - `/gui/` lists every engine in `berth.toml` with its live state. Any engine with a `start` command gets a Launch
   button there, with or without a `gui` URL, so a phone on the tailnet can switch the card to Strata or a
   llama-server too. An engine with no web UI shows **Running** once it answers.
+- On a node with several cards, each row in `/gui/` also names its card. With one engine per card for a model
+  ([One URL per card](#one-url-per-card)), the row you launch is the card you pick.
 
 <p align="center"><img src="https://raw.githubusercontent.com/T-Crypt/berth/main/assets/preview-wake.png" alt="The gateway's wake page for comfyui: comfyui is offline and the card is free, with a Launch comfyui button" width="560"></p>
 
@@ -397,6 +449,22 @@ The wake page needs no API key: it can only start an engine you gave a `start` c
 loopback, accepts loopback Host names plus the gateway's `--allow-host` names (for `tailscale serve` in
 front), and takes a start only as a POST from its own page, so another site cannot make a visitor's
 browser drain the card.
+
+## Run an engine under a resource-policy slice
+
+`slice = "NAME.slice"` on an engine entry (or `berth run --slice NAME.slice`, which wins) places the engine's
+transient scope under that slice: the slice unit's CPU, memory and swap limits cover the engine and every child
+it forks, where the wrapper's own unit limits cover only the wrapper. The slice unit is your file: for example
+a `[Slice]` drop with `MemorySwapMax = 0` keeps a model-resident engine from paging at all. Berth refuses a slice
+name no unit can take before the engine starts; entries with no slice behave exactly as before, on every platform.
+
+```toml
+[[engine]]
+name  = "llm"
+type  = "llamacpp"
+url   = "http://127.0.0.1:8080"
+slice = "llm.slice"
+```
 
 ## Drain a server at its request boundary
 

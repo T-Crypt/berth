@@ -132,7 +132,7 @@ let shortcutsDlg, railMenuDlg;
 let lastLogSig = null; // filter+query+pause signature: repaint only on change, append otherwise
 let clearLogFilter = null; // set by buildLogSearch: the page's Esc reaches it (R-07)
 let lastTick = 0; // the relative-time ticker's own 1 s cadence
-let berthsRoot, stowRoot, notickRoot, machineRoot, machineCharts, machineMeta, socketLine;
+let berthsRoot, claimsRoot, claimsMeta, stowRoot, notickRoot, machineRoot, machineCharts, machineMeta, socketLine;
 let kpiStripEl, tideEl, tideLegend, tideMeta;
 let boardMeta, berthsMeta, stowMeta, noticketMeta, enginesMeta;
 let throughputMeta, throughputDecode, throughputRpm;
@@ -167,6 +167,8 @@ function main() {
   shortcutsDlg = $("shortcuts");
   railMenuDlg = $("rail-menu");
   berthsRoot = $("berths");
+  claimsRoot = $("claims");
+  claimsMeta = $("claims-meta");
   stowRoot = $("stowaways");
   notickRoot = $("noticket");
   machineRoot = $("machine");
@@ -483,10 +485,19 @@ function wireTabs() {
       show(key);
     });
   }
+  // A hash is a tab, a ticket, or a section the rail wrote: a section opens
+  // the tab that holds it, so a shared or reloaded link lands where it says.
   const h = location.hash.slice(1);
-  show(h.startsWith("ticket=") ? "harbor" : h);
+  if (tabs[h] || h.startsWith("ticket=")) return show(h);
+  const target = h ? document.getElementById(h) : null;
+  const key = target ? Object.keys(panels).find((k) => panels[k].contains(target)) : undefined;
+  show(key);
+  if (key) pendingSection = target;
 }
 let pendingTicket = location.hash.startsWith("#ticket=") ? decodeURIComponent(location.hash.slice(8)) : null;
+// A linked section waits for the first status, whose alerts and panels move
+// it down the page.
+let pendingSection = null;
 
 // ---------------- page chrome ----------------
 // The sub-navigation, the collapsible panels, the keyboard shortcuts, the
@@ -495,12 +506,18 @@ let pendingTicket = location.hash.startsWith("#ticket=") ? decodeURIComponent(lo
 const HARBOR_SECTIONS = [
   ["sec-counter", "Counter"], ["sec-tide", "Tide"], ["sec-timeline", "Timeline"],
   ["sec-board", "Board"], ["sec-log", "Log"], ["sec-berths", "Berths"],
-  ["sec-machine", "Machine"], ["sec-stow", "Stowaways"], ["sec-noticket", "No ticket"],
+  ["sec-machine", "Machine"], ["sec-claims", "Claims"], ["sec-stow", "Stowaways"], ["sec-noticket", "No ticket"],
 ];
 const ENGINES_SECTIONS = [
   ["sec-engines", "Engines"], ["sec-library", "Library"], ["priority-panel", "Ranking"], ["sec-pool", "KV pool"],
   ["sec-throughput", "Throughput"], ["sec-ledger", "Ledger"], ["sec-lb", "Leaderboard"],
   ["sec-recent", "Recent"], ["sec-residency", "Residency"], ["sec-storage", "Storage"],
+];
+const ABOUT_SECTIONS = [
+  ["about-top", "Berth"], ["about-cards", "Cards"], ["about-modes", "Modes"], ["about-nav", "Getting around"],
+  ["about-keys", "Keyboard"], ["about-states", "Status words"], ["about-kpis", "KPIs"], ["about-counters", "Counters"],
+  ["about-kv", "Context and KV"], ["about-telemetry", "GPU and machine"], ["about-library", "Library"],
+  ["about-holders", "Claims and stowaways"], ["about-next", "Terminal"],
 ];
 function wireChrome() {
   try {
@@ -509,6 +526,7 @@ function wireChrome() {
   } catch (e) { state.collapsed = []; }
   buildSubnav($("subnav-harbor"), HARBOR_SECTIONS);
   buildSubnav($("subnav-engines"), ENGINES_SECTIONS);
+  buildSubnav($("subnav-about"), ABOUT_SECTIONS);
   wireCollapse();
   wireShortcuts();
   wireRailMenu();
@@ -676,6 +694,7 @@ function paintSkeletons() {
   skel(logList, 6);
   skel(berthsRoot, 3);
   skel(machineRoot, 3);
+  skel(claimsRoot, 1);
   skel(stowRoot, 2);
   skel(notickRoot, 2);
   skel($("engine-grid"), 2);
@@ -1185,8 +1204,14 @@ function demoInsights(range) {
 }
 function onStatus(s) {
   nodeVersion.textContent = "node " + (s.version || "") + (s.harbor_version ? " / harbor " + s.harbor_version : "");
+  setText($("about-version"), nodeVersion.textContent);
   renderAll(s);
   paintOverall();
+  if (pendingSection) {
+    const target = pendingSection;
+    pendingSection = null;
+    requestAnimationFrame(() => target.scrollIntoView({ block: "start" }));
+  }
   if (pendingTicket) {
     const key = pendingTicket;
     pendingTicket = null;
@@ -2057,6 +2082,39 @@ function chartCard(label, ctl) {
   return el("div", "machine-chart", el("div", "mc-label", label), ctl.el);
 }
 
+// ---------------- claims ----------------
+// The claim rules matching right now, as berth claims lists them: a hold
+// keeps its cards for a game, a track names an app's card memory. Idle
+// rules are only counted.
+function claimLine(cl) {
+  if (cl.action === "track") return (cl.used || cl.gtt_used) ? memoryWord(cl) + " named, not a stowaway" : "named; holds no card memory now";
+  return cl.lease ? "holds the card as " + cl.lease + "; engines wait" : "waiting for the card";
+}
+function memoryWord(cl) {
+  return fmtGiB(cl.used || 0) + " GiB" + (cl.gtt_used ? " + " + fmtGiB(cl.gtt_used) + " GiB GTT" : "");
+}
+function renderClaims(s) {
+  const list = el("div", "squatter-list");
+  const all = s.claims || [];
+  const active = all.filter((cl) => cl.active);
+  claimsMeta.textContent = active.length ? active.length + " active of " + all.length + " rules" : all.length + " rules, none active";
+  if (all.length === 0) list.append(el("div", "empty-note", "no claim rules: the built-in pack is off and berth.toml has no [[claim]]"));
+  else if (active.length === 0) list.append(el("div", "empty-note", "no game or app is claiming a card"));
+  for (const cl of active) {
+    const on = cardTag(s, (cl.cards || []).join(", "));
+    const name = el("span", "name", cl.name);
+    if (cl.builtin) name.append(el("span", "claim-builtin", " built-in"));
+    const row = el("div", "sq claim " + (cl.action === "track" ? "claim-track" : "claim-hold"));
+    row.append(
+      el("div", "top", name, el("span", null, (on ? on + ", " : "") + (cl.action || "hold").toUpperCase())),
+      el("div", "meta", claimLine(cl)),
+    );
+    if (cl.procs) row.append(el("div", "meta claim-procs", cl.procs));
+    list.append(row);
+  }
+  claimsRoot.replaceChildren(list);
+}
+
 // ---------------- stowaways and no ticket ----------------
 function renderStowaways(s) {
   const list = el("div", "squatter-list");
@@ -2407,6 +2465,7 @@ function renderLight(s) {
   paintTabCounts(entries.length, (s.engines || []).length);
   renderBerths(s);
   paintAlerts(s);
+  renderClaims(s);
   renderStowaways(s);
   renderNoTicket(s);
   renderMachine(s);

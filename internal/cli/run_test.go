@@ -72,6 +72,19 @@ func TestRunRejectsABadPriority(t *testing.T) {
 	}
 }
 
+// A slice that cannot name a unit fails at the CLI, before berthd is
+// dialed and the engine is touched.
+func TestRunRejectsABadSlice(t *testing.T) {
+	isolate(t)
+	code, _, errOut := runCLI(t, "run", "--as", "x", "--slice", "nope", "--", "true")
+	if code != ExitSystem {
+		t.Fatalf("exit = %d, want %d", code, ExitSystem)
+	}
+	if !strings.Contains(errOut, "must name a .slice unit") {
+		t.Errorf("stderr = %q", errOut)
+	}
+}
+
 // --fail-closed with berthd down refuses to start the engine: EX_TEMPFAIL, so
 // a service manager can retry instead of running unprotected.
 func TestRunFailClosedRefusesWithoutADaemon(t *testing.T) {

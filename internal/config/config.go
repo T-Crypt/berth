@@ -26,6 +26,7 @@ import (
 	"github.com/T-Crypt/berth/internal/notify"
 	"github.com/T-Crypt/berth/internal/park"
 	"github.com/T-Crypt/berth/internal/proto"
+	"github.com/T-Crypt/berth/internal/sysd"
 )
 
 // Engine is one inference engine this node reads metrics from. Reading is
@@ -129,6 +130,13 @@ type Engine struct {
 	// sets CUDA_VISIBLE_DEVICES to their UUIDs unless the engine's
 	// environment sets it. "" = the node's first card.
 	GPU string `toml:"gpu,omitempty" json:"gpu,omitempty" yaml:"gpu,omitempty"`
+	// Slice names a systemd slice (NAME.slice) to place the engine's
+	// transient scope under, so the slice unit's resource policy, CPU,
+	// memory and swap limits, applies to the engine and everything it
+	// forks, not only to the wrapper. systemd user manager, Linux;
+	// elsewhere the key is accepted and unused. berth run --slice wins
+	// over it.
+	Slice string `toml:"slice,omitempty" json:"slice,omitempty" yaml:"slice,omitempty"`
 	// Park picks the RAM tier on a drain: off (the default) runs the
 	// plain drain, hook asks the engine to move its weights to system
 	// RAM instead, so the next use resumes in seconds. Engines with a
@@ -278,6 +286,9 @@ type ClaimRule struct {
 	Action        string   `toml:"action,omitempty" json:"action,omitempty" yaml:"action,omitempty"`
 	NeedsMiB      uint64   `toml:"needs_mib,omitzero" json:"needs_mib,omitempty" yaml:"needs_mib,omitempty"`
 	Linger        Duration `toml:"linger,omitempty" json:"linger,omitempty" yaml:"linger,omitempty"`
+	// GPU is the cards a hold takes on a node with several, as berth run
+	// --gpu names them; "" is every card.
+	GPU string `toml:"gpu,omitempty" json:"gpu,omitempty" yaml:"gpu,omitempty"`
 }
 
 // ClaimRules is the rule list berthd runs: the configured rules first (a
@@ -288,7 +299,7 @@ func (c *Config) ClaimRules() ([]claims.Rule, error) {
 	names := map[string]bool{}
 	for _, r := range c.Claim {
 		rule := claims.Rule{Name: r.Name, Exe: r.Exe, Cmdline: r.Cmdline, Not: r.Not, Parent: r.Parent, ParentCmdline: r.ParentCmdline,
-			Action: r.Action, NeedsMiB: r.NeedsMiB, Linger: r.Linger.Duration}
+			Action: r.Action, NeedsMiB: r.NeedsMiB, Linger: r.Linger.Duration, GPU: r.GPU}
 		if err := rule.Compile(); err != nil {
 			return nil, err
 		}
@@ -610,7 +621,7 @@ func (c *Config) Validate() error {
 		ordered[o] = true
 	}
 	seen := map[string]bool{}
-	served := map[string]string{} // model -> the engine that serves it
+	served := map[string][]*Engine{} // model -> the engines that serve it
 	for i, e := range c.Engine {
 		where := fmt.Sprintf("engine[%d] %q", i, e.Name)
 		if e.Name == "" {
@@ -651,11 +662,13 @@ func (c *Config) Validate() error {
 			errs = append(errs, fmt.Errorf("%s: a custom engine needs at least one of health, models, metrics, slots or [engine.map]", where))
 		}
 		for _, m := range e.Serves {
-			if other, ok := served[m]; ok {
-				errs = append(errs, fmt.Errorf("%s: serves %q, which %q already serves; the gateway would never pick this one", where, m, other))
-			} else {
-				served[m] = e.Name
+			// One model on several cards is one engine per card, which a
+			// per-card gateway URL picks between. Two on one card, or one
+			// that names no card, leave the gateway nothing to pick by.
+			if j := slices.IndexFunc(served[m], func(o *Engine) bool { return sharesCard(o.GPU, e.GPU) }); j >= 0 {
+				errs = append(errs, fmt.Errorf("%s: serves %q, which %q already serves; the gateway would never pick this one", where, m, served[m][j].Name))
 			}
+			served[m] = append(served[m], &c.Engine[i])
 		}
 		// A background engine starts when the card is free, not for a model.
 		if len(e.Start) > 0 && len(e.Serves) == 0 && e.Type != "comfyui" && !e.Background {
@@ -676,6 +689,11 @@ func (c *Config) Validate() error {
 		}
 		if e.KVSnapshots != "" && !filepath.IsAbs(e.KVSnapshots) {
 			errs = append(errs, fmt.Errorf("%s: kv_snapshots %q must be an absolute path: the gateway starts engines from its own working directory", where, e.KVSnapshots))
+		}
+		if e.Slice != "" {
+			if err := sysd.CheckSlice(e.Slice); err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", where, err))
+			}
 		}
 		if e.DrainMax.Duration < 0 {
 			errs = append(errs, fmt.Errorf("%s: drain_max %s must be >= 0", where, e.DrainMax))
@@ -853,6 +871,21 @@ func shelfValid(s string) bool {
 	switch s {
 	case "text", "chat", "image", "audio":
 		return true
+	}
+	return false
+}
+
+// sharesCard is whether two engines' gpu keys may name one card: either
+// names no card (the first card), or their comma lists have a key in common.
+func sharesCard(a, b string) bool {
+	if a == "" || b == "" {
+		return true
+	}
+	bs := strings.Split(strings.ReplaceAll(b, " ", ""), ",")
+	for _, k := range strings.Split(strings.ReplaceAll(a, " ", ""), ",") {
+		if slices.Contains(bs, k) {
+			return true
+		}
 	}
 	return false
 }

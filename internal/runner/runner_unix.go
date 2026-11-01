@@ -38,24 +38,42 @@ func afterWait(*exec.Cmd) {}
 // `berth run` inside another lease's engine, as llama-swap runs its
 // models): two leases never share a scope. Without a user manager the
 // child runs in this cgroup, as always.
-func scopeToChild(as string, argv []string, log *slog.Logger) []string {
+func scopeToChild(as, slice string, argv []string, log *slog.Logger) []string {
 	// Tests start fake engines: never in the developer's own user manager.
 	if testing.Testing() {
 		return argv
 	}
-	if !scopeAllowed(os.Getenv) {
-		if log != nil {
-			log.Debug("inside a Type=notify service; the engine stays in its cgroup", "engine", as)
-		}
+	return pickScopeArgv(scopeAllowed(os.Getenv), sysd.ScopeReady(), as, slice, argv, log)
+}
+
+// pickScopeArgv places the engine in the scope. An operator who set a
+// slice for its limits gets an engine that can swap when the scope is
+// dropped, so a slice is never dropped quietly: the Warn names the
+// engine, the slice and the reason. A plain run with no slice reads as
+// always, at Debug.
+func pickScopeArgv(allowed, ready bool, as, slice string, argv []string, log *slog.Logger) []string {
+	if !allowed {
+		logScopeDrop(log, as, slice, "inside a Type=notify service; the engine stays in its cgroup")
 		return argv
 	}
-	if !sysd.ScopeReady() {
-		if log != nil {
-			log.Debug("no systemd user manager; the engine runs in this run's cgroup", "engine", as)
-		}
+	if !ready {
+		logScopeDrop(log, as, slice, "no systemd user manager; the engine runs in this run's cgroup")
 		return argv
 	}
-	return sysd.ScopeArgv("berth-run", as, argv)
+	return sysd.ScopeArgv("berth-run", as, slice, argv)
+}
+
+// logScopeDrop tells the operator why the engine keeps the caller's
+// cgroup, at Warn when a slice made that placement matter.
+func logScopeDrop(log *slog.Logger, as, slice, reason string) {
+	if log == nil {
+		return
+	}
+	if slice == "" {
+		log.Debug(reason, "engine", as)
+		return
+	}
+	log.Warn(reason+"; the slice is dropped", "engine", as, "slice", slice)
 }
 
 // scopeAllowed is false inside a Type=notify service (NOTIFY_SOCKET set):

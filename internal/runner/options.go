@@ -66,7 +66,8 @@ func OptionsFor(e *config.Engine, o Over) Options {
 		APIKeyEnv: e.APIKeyEnv, APIKeyFile: e.APIKeyFile,
 		ExitComfyUIIdle: e.ExitComfyUIIdle, ExitComfyUIIdleAfter: e.ExitComfyUIIdleAfter.Duration,
 		Grace: grace, FailClosed: o.FailClosed,
-		Argv: argv, Stderr: o.Stderr, Output: o.Output, Log: o.Log,
+		Slice: e.Slice,
+		Argv:  argv, Stderr: o.Stderr, Output: o.Output, Log: o.Log,
 	}
 	// kv_snapshots: the drain's snapshot step. The slot calls go to the
 	// entry's drain_slots base when it names one, else the drain_post

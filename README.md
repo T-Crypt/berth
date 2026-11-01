@@ -42,7 +42,7 @@ claim. When another engine holds it, Berth:
 The numbered markers on the timeline are those four steps. A process that holds VRAM without a lease
 shows up as a stowaway: Berth reports its PID and memory and leaves it running.
 
-> **Status: alpha, v0.4.0.** Runs daily on an RTX 4090 workstation beside llama-swap, NInfer,
+> **Status: alpha, v0.4.1.** Runs daily on an RTX 4090 workstation beside llama-swap, NInfer,
 > Strata, ComfyUI and games, and testers run it on Windows. The [docs](docs/README.md) cover what works and has tests; the
 > [roadmap](docs/roadmap.md) lists the phases and what is still missing.
 
@@ -108,7 +108,8 @@ line goes away.
   stowaway report.
 - **Your own rules.** `[[claim]]` in `berth.toml` covers anything else: a training run, a
   render farm job, a cracking session, by name, command line or launcher.
-- **`berth hold`** frees the card for a call or a game you start yourself. Ctrl-C gives it back.
+- **`berth hold`** frees the card for a call or a game you start yourself. Ctrl-C gives it back. On a node with
+  several cards, `--gpu` names the ones it takes.
 - **`berth run --pinned`** for an app or a training run that must never be stopped mid-work, on one card or
   several. See [Training runs](docs/leasing.md#training-runs).
 
@@ -220,7 +221,13 @@ sits reserved while another is awaited. `CUDA_VISIBLE_DEVICES` lists each card's
 on any of the cards stops the engine, and its exit frees every card. A lease on several cards cannot park or lend
 yet: a drain stops it the usual way.
 
-The gateway judges each engine against the cards it runs on. "Any card that fits" is not built yet.
+The gateway judges each engine against the cards it runs on, and each card has its own base URL on the gateway,
+`/cards/gpu1/v1`, so a client can choose the card ([One URL per card](docs/gateway.md#one-url-per-card)). A plain
+`/v1` request for a model served on several cards goes to the cheapest card to reach: a parked copy, then a free
+card, then one whose holder drains.
+
+`berth hold --gpu gpu1`, `berth vfio run --gpu gpu1` and `gpu = "gpu1"` on a `[[claim]]` take only the cards they
+name, so the other cards keep serving.
 
 ## Quick start
 

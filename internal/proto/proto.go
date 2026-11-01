@@ -18,8 +18,9 @@ import (
 const (
 	OpAcquire = "acquire" // client: ask for a berth; blocks until granted or refused
 	OpAttach  = "attach"  // client: the engine is running as this PID
-	// OpFinished: client: the engine exited 0, so it stopped answering on
-	// purpose. Sent just before the hang-up that ends the lease.
+	// OpFinished: client: the engine stopped answering on purpose: it exited
+	// 0, or the run ended it (a drain, a failed wake, a stop signal it
+	// forwarded). Sent just before the hang-up that ends the lease.
 	OpFinished = "finished"
 	// OpReattach: client: an engine already running under berth run (PID plus
 	// PIDStart) lost its daemon and asks the new one to lease it the card again.
@@ -45,6 +46,12 @@ const (
 	// higher-priority waiter would. The server answers once with the leases
 	// it asked.
 	OpStop = "stop"
+	// OpCordon, OpUncordon: client: stop or resume new grants on the cards
+	// Card names (as OpAcquire names them). A cordoned card keeps its
+	// holders and still grants a hold. The server answers with the same op
+	// and Cards, the cards' names, or OpRefused for a card the node lacks.
+	OpCordon   = "cordon"
+	OpUncordon = "uncordon"
 	// OpPark: the runner holding a draining lease asks to park its engine
 	// in RAM; the daemon answers OpParkOK or OpRefused with the why line.
 	// OpParked: the runner's park call is done; the daemon watches for the
@@ -145,7 +152,9 @@ type Msg struct {
 	Container string `json:"container,omitempty"`
 	Lease     string `json:"lease,omitempty"`
 	// OpStop: Leases is the reply, the leases the daemon asked to drain.
-	Leases   []string  `json:"leases,omitempty"`
+	Leases []string `json:"leases,omitempty"`
+	// OpCordon, OpUncordon: Cards is the reply, the cards' names.
+	Cards    []string  `json:"cards,omitempty"`
 	Reason   string    `json:"reason,omitempty"`
 	Status   *Status   `json:"status,omitempty"`
 	Since    uint64    `json:"since,omitempty"` // OpEvents: only events with a higher Seq
@@ -238,6 +247,8 @@ const (
 	EvResumed        = "lease.resumed"      // a parked engine was granted the card back
 	EvUnparked       = "lease.unparked"     // a parked engine loaded back onto the card with no resume; it is active again
 	EvParkRefused    = "lease.park_refused" // the RAM could not take the park; the drain runs as before
+	EvCordoned       = "card.cordoned"      // berth cordon: no new grants on the card but holds
+	EvUncordoned     = "card.uncordoned"    // berth uncordon: the card grants again
 	EvParkEvicted    = "lease.park_evicted" // the parked engine is being stopped: ttl, RAM floor or pressure
 	EvLending        = "lease.lending"      // a serving holder was asked to give part of its card to a waiter
 	EvLent           = "lease.lent"         // the engine gave it, and a card read after the answer shows it free
@@ -421,6 +432,8 @@ type GPU struct {
 	// Passthrough is this card's VM state while it does not serve; nil
 	// when the card is normal.
 	Passthrough *Passthrough `json:"passthrough,omitempty"`
+	// Cordoned: berth cordon stopped new grants on this card, holds aside.
+	Cordoned bool `json:"cordoned,omitempty"`
 
 	// Telemetry as the driver reports it; -1 = not reported.
 	Util       float64 `json:"util_pct"`

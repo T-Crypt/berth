@@ -92,7 +92,7 @@ func TestStopSignalKillsCheckpointedEngine(t *testing.T) {
 	hog, died := startStubborn(t)
 	done := make(chan struct{})
 	defer close(done)
-	go forwardSignals(hog, done, func() bool { return true })
+	go forwardSignals(hog, done, func() bool { return true }, func() {})
 	time.Sleep(50 * time.Millisecond)
 	if err := syscall.Kill(syscall.Getpid(), syscall.SIGTERM); err != nil {
 		t.Fatal(err)

@@ -9,4 +9,4 @@ package sysd
 func ScopeReady() bool { return false }
 
 // ScopeArgv has no user manager to answer to on this platform.
-func ScopeArgv(prefix, name string, argv []string) []string { return argv }
+func ScopeArgv(prefix, name, slice string, argv []string) []string { return argv }

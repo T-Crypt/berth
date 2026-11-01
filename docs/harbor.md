@@ -146,8 +146,10 @@ question an operator actually asks.
   in RAM), the queue rows, the container a run is in, and the exact terminal order
   for the lease beside it as a copy button (`berth stop ENGINE`, `berth resume
   ENGINE`, `berth reclaim LEASE`).
-- **The berths, the machine, stowaways and no ticket** answer "what else is on the
-  card and the host, and who holds memory without a ticket?"
+- **The berths, the machine, claims, stowaways and no ticket** answer "what else is on the
+  card and the host, and who holds memory without a ticket?" The claims panel lists the claim
+  rules matching now, as `berth claims` does: a hold names its lease or says it is waiting, and a
+  track gives the card memory it names. Idle rules are only counted.
 - **Several cards.** When berthd governs more than one card, each card has its own berth panel that lists
   only the leases and stowaways on that card. Each lease line names the model its engine reports
   loaded, and a lease on several cards adds its card list (`on gpu0..gpu4`). A board row and a stowaway name their card (`gpu1`), a lease
@@ -170,8 +172,10 @@ question an operator actually asks.
   recent requests and context residency** answer the questions behind the request
   log, and the storage panel (advanced) says what the harbor's own store keeps.
 
-**The ABOUT tab** is this page's own documentation: the modes, the shortcut keys,
-and what every state word and figure means.
+**The ABOUT tab** is this page's own documentation: the node's version, links to these docs and the
+changelog, several cards, the modes, the shortcut keys, and what every state word and figure means. A
+section rail jumps between its sections, as on the other tabs. A section link, from any tab's rail,
+opens the tab that holds the section when you share or reload it.
 
 ## Telemetry (built in, no other tool needed)
 - **GPU:** memory, utilisation, temperature, power against its limit, fan, SM and memory
@@ -185,7 +189,9 @@ and what every state word and figure means.
   "no window / no slot data", never an error. An engine that was up and stops
   answering is shown as **unresponsive** (latched), distinct from one that never ran. A
   `berth run` engine that exits 0 shows as offline, since a batch job that finishes stops
-  answering on purpose. One that exits with any other code stays unresponsive.
+  answering on purpose. So does one that Berth stopped: a drain, `berth stop`, a failed wake,
+  or a stop signal from its supervisor. One that exits with any other code on its own stays
+  unresponsive.
 - **Requests:** a 24-hour request log from llama-swap and Strata (a Strata entry needs
   `type = "strata"`, and each request lands under the model its `/health` names); requests per minute, p50 and p95
   latency, prefill time, time per output token, cache and re-ingest share, a token ledger

@@ -240,11 +240,13 @@ device for the actions.`,
 	{
 		Name:    "hold",
 		Summary: "keep the card free for a game or a call; engines wait",
-		Args:    "[--for D] [--reason R] [--needs-mib N] [--wait D]",
+		Args:    "[--gpu CARD] [--for D] [--reason R] [--needs-mib N] [--wait D]",
 		Help: `Hold the card for yourself. Every engine on it is drained the usual way,
 none starts while the hold lasts, and nothing drains the hold: it is a pinned
 lease at the top priority. It ends on Ctrl-C, after --for, or when this
 process dies, so a forgotten terminal never strands the card for long.
+--gpu names the card on a node with several (gpu1, its PCI address, or a comma
+list); without it the hold takes the node's first card.
 
 Games you launch from Steam, Lutris or gamescope are held for automatically
 by the built-in claims (see berth claims); berth hold is for everything else.`,
@@ -519,6 +521,28 @@ unpairs every device.`,
 		Run:     runPair,
 	},
 	{
+		Name:    "cordon",
+		Summary: "stop new grants on a card; what holds it keeps running",
+		Args:    "CARD [--socket P] [--format F]",
+		Help: `Stop new grants on the named card, by its name (gpu1) or PCI address, for
+maintenance or before a VM takes it, while the node's other cards keep
+serving. Waiters stay in line with a reason that names the cordon, and
+the gateway sends a plain /v1 request to another card that serves its
+model. A hold (berth hold, a game claim) is still granted. What holds the
+card keeps running: berth stop ENGINE drains it. The cordon lasts until
+berth uncordon or until berthd restarts.`,
+		Formats: []Format{FormatHuman, FormatJSON, FormatYAML},
+		Run:     runCordon,
+	},
+	{
+		Name:    "uncordon",
+		Summary: "let new work get a cordoned card again",
+		Args:    "CARD [--socket P] [--format F]",
+		Help:    `Lift berth cordon from the named card. Its waiters are scheduled at once.`,
+		Formats: []Format{FormatHuman, FormatJSON, FormatYAML},
+		Run:     runUncordon,
+	},
+	{
 		Name:    "stop",
 		Summary: "stop an engine on purpose: its leases drain through their own wrappers",
 		Args:    "ENGINE [--wait] [--socket P] [--format F]",
@@ -605,11 +629,13 @@ docs/vfio.md has the requirements and an example script.`,
 			{
 				Name:    "run",
 				Summary: "hold the card, run the switch script, wait for the card back",
-				Args:    "[--reason NAME] [--wait D] [--before CMD] [--after CMD] -- CMD [ARGS...]",
+				Args:    "[--gpu CARD] [--reason NAME] [--wait D] [--before CMD] [--after CMD] -- CMD [ARGS...]",
 				Help: `Acquire the VFIO hold the way berth hold does: engines drain at their
 boundaries and none starts. Then the script runs with the terminal attached, so
 its sudo prompt reaches you, and with BERTH_VFIO_DEVICES set to the card's PCI
-functions, so it hardcodes no address.
+functions, so it hardcodes no address. --gpu names the card on a node with
+several (gpu1 or its PCI address); without it the run takes the node's first
+card.
 
 --before runs once the engines are off the card: stop your own services that
 hold it there. --after runs once the hold has ended, whenever --before ran,

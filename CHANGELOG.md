@@ -6,6 +6,66 @@ has a matching GitHub release whose body comes from its section below.
 
 ## [Unreleased]
 
+## [v0.4.1] - 2026-11-01
+
+Each card on a machine with several now has its own gateway URL, `/cards/CARD/v1`, and one model can be served
+on more than one card. A plain `/v1` request goes to the card that costs least to reach. `berth cordon gpu1` takes
+a card out of rotation while the others serve, and the gateway's `/gui/` page names each engine's card.
+`berth hold --gpu`, `berth vfio run --gpu` and `gpu = ...` on a `[[claim]]` hold only the cards they name. An
+engine can run under a systemd slice, the harbor shows the claims that match now, and an engine Berth stopped
+no longer shows as unresponsive.
+
+### Added
+
+- `GET /v1/berth/board` names the cards each engine's entry runs on (`cards`), and each card's base URL on the
+  gateway (`base`) and whether it is cordoned. On a node with several cards, the gateway's `/gui/` page names each
+  engine's card, so launching the copy of a model on gpu1 picks that card from a phone.
+- `berth cordon CARD` stops new grants on a card, holds aside, while the node's other cards serve; `berth uncordon
+  CARD` lifts it. What holds the card keeps running. Waiters say the card is cordoned, `berth status` marks it
+  `CORDONED`, and the gateway treats it as out of reach: no background engine starts there and a ComfyUI job for it
+  queues. A berthd restart clears the cordon.
+- Each card has its own base URL on the gateway, `/cards/CARD/v1`, named by the card's name or PCI address. A
+  request through it only reaches engines on that card, and `GET /cards/CARD/v1/models` lists only theirs. One
+  model can now be served on several cards, one engine entry per card, and `berth config check` still refuses two
+  entries that serve it on one card.
+- A plain `/v1` request for a model served on several cards goes to the card that costs least to reach: the engine
+  that is up, then one parked in RAM, then a free card, then a card whose holder drains, and last a card a VM or a
+  pinned lease keeps. Cards of the same rank go to the first entry in `berth.toml`.
+- `gpu = "gpu1"` on a `[[claim]]` holds only the cards it names, as `berth run --gpu` names them, on a node with
+  several cards. Engines on the other cards keep running, and the gateway starts background engines there. A
+  claim without `gpu` still holds every card. `berth config check` refuses a bad card name and a `gpu` on a
+  `track` claim. A name the node does not have is logged when berthd starts, and that claim holds every card.
+- `berth hold --gpu CARD` and `berth vfio run --gpu CARD` name the card on a node with several. `hold` takes a
+  comma list for one hold on several cards, and `vfio run` takes one card. Before, both always took the node's
+  first card. Without `--gpu` they still do.
+- `slice = "NAME.slice"` on an engine entry, or `berth run --slice NAME.slice` (which wins), starts the engine's
+  transient scope under that systemd slice on a Linux user manager: the slice unit's resource policy, CPU, memory
+  and swap limits, applies to the engine and everything it forks, not only to the wrapper that asked for the card.
+  `berth config check` refuses a slice name no unit can take. An entry with no slice starts its scope exactly as
+  before, on every platform.
+- The harbor's card tab has a CLAIMS panel: the claim rules matching now, as `berth claims` lists them. A hold
+  names its lease or says it is waiting, a track gives the card memory it names, and on a machine with several
+  cards each row names its card. Before, a tracked app such as OBS did not show in the harbor at all.
+
+### Changed
+
+- The harbor's About tab is rewritten for v0.4. It leads with the node's version and links to the docs,
+  changelog, issues and source, adds a section on machines with several cards, and drops the list of planned
+  features that had shipped or changed. Its sections are cards in two columns on a wide screen, with the same
+  section rail as the other tabs.
+- The harbor header no longer clips the ADVANCED switch or cuts its tagline off: below 1600 px the tagline
+  and the "& REQUESTS" half of the engines tab are hidden. On a phone an alert's message wraps instead of
+  ending in an ellipsis, with its time on its own line.
+
+### Fixed
+
+- An engine that Berth stopped no longer shows as unresponsive (LATCHED) in `berth status` and the harbor. A
+  drain, `berth stop`, a wake that failed or a stop signal from a supervisor such as llama-swap ends the engine on
+  purpose, and it now shows as offline, as an engine that exits 0 already did. An engine that exits non-zero on
+  its own still shows as unresponsive.
+- A harbor link to a section, such as `#sec-library` from the engines tab's rail, opened the card tab on a
+  reload. It now opens the tab that holds the section and scrolls to it.
+
 ## [v0.4.0] - 2026-10-29
 
 One berthd now governs every card on a machine. `berth run --gpu gpu1` puts an engine on one card,

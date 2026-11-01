@@ -151,6 +151,46 @@
    "estimate_s": 120
   }
  ],
+ "claims": [
+  {
+   "name": "steam-game",
+   "action": "hold",
+   "builtin": true,
+   "active": false
+  },
+  {
+   "name": "lutris-game",
+   "action": "hold",
+   "builtin": true,
+   "active": false
+  },
+  {
+   "name": "gamescope",
+   "action": "hold",
+   "builtin": true,
+   "active": false
+  },
+  {
+   "name": "blender",
+   "action": "track",
+   "builtin": true,
+   "active": false
+  },
+  {
+   "name": "obs",
+   "action": "track",
+   "builtin": true,
+   "active": true,
+   "pids": [
+    48211
+   ],
+   "procs": "obs",
+   "used": 644245094,
+   "cards": [
+    "gpu0"
+   ]
+  }
+ ],
  "squatters": [
   {
    "pid": 60233,

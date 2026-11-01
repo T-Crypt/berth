@@ -107,14 +107,16 @@ func answers(name, addr, key string) bool {
 }
 
 // View is a node's status narrowed to the cards key picks, as Pick picks
-// them: their readings, leases, waiters and squatters. What holds every card
-// (claims, a passthrough, a probe error) stays. nil when st is nil or key
-// names a card st does not have.
+// them: their readings, leases, waiters and squatters. A claim stays listed,
+// active only when it is active on one of them (a claim with no cards, from
+// an older berthd, counts as on every card). What holds every card (a
+// passthrough, a probe error) stays. nil when st is nil or key names a card
+// st does not have.
 func View(st *proto.Status, key string) *proto.Status {
 	if st == nil {
 		return nil
 	}
-	cards := cardsOf(st, key)
+	cards := CardsOf(st, key)
 	if cards == nil {
 		return nil
 	}
@@ -124,6 +126,12 @@ func View(st *proto.Status, key string) *proto.Status {
 	v.Leases = slices.DeleteFunc(slices.Clone(st.Leases), func(l proto.Lease) bool { return !on(l.Card) })
 	v.Waiting = slices.DeleteFunc(slices.Clone(st.Waiting), func(l proto.Lease) bool { return !on(l.Card) })
 	v.Squatters = slices.DeleteFunc(slices.Clone(st.Squatters), func(s proto.Squatter) bool { return !on(s.Card) })
+	v.Claims = slices.Clone(st.Claims)
+	for i, cl := range v.Claims {
+		if len(cl.Cards) > 0 && !slices.ContainsFunc(cl.Cards, on) {
+			v.Claims[i].Active, v.Claims[i].Lease = false, ""
+		}
+	}
 	v.Passthrough = inVM(v.GPUs)
 	// A view of some cards carries only their probe errors. One that keeps
 	// every card keeps the status's own, which a berthd older than per-card
@@ -168,9 +176,9 @@ func inVM(gpus []proto.GPU) *proto.Passthrough {
 	return first
 }
 
-// cardsOf is the names of the cards key picks in a node's status: "" is
+// CardsOf is the names of the cards key picks in a node's status: "" is
 // the first card. nil when a name in key is no card in st.
-func cardsOf(st *proto.Status, key string) []string {
+func CardsOf(st *proto.Status, key string) []string {
 	var cards []proto.GPU
 	for _, g := range st.GPUs {
 		if g.Scheduled {
@@ -209,6 +217,21 @@ func (n *Node) Pick(key string) ([]*Card, error) {
 		out = append(out, c)
 	}
 	return out, nil
+}
+
+// Cordon stops (on) or resumes new grants on the cards key picks, as Pick
+// picks them, and returns their names.
+func (n *Node) Cordon(key string, on bool) ([]string, error) {
+	cards, err := n.Pick(key)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, len(cards))
+	for i, c := range cards {
+		c.B.Cordon(on)
+		names[i] = c.Name
+	}
+	return names, nil
 }
 
 // Stop drains every lease of engine on every card.

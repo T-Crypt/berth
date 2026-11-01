@@ -35,7 +35,8 @@
 - **Several cards.** One berthd governs every card by default. A foreground request on one card never drains a
   holder on another. `berth run --gpu gpu1` puts a lease on one card, and `--gpu gpu0,gpu1` holds one lease on
   both (see [Training runs](#training-runs)). A running game holds every card, because Berth cannot tell which
-  card it will use. A lease on several cards cannot park or lend yet.
+  card it will use. A `[[claim]]` with `gpu = "gpu1"` holds only the cards it names. A lease on several cards
+  cannot park or lend yet.
 - **Fail-open, never silent.** If the daemon is down, `berth run` still starts the engine
   but records it as an *unprotected run* that status shows (`--fail-closed` refuses).
 - **Survives a daemon restart.** A running engine stays up when berthd restarts or is
@@ -106,6 +107,7 @@
   cmdline = 'train\.py'      # regex; on Windows it sees the exe's full path
   action = "hold"            # or "track"
   linger = "30s"
+  gpu = "gpu1"               # hold only these cards (names or PCI addresses, comma list); default every card
 
   [claims]
   builtin = false            # turn the built-in pack off
@@ -117,11 +119,26 @@
   `reaper SteamLaunch AppId=...`, so the REAPER DAW, also named `reaper`, holds nothing.
 - **`berth hold [--for 2h] [--reason game]`** takes the card for you. It is a pinned lease at
   the top priority, so nothing drains it, and it ends on Ctrl-C, after `--for`, or when the
-  process dies.
+  process dies. On a node with several cards it takes the first one. `--gpu gpu1` holds another
+  card, and `--gpu gpu0,gpu1` holds both under one lease.
 - **`berth run --pinned`** gives an app a lease that is never drained (it keeps the card until
   it exits).
 - A hold cannot free memory held by something outside Berth: that memory is still reported,
   as contested.
+
+## Cordon a card
+
+On a node with several cards, `berth cordon gpu1` stops new grants on that card while the others keep serving, for
+maintenance or before a VM takes it. Name the card by its name or its PCI address.
+
+- What holds the card keeps running. A cordon drains nothing: `berth stop ENGINE` does that.
+- Waiters stay in line, and their reason says the card is cordoned. A hold (`berth hold`, a game claim) is still
+  granted.
+- The gateway treats the card as out of reach. A plain `/v1` request goes to another card that serves its model,
+  a background engine for the card does not start, and a ComfyUI job for it queues.
+- `berth status` marks the card `CORDONED`, and `berth events` records `card.cordoned` and `card.uncordoned`.
+- `berth uncordon gpu1` lets new work in, and the card's waiters are scheduled at once. A berthd restart also
+  clears the cordon.
 
 ## Training runs
 

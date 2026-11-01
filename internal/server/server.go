@@ -115,8 +115,8 @@ type Extras struct {
 	Alerts func() *proto.Alerts
 	// Pair is the harbor's device pairing; nil turns the OpPair* ops off.
 	Pair *pair.Store
-	// Finished hears that a run's engine exited 0, by the lease's engine
-	// name.
+	// Finished hears that a run's engine ended on purpose (exit 0, or a
+	// stop the run carried out), by the lease's engine name.
 	Finished func(engine string)
 }
 
@@ -186,6 +186,8 @@ func handle(ctx context.Context, c net.Conn, n *node.Node, x Extras, log *slog.L
 		reclaim(conn, log, first, n)
 	case proto.OpStop:
 		stop(conn, log, first, n)
+	case proto.OpCordon, proto.OpUncordon:
+		cordon(conn, log, first, n)
 	case proto.OpPairCode, proto.OpPairRedeem, proto.OpPairCheck, proto.OpPairList, proto.OpPairRevoke:
 		pairing(conn, log, first, x.Pair)
 	case proto.OpResume:

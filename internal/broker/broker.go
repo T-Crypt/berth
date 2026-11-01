@@ -479,6 +479,7 @@ type Broker struct {
 	saveFailed bool
 
 	verdicts map[string]verdict // loser engine key -> the juggle it lost
+	cordoned bool               // berth cordon: grant only holds
 	// tracked is the claim watcher's last scan: a process (and every child)
 	// a track claim names. Its card memory is the claim's, never a stowaway.
 	tracked    map[int]string
@@ -1337,6 +1338,9 @@ func (c cardBudget) avail() uint64   { return sat(c.ceiling(), c.held) }
 // evaluate decides whether w fits now. If not, it returns why and which
 // holders to drain; no victims means draining would not help, so w waits.
 func (b *Broker) evaluate(w *lease, now time.Time) (bool, string, []*lease) {
+	if b.cordoned && w.prio != Hold {
+		return false, "the card is cordoned; berth uncordon lets new work in", nil
+	}
 	// A resumed lease is still in b.leases while it waits: its own
 	// residual is the copy it comes back to, never a holder it waits on.
 	hs := slices.DeleteFunc(b.holders(), func(h *lease) bool { return h == w })
@@ -1816,4 +1820,23 @@ func (b *Broker) abandon(l *lease, why string) error {
 	b.counters.Refused++
 	b.emit(proto.Event{Kind: proto.EvRefused, Lease: l.id, Engine: l.engine, Detail: why})
 	return fmt.Errorf("%w: %s", ErrRefused, why)
+}
+
+// Cordon stops new grants on the card but holds (on), or lets them in again
+// (off). Holders keep the card; a cordon drains nothing. A change goes on
+// the event stream, and an uncordon schedules the queue at once.
+func (b *Broker) Cordon(on bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.cordoned == on {
+		return
+	}
+	b.cordoned = on
+	kind := proto.EvUncordoned
+	if on {
+		kind = proto.EvCordoned
+	}
+	b.log.Info("cordon", "card", b.cfg.Card, "on", on)
+	b.emit(proto.Event{Kind: kind})
+	b.schedule(b.now())
 }

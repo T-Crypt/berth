@@ -45,13 +45,16 @@ do not assume any engine is protected.
 | Run a configured engine without retyping its command | `berth run --as NAME` with no command runs the `start` of NAME's `[[engine]]` entry |
 | Run an app that must not be drained (Blender, a training job) | `berth run --as NAME --pinned -- CMD` |
 | Give an engine a minimum turn before a request can drain it | `berth run --as NAME --min-turn 5m -- CMD`, or `min_turn = "5m"` in its engine entry (a hold still wins; `berth status` shows the turn left in the TURN column) |
-| Free the card for the user (game, call) | `berth hold [--for 2h] [--reason game]` (ends on Ctrl-C) |
+| Free the card for the user (game, call) | `berth hold [--for 2h] [--reason game] [--gpu gpu1]` (ends on Ctrl-C; default the first card) |
 | Call a model and let Berth start its engine | the gateway: `http://127.0.0.1:9799/v1`, bearer key from `berth key` |
 | Wrap every llama-swap model at once | `berth wire llama-swap --config CFG` (plan), `--write` (apply, keeps a backup), `--write --update` (rewrite wire's flags on lines it wrote, keeping flags added by hand), `--wait 10m` (every model waits that long for the card) |
 | Run an engine that lives in Docker or Podman | `berth run --as NAME --container CNAME -- docker run --rm --name CNAME ...` |
 | Run a Docker Compose project as one engine | `berth run --as NAME --compose /srv/APP/compose.yaml -- docker compose -f /srv/APP/compose.yaml up` (the lease covers every container of the project) |
+| Apply a systemd slice's CPU/memory/swap policy to the engine itself | `berth run --as NAME --slice NAME.slice -- CMD`, or `slice = "NAME.slice"` in its engine entry (Linux user manager) |
 | Name an engine that discovery does not find | an `[[engine]]` entry in `berth.toml` with `type`, `url` and, for the gateway, `start` and `serves`. A Strata entry needs `type = "strata"` (and `whole_machine = true`), or its requests never reach the ledger |
+| Call a model on one card of several | the card's base URL: `http://127.0.0.1:9799/cards/gpu1/v1` (same key and model names) |
 | Warm an engine before its first request | `GET /v1/berth/wait?model=M` on the gateway (blocks until it answers) |
+| Close a card to new work while the others serve | `berth cordon gpu1` (holders keep running; `berth uncordon gpu1` reopens it) |
 | Stop an engine Berth started | `berth stop ENGINE [--wait]` (normal drain, parked engines included; engines outlive a gateway restart) |
 | Bring a parked engine back | `berth resume ENGINE` (or just call its model through the gateway) |
 | Read a model's file ahead into RAM | `berth prefetch MODEL` (page cache only; nothing is reserved) |
@@ -101,6 +104,11 @@ Rules for a workflow:
 - Lease states: `waiting` (with its place in line), `active` (HOT), `draining`, `parking`, `parked` (WARM: the
   engine moved its weights to RAM and holds only a small residual; `berth resume` or a request brings it back),
   `releasing`, `stuck` (its memory never left: see below).
+- The UP column in `berth status`: `yes` answers. `LATCHED` answered before and stopped without its run ending it:
+  a crash or a hang worth reporting. `NO` never answered here, or ended on purpose (exit 0, or a stop Berth carried
+  out).
+- `berth stop` and `POST /v1/berth/stop` act on leases. An engine with no running lease is refused with `no running
+  engine named NAME under a lease` (409 over HTTP): there is nothing to stop, and the next request starts it again.
 - `berth status` shows EST. VRAM per engine: the peak its last run measured. An estimate, never a reservation.
 - `berth models` shows CACHED per model: how much of its file the kernel still holds in RAM (COOL) or not (COLD).
 - A streaming request to the gateway gets `: berth: loading ...` comment lines while its engine starts; that is
@@ -120,6 +128,7 @@ name = "training"
 cmdline = 'train\.py'     # regex on the command line (Windows: the exe's full path)
 action = "hold"           # hold: drain engines while it runs; track: just name its memory
 linger = "30s"
+gpu = "gpu1"              # hold only this card on a node with several; default every card
 
 [claims]
 builtin = true            # false turns the built-in pack off

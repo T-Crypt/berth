@@ -30,9 +30,9 @@ type Broker interface {
 }
 
 // Watcher scans the process table and keeps the claims of every card on the
-// node current. A hold holds every card: the process table cannot say which
-// card a game will draw on. Cards[0] notes the claim events, since the
-// node's cards share one event log.
+// node current. A hold holds the cards its rule names, or every card: the
+// process table cannot say which card a game will draw on. Cards[0] notes
+// the claim events, since the node's cards share one event log.
 type Watcher struct {
 	Rules []Rule // compiled
 	Every time.Duration
@@ -129,9 +129,22 @@ func (w *Watcher) Tick(ctx context.Context, now time.Time) {
 		}
 		states = append(states, st)
 	}
-	for _, b := range w.Cards {
-		b.SetClaims(tracked, states)
+	for i, b := range w.Cards {
+		b.SetClaims(tracked, w.onCard(states, i))
 	}
+}
+
+// onCard is the claim states as card i reports them: a hold whose rule
+// names other cards is not active here. states holds one entry per rule,
+// in rule order.
+func (w *Watcher) onCard(states []proto.Claim, i int) []proto.Claim {
+	out := slices.Clone(states)
+	for j, r := range w.Rules {
+		if r.Cards != nil && !slices.Contains(r.Cards, i) {
+			out[j].Active, out[j].Lease = false, ""
+		}
+	}
+	return out
 }
 
 // granted is the lease IDs the hold has been granted so far, comma
@@ -146,11 +159,18 @@ func (w *Watcher) start(ctx context.Context, r *Rule, m []Proc, now time.Time) {
 	h := &hold{cancel: cancel, lastSeen: now, leases: make([]string, len(w.Cards))}
 	w.holds[r.Name] = h
 	who := names(m)
-	w.Log.Info("claim started: holding the card", "claim", r.Name, "procs", who, "cards", len(w.Cards))
+	cards := r.Cards
+	if cards == nil {
+		for i := range w.Cards {
+			cards = append(cards, i)
+		}
+	}
+	w.Log.Info("claim started: holding the card", "claim", r.Name, "procs", who, "cards", len(cards))
 	w.Cards[0].Note(proto.Event{Kind: proto.EvClaimStarted, Engine: "claim:" + r.Name, Detail: who})
 	req := broker.Request{Engine: "claim:" + r.Name, Group: "claim", Priority: broker.Hold,
 		Needs: r.NeedsMiB << 20, Wait: HoldWait, Pinned: true}
-	for i, b := range w.Cards {
+	for _, i := range cards {
+		b := w.Cards[i]
 		go func() {
 			l, err := b.Acquire(hctx, req, func(why string) {
 				w.mu.Lock()

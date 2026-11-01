@@ -12,6 +12,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/T-Crypt/berth/internal/node"
 	"github.com/T-Crypt/berth/internal/proto"
 	"github.com/T-Crypt/berth/internal/server"
 	"github.com/T-Crypt/berth/internal/vfio"
@@ -32,10 +33,17 @@ type vfioCard struct {
 // readable while the card is bound to vfio-pci and nvidia-smi cannot see it;
 // berthd is asked either way. Otherwise the status berthd reports names the scheduled
 // index, and nvidia-smi names that card's bus id; when berthd is down or
-// has no reading yet, index 0.
-func vfioCardAt(sock, explicit, smiBin string) (vfioCard, *Error) {
+// has no reading yet, index 0. key is the card a run names (vfio run
+// --gpu), "" for berthd's first card; berthd's status is narrowed to it.
+func vfioCardAt(sock, explicit, key, smiBin string) (vfioCard, *Error) {
 	var card vfioCard
 	st, err := vfioStatusOf(sock)
+	if err == nil && key != "" {
+		if st = node.View(st, key); st == nil {
+			return card, Failf("berthd has no card %s", key).
+				WithHint("berth status names the cards berthd schedules")
+		}
+	}
 	card.Daemon, card.DialErr = st, err
 	if explicit != "" {
 		card.Addr = vfio.SysAddr(explicit)
@@ -301,7 +309,7 @@ func vfioStatus(c *Context, r vfio.Reader, smiBin string) int {
 	if len(c.Args) == 1 {
 		explicit = c.Args[0]
 	}
-	card, e := vfioCardAt(*sock, explicit, smiBin)
+	card, e := vfioCardAt(*sock, explicit, "", smiBin)
 	if e != nil {
 		return c.fail(e)
 	}

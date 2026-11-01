@@ -12,8 +12,10 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -26,17 +28,32 @@ import (
 )
 
 // A batch engine that exits 0 stopped answering on purpose: the engines
-// tab shows it down, not latched (issue 265). One that exits non-zero
-// keeps the latch, so a crash still reads as one.
+// tab shows it down, not latched (issue 265). So does one Berth stopped,
+// through berth stop or a stop signal from its supervisor, whatever code
+// the signal leaves it. One that exits non-zero on its own keeps the
+// latch, so a crash still reads as one.
 func TestACleanExitDoesNotLatchTheEngine(t *testing.T) {
+	forever := []string{"sh", "-c", "exec sleep 30"}
 	for _, c := range []struct {
-		exit int
+		name string
+		argv []string
+		stop func(t *testing.T, b *broker.Broker)
 		want string
 	}{
-		{0, "down"},
-		{1, "latched"},
+		{"exit 0", []string{"sh", "-c", "exit 0"}, nil, "down"},
+		{"exit 1", []string{"sh", "-c", "exit 1"}, nil, "latched"},
+		{"berth stop", forever, func(t *testing.T, b *broker.Broker) {
+			if _, err := b.Stop("deduper"); err != nil {
+				t.Fatal(err)
+			}
+		}, "down"},
+		{"supervisor stop", forever, func(t *testing.T, _ *broker.Broker) {
+			if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
+				t.Fatal(err)
+			}
+		}, "down"},
 	} {
-		t.Run(fmt.Sprintf("exit %d", c.exit), func(t *testing.T) {
+		t.Run(c.name, func(t *testing.T) {
 			var up atomic.Bool
 			up.Store(true)
 			eng := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -66,10 +83,19 @@ func TestACleanExitDoesNotLatchTheEngine(t *testing.T) {
 			if s := w.Snapshot()[0].State; s != "up" {
 				t.Fatalf("before the run: state %q, want up", s)
 			}
-			code := Run(Options{Socket: sock, Engine: "deduper", Priority: "batch", Grace: time.Second,
-				Argv: []string{"sh", "-c", fmt.Sprintf("exit %d", c.exit)}, Stderr: io.Discard})
-			if code != c.exit {
-				t.Fatalf("run exit %d, want %d", code, c.exit)
+			ran := make(chan int, 1)
+			go func() {
+				ran <- Run(Options{Socket: sock, Engine: "deduper", Priority: "batch", Grace: time.Second,
+					Argv: c.argv, Stderr: io.Discard})
+			}()
+			if c.stop != nil {
+				waitFor(t, "the lease granted", func() bool { return len(b.Status().Leases) == 1 })
+				c.stop(t, b)
+			}
+			select {
+			case <-ran:
+			case <-time.After(10 * time.Second):
+				t.Fatal("the run never ended")
 			}
 			up.Store(false)
 			waitFor(t, "the lease released", func() bool { return len(b.Status().Leases) == 0 })

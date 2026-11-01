@@ -167,6 +167,13 @@
             <div id="machine-charts" class="machine-charts adv-only"></div>
             <div class="socket-line" id="socket-line" role="status"></div>
           </section>
+          <section class="panel claims-section" id="sec-claims" aria-label="claims">
+            <div class="panel-head">
+              <h2 class="panel-title">CLAIMS</h2>
+              <span class="panel-meta" id="claims-meta">games and apps</span>
+            </div>
+            <div id="claims"></div>
+          </section>
           <section class="panel stowaways-section" id="sec-stow" aria-label="stowaways">
             <div class="panel-head">
               <h2 class="panel-title">STOWAWAYS</h2>
@@ -281,100 +288,132 @@
     </section>
 
     <section id="panel-about" class="panel-about" hidden aria-label="about">
-      <div class="about">
-        <h2 class="section-title">WHAT THIS PAGE IS</h2>
-        <p>Berth is the VRAM leasing service for every GPU you run. Engines ask the berthd node for a lease on the card; the node queues the request, asks the current holder to drain, waits until the driver shows the memory free, and only then grants the berth. Nothing is ever granted on process exit alone, and nothing is claimed as reserved unless the driver measured it. Every stat on this page is collected by the node itself, from the driver, the host, and the engines' own endpoints.</p>
-
-        <h2 class="section-title">THE TWO MODES</h2>
-        <dl class="about-dl">
-          <dt>BASIC</dt><dd>the at-a-glance story: the counters, the request KPIs, the tide, the departures board, and the berths. The mode you land on.</dd>
-          <dt>ADVANCED</dt><dd>everything a power user wants: full GPU telemetry (clocks, fan, PCIe), host CPU and memory trends, prefill and reingest KPIs, the token ledger, the leaderboard, and the full recent-request table. Toggled in the header, remembered between visits.</dd>
+      <nav class="subnav" id="subnav-about" aria-label="about sections"></nav>
+      <div class="about-hero" id="about-top">
+        <p class="about-word"><span class="wordmark">berth<span class="dot">.</span></span> the VRAM leasing service for every GPU you run</p>
+        <p>Engines ask the berthd node for a lease on a card. The node queues the request, asks the current holder to drain, waits until the driver shows the memory free, and only then grants the berth. Nothing is granted on a process exit alone, and nothing is called reserved unless the driver measured it. Every number on this page comes from the node: the driver, the host and the engines' own endpoints.</p>
+        <dl class="about-facts">
+          <dt>this node</dt><dd id="about-version">not read yet</dd>
+          <dt>this page</dt><dd>read only: it shows the node and changes nothing</dd>
         </dl>
-
-        <h2 class="section-title">GETTING AROUND</h2>
-        <p>A section rail under the header jumps to any panel on the tab and marks the one in view. Every panel folds from the chevron in its head and stays folded between visits. The card tab counts voyages and the engines tab counts engines, so the header says which tab wants attention. On a phone the nav sits along the bottom edge with the tab you are on marked, and the menu button opens the node's versions, the last successful read, the detail level, the retry and this list. Times read relative, with the exact clock in the title. When a read goes stale a retry appears on the conn pill that reads the node now instead of waiting out the poll.</p>
-        <p>The log's filter box matches the kind word, the engine and the detail; the chips carry live counts and the count line names what is shown. LATEST jumps back to the newest row. The board's headers sort by vessel, hold, status and age, and the foot names the order. Alert cards dismiss until they clear or change level. The ticket copies its JSON or a deep link to this exact voyage.</p>
-
-        <h2 class="section-title">KEYBOARD</h2>
-        <dl class="about-dl">
-          <dt>1 / 2 / 3</dt><dd>card, engines, about</dd>
-          <dt>B / A</dt><dd>basic, advanced mode</dd>
-          <dt>P</dt><dd>pause or resume the log</dd>
-          <dt>/</dt><dd>filter the log</dd>
-          <dt>R</dt><dd>read the node now</dd>
-          <dt>?</dt><dd>the shortcut list</dd>
-          <dt>ESC</dt><dd>close a dialog, else clear the log filter</dd>
-        </dl>
-
-        <h2 class="section-title">THE STATUS WORDS</h2>
-        <dl class="about-dl">
-          <dt>BOARDING</dt><dd>the request is waiting in the queue for a free berth</dd>
-          <dt>DOCKED</dt><dd>the lease is active and the engine is using the card, running from its HOT weights in VRAM</dd>
-          <dt>CASTING OFF</dt><dd>the holder has been asked to drain and is finishing up</dd>
-          <dt>PARKING</dt><dd>a draining engine is moving its weights to RAM instead of dropping them; a transitional state, resolved once the driver shows the residual gone</dd>
-          <dt>WARM</dt><dd>the engine is parked: its weights hold in RAM, only a small residual keeps it on the card, and a resume puts it back at its own priority with no reload</dd>
-          <dt>ADRIFT</dt><dd>the lease is being released and the memory is on its way out</dd>
-          <dt>AGROUND</dt><dd>the release stalled; the memory is not coming back on its own</dd>
-        </dl>
-        <p>Every state shows as a shape and its word together, the same on every panel: a dot is working now, a ring is waiting or passive, a half-filled circle is in transition, a triangle needs attention, a square is not running or not live. A magenta CONTESTED flag on a docked row means the driver saw other VRAM holders on the card at grant time, so the measured hold and the free space disagree. A green WARM flag marks a parked engine, and its hover text carries the estimated RAM it holds and how long it has been parked; a boarding row carries a Q flag with its place in the queue, and the node's completion estimate when it sent one. The row title, the berth panel and the ticket stamp carry how much each holds, and the ticket names the tier the weights live in, HOT on the card or WARM in RAM, beside the exact terminal order for it as a copy button. CARD RANKING on the engines tab shows how the node orders engines when two at one priority ask for the card inside the juggle window: the config order, or card hours over the last seven days.</p>
-
-        <h2 class="section-title">THE REQUEST KPIs</h2>
-        <dl class="about-dl">
-          <dt>DECODE t/s</dt><dd>tokens per second generated across the running engines; the sparkline sums every engine's decode rate over the last hour</dd>
-          <dt>PREFILL t/s</dt><dd>prompt tokens processed per second, the engine's intake rate while it reads a request in</dd>
-          <dt>TPOT ms</dt><dd>time per output token, the inverse of decode rate, over the last fifteen minutes</dd>
-          <dt>P95 ms</dt><dd>the request duration that ninety-five percent of recent requests finished within, last fifteen minutes</dd>
-          <dt>P50 ms</dt><dd>the median request duration, last fifteen minutes</dd>
-          <dt>REQ/MIN</dt><dd>requests completed per minute over the last five minutes</dd>
-          <dt>CACHE %</dt><dd>share of prompt tokens served from the KV cache instead of re-run, last hour</dd>
-          <dt>REINGEST %</dt><dd>the complement of cache, the share of prompt tokens that had to be computed from scratch</dd>
-          <dt>DRAFT ACCEPT %</dt><dd>of the tokens a speculative draft model proposed, the share the main model accepted, so no work was wasted</dd>
-          <dt>PREFILL ms</dt><dd>derived time-to-first-token: uncached prompt tokens divided by the prefill rate, used where the engine does not report it directly</dd>
-          <dt>QUEUE</dt><dd>engines waiting in the berth's own queue for a free berth on the card; each engine's own queue - the requests it holds back - is on its card</dd>
-        </dl>
-
-        <h2 class="section-title">THE COUNTERS</h2>
-        <dl class="about-dl">
-          <dt>COLLISIONS AVOIDED</dt><dd>grants that waited for a held card instead of loading on top of the holder</dd>
-          <dt>VRAM HANDED OFF</dt><dd>peak measured bytes of every lease whose memory the card then showed as freed</dd>
-          <dt>DRAINS</dt><dd>holders asked to give the berth back</dd>
-          <dt>AGROUND CAUGHT</dt><dd>stuck releases caught before the card stayed dirty</dd>
-          <dt>STOWAWAYS CAUGHT</dt><dd>VRAM holders found on the card with no lease</dd>
-          <dt>CONTESTED</dt><dd>grants made while another holder shared the card</dd>
-          <dt>REFUSED</dt><dd>requests turned away after their wait expired</dd>
-        </dl>
-        <p>Every count is an event the node actually saw. Berth never estimates what might have happened.</p>
-
-        <h2 class="section-title">CONTEXT AND KV</h2>
-        <p>Context residency draws the engine's own per-request token figures - cached, fresh prefill and generated - as columns against the model's context window, so a request that would not fit its window is visible at a glance; below the columns sit the engines' live KV sessions. The KV pool is each engine's live KV slots (the llama.cpp family's <code>/slots</code>): how many context tokens each session holds against its window, with 75 and 90 percent marks. Stored ranges show the per-minute peak slot fill the harbor folded from the node's samples; the live slots stay live, whatever the range says. An engine without these endpoints reports no window and no slots, and the panels say so rather than guess.</p>
-
-        <h2 class="section-title">GPU TELEMETRY AND THE MACHINE</h2>
-        <p>The scheduled card reports its power draw against its power limit, temperature, utilisation, and in advanced mode its SM and memory clocks, fan, and PCIe generation and width. A reading of n/a means the driver did not report it, not zero. The machine panel is the host itself: CPU, cores, used and total memory, swap, and the one, five and fifteen minute load averages. Its socket line counts event-stream write timeouts and dropped slow readers, so a stalled log on a live node starts there.</p>
-
-        <h2 class="section-title">THE LIBRARY</h2>
-        <p>The library lists the model file roots this machine has, the same rows <code>berth models</code> prints: each model's shelf, quant, size, and its CACHED share with the tier it reads as, COOL at half the model's bytes in the kernel page cache or better, COLD below. The kernel takes those pages back whenever the machine needs the RAM, so the share says a reload may skip the disk; it is an estimate of reload speed, never a statement about RAM held. SERVED BY names each engine that reports the model resident now, and EST VRAM is that engine's learned footprint from its past runs, an estimate of what a run needs and never a reservation. Each row's copy buttons give the exact commands: <code>berth prefetch NAME</code> warms the files, <code>berth models show NAME</code> reads the full header.</p>
-
-        <h2 class="section-title">STOWAWAYS AND NO TICKET</h2>
-        <p>A stowaway is any process holding VRAM without a lease. Berth reports it and never kills it. A "no ticket" run is an engine started while the node was down, so it holds the card outside any lease. Both show here read only.</p>
-
-        <h2 class="section-title">THIS RELEASE IS READ ONLY</h2>
-        <p>The harbor shows the node. Ordering work is coming in later phases, and these rows are marked coming, not working:</p>
-        <ul class="about-ul">
-          <li>DRAIN (coming): order the holder to give the berth back from here</li>
-          <li>BERTH HOLD (coming): pin the card for a known window</li>
-          <li>OFFERS (coming): barter a waiting claim with a holder, consent first, never taken without acceptance</li>
-          <li>The LIBRARY listing is on the engines tab: every model file on the machine, its shelf, quant and size, how much of it the kernel page cache holds, and the engine serving it. Still coming: verify state, update offers and the migration plan. Nothing applies on its own.</li>
-          <li>ENGINE MANAGEMENT (coming): each engine's installed version, with install, update and rollback beside it</li>
-          <li>GATEWAY (coming): the one local API's routes, the requests it served and refused, and the client keys that made them</li>
-          <li>SCENES (coming): the node's scene definitions, and the switch that moves the card from one to another</li>
-          <li>JOURNAL (coming): the entries behind changes, each with its dry-run flag and its exact reverse</li>
-          <li>GUI PLANE (coming): engines with a UI start from that app on its own address; this page links to it and never proxies it</li>
+        <ul class="about-links">
+          <li><a href="https://t-crypt.github.io/berth/" target="_blank" rel="noopener noreferrer">Documentation</a></li>
+          <li><a href="https://github.com/T-Crypt/berth/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Changelog</a></li>
+          <li><a href="https://github.com/T-Crypt/berth/issues" target="_blank" rel="noopener noreferrer">Report a problem</a></li>
+          <li><a href="https://github.com/T-Crypt/berth" target="_blank" rel="noopener noreferrer">Source</a></li>
         </ul>
-        <p>Until then, everything the page shows is also on the terminal:</p>
-        <pre class="about-pre">berth status
+      </div>
+
+      <div class="about">
+        <section class="about-sec" id="about-cards" aria-labelledby="about-cards-h">
+          <h2 class="section-title" id="about-cards-h">SEVERAL CARDS</h2>
+          <p>One berthd governs every card in the machine. Each card it schedules has its own berth panel with only that card's leases and stowaways, and a card it only reads is marked INVENTORY ONLY. A board row, a stowaway and a lease line name their card (gpu1), and a lease on several cards lists them. The tide draws the memory of all scheduled cards together. A card passed to a VM is marked on its own panel, and the others keep serving.</p>
+        </section>
+
+        <section class="about-sec" id="about-modes" aria-labelledby="about-modes-h">
+          <h2 class="section-title" id="about-modes-h">BASIC AND ADVANCED</h2>
+          <dl class="about-dl">
+            <dt>BASIC</dt><dd>the counters, the request KPIs, the tide, the departures board and the berths. The page opens here.</dd>
+            <dt>ADVANCED</dt><dd>adds full GPU telemetry (clocks, fan, PCIe), host CPU and memory trends, prefill and reingest KPIs, the token ledger, the leaderboard and the full request table. The header switch sets it, and the page remembers it.</dd>
+          </dl>
+        </section>
+
+        <section class="about-sec" id="about-nav" aria-labelledby="about-nav-h">
+          <h2 class="section-title" id="about-nav-h">GETTING AROUND</h2>
+          <p>The rail under the header jumps to any section of the tab and marks the one in view. A section link opens the right tab when you share or reload it. Every panel folds from the chevron in its head and stays folded between visits. The tab counts say how many voyages and engines each tab holds.</p>
+          <p>On a phone the tabs sit along the bottom edge, and the menu button opens the node's versions, the last successful read, the detail level and the retry. Times read relative, with the exact clock in the title. When a read goes stale, a retry on the connection pill reads the node at once.</p>
+          <p>The log's filter matches the kind, the engine and the detail, and the chips carry live counts. LATEST jumps back to the newest row. The board sorts by vessel, hold, status and age. An alert card stays dismissed until it clears or changes level. A ticket copies its JSON or a link to that voyage.</p>
+        </section>
+
+        <section class="about-sec" id="about-keys" aria-labelledby="about-keys-h">
+          <h2 class="section-title" id="about-keys-h">KEYBOARD</h2>
+          <dl class="about-dl about-keys">
+            <dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></dt><dd>card, engines, about</dd>
+            <dt><kbd>B</kbd> <kbd>A</kbd></dt><dd>basic, advanced</dd>
+            <dt><kbd>P</kbd></dt><dd>pause or resume the log</dd>
+            <dt><kbd>/</kbd></dt><dd>filter the log</dd>
+            <dt><kbd>R</kbd></dt><dd>read the node now</dd>
+            <dt><kbd>?</kbd></dt><dd>the shortcut list</dd>
+            <dt><kbd>Esc</kbd></dt><dd>close a dialog, else clear the log filter</dd>
+          </dl>
+        </section>
+
+        <section class="about-sec" id="about-states" aria-labelledby="about-states-h">
+          <h2 class="section-title" id="about-states-h">THE STATUS WORDS</h2>
+          <dl class="about-dl">
+            <dt>BOARDING</dt><dd>waiting in the queue for a free berth</dd>
+            <dt>DOCKED</dt><dd>the lease is active and the engine runs from its HOT weights in VRAM</dd>
+            <dt>CASTING OFF</dt><dd>the holder was asked to drain and is finishing</dd>
+            <dt>PARKING</dt><dd>a draining engine is moving its weights to RAM instead of dropping them, until the driver shows the residual gone</dd>
+            <dt>WARM</dt><dd>parked: the weights are in RAM, a small residual stays on the card, and a resume brings it back at its own priority with no reload</dd>
+            <dt>ADRIFT</dt><dd>the lease is released and the memory is on its way out</dd>
+            <dt>AGROUND</dt><dd>the release stalled, and the memory is not coming back on its own</dd>
+          </dl>
+          <p>Each state shows as a shape and its word together on every panel. A dot is working, a ring is waiting, a half-filled circle is in transition, a triangle needs attention, and a square is stopped. A magenta CONTESTED flag on a docked row means the driver saw other VRAM holders at grant time. A green WARM flag marks a parked engine, and its title gives the RAM it holds and how long it has been parked. A boarding row carries a Q flag with its place in the queue and the node's estimate when it sent one. A ticket names the tier the weights live in, HOT or WARM, and gives the exact terminal command as a copy button. CARD RANKING on the engines tab shows how the node orders two engines at one priority inside the juggle window: the config order, or card hours over seven days.</p>
+        </section>
+
+        <section class="about-sec" id="about-kpis" aria-labelledby="about-kpis-h">
+          <h2 class="section-title" id="about-kpis-h">THE REQUEST KPIs</h2>
+          <dl class="about-dl">
+            <dt>DECODE t/s</dt><dd>tokens generated per second across the running engines; the sparkline is the last hour</dd>
+            <dt>PREFILL t/s</dt><dd>prompt tokens read per second</dd>
+            <dt>TPOT ms</dt><dd>time per output token, last fifteen minutes</dd>
+            <dt>P95 ms</dt><dd>the duration 95% of recent requests finished within, last fifteen minutes</dd>
+            <dt>P50 ms</dt><dd>the median request duration, last fifteen minutes</dd>
+            <dt>REQ/MIN</dt><dd>requests completed per minute, last five minutes</dd>
+            <dt>CACHE %</dt><dd>prompt tokens served from the KV cache, last hour</dd>
+            <dt>REINGEST %</dt><dd>prompt tokens computed from scratch, the rest of the cache share</dd>
+            <dt>DRAFT ACCEPT %</dt><dd>draft-model tokens the main model accepted</dd>
+            <dt>PREFILL ms</dt><dd>time to first token, from uncached prompt tokens and the prefill rate, where the engine does not report it</dd>
+            <dt>QUEUE</dt><dd>engines waiting in the node's queue for a berth. Each engine's own request queue is on its card.</dd>
+          </dl>
+        </section>
+
+        <section class="about-sec" id="about-counters" aria-labelledby="about-counters-h">
+          <h2 class="section-title" id="about-counters-h">THE COUNTERS</h2>
+          <dl class="about-dl">
+            <dt>COLLISIONS AVOIDED</dt><dd>grants that waited for a held card instead of loading on top of the holder</dd>
+            <dt>VRAM HANDED OFF</dt><dd>peak measured bytes of every lease whose memory the card then showed freed</dd>
+            <dt>DRAINS</dt><dd>holders asked to give the berth back</dd>
+            <dt>AGROUND CAUGHT</dt><dd>stuck releases caught before the card stayed dirty</dd>
+            <dt>STOWAWAYS CAUGHT</dt><dd>VRAM holders found on a card with no lease</dd>
+            <dt>CONTESTED</dt><dd>grants made while another holder shared the card</dd>
+            <dt>REFUSED</dt><dd>requests turned away when their wait ran out</dd>
+            <dt>JUGGLES STOPPED</dt><dd>handoffs between two engines at one priority that the ranking settled instead of flipping the card back and forth</dd>
+          </dl>
+          <p>Every count is an event the node saw. Berth never estimates what might have happened.</p>
+        </section>
+
+        <section class="about-sec" id="about-kv" aria-labelledby="about-kv-h">
+          <h2 class="section-title" id="about-kv-h">CONTEXT AND KV</h2>
+          <p>Context residency draws each request's cached, fresh and generated tokens against the model's context window, so a request that would not fit is plain to see. The KV pool shows each engine's live slots (the llama.cpp family's <code>/slots</code>) against their windows, with marks at 75% and 90%. Longer ranges show the per-minute peak fill; the live slots stay live. An engine without these endpoints reports no window and no slots, and the panels say so.</p>
+        </section>
+
+        <section class="about-sec" id="about-telemetry" aria-labelledby="about-telemetry-h">
+          <h2 class="section-title" id="about-telemetry-h">GPU AND MACHINE</h2>
+          <p>Each card reports power against its limit, temperature and utilisation, and in advanced mode its SM and memory clocks, fan and PCIe link. n/a means the driver did not report a value; it never means zero. The machine panel is the host: CPU, cores, memory, swap and load. Its socket line counts event-stream write timeouts and dropped slow readers, so a stalled log starts there.</p>
+        </section>
+
+        <section class="about-sec" id="about-library" aria-labelledby="about-library-h">
+          <h2 class="section-title" id="about-library-h">THE LIBRARY</h2>
+          <p>The library lists the model files on this machine, the same rows <code>berth models</code> prints: shelf, quant, size, and the CACHED share in the kernel page cache. COOL means half the file or more is cached, COLD less. The kernel takes those pages back when it needs the RAM, so CACHED predicts a faster reload and says nothing about RAM held. SERVED BY names the engine that has the model loaded, and EST VRAM is that engine's learned footprint, an estimate and never a reservation. The copy buttons give <code>berth prefetch NAME</code> and <code>berth models show NAME</code>.</p>
+        </section>
+
+        <section class="about-sec" id="about-holders" aria-labelledby="about-holders-h">
+          <h2 class="section-title" id="about-holders-h">CLAIMS, STOWAWAYS AND NO TICKET</h2>
+          <p>A game that a hold claim matches holds the card under a <code>claim:NAME</code> lease, so engines drain and wait until it exits. <code>berth hold</code> does the same by hand. A track claim names an app's card memory (OBS, Blender) so it is not reported as a stowaway. The CLAIMS panel lists the rules matching now, as <code>berth claims</code> does, with the card on a machine with several, and counts the idle ones. A stowaway is any process holding VRAM without a lease: Berth reports it and never stops it. A NO TICKET run is an engine started while the node was down, so it holds the card outside any lease.</p>
+        </section>
+
+        <section class="about-sec" id="about-next" aria-labelledby="about-next-h">
+          <h2 class="section-title" id="about-next-h">FROM THE TERMINAL</h2>
+          <p>The harbor reads the node and changes nothing. Switching and stopping engines from here will need a paired device (<code>berth pair</code>), and that is not built yet. The gateway has its own page at <code>/gui/</code> on the gateway's port, where an engine with a start command can be launched. Everything this page shows is also on the terminal:</p>
+          <pre class="about-pre">berth status
 berth events -f
-berth run
+berth claims
+berth hold --reason game
 berth config check</pre>
+          <p><a href="https://t-crypt.github.io/berth/roadmap/" target="_blank" rel="noopener noreferrer">The roadmap</a> says what comes next.</p>
+        </section>
       </div>
     </section>
   </main>

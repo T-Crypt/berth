@@ -1,7 +1,7 @@
 # Interfaces
 
 - **CLI:** one command tree with one output contract. `berth status`, `berth events -f`,
-  `berth run`, `berth hold`, `berth stop`, `berth notify`, `berth claims`, `berth pull`, `berth verify`, `berth models`, `berth gateway`,
+  `berth run`, `berth hold`, `berth stop`, `berth cordon|uncordon`, `berth notify`, `berth claims`, `berth pull`, `berth verify`, `berth models`, `berth gateway`,
   `berth wire llama-swap`, `berth engine check`, `berth config check`, `berth config show`,
   `berth export`, `berth key`, `berth skill install|show`, `berth update`, `berth version`,
   and for the node itself `berth daemon`, `berth harbor`, `berth service install|uninstall|status`,
