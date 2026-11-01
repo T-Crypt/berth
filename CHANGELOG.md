@@ -6,6 +6,15 @@ has a matching GitHub release whose body comes from its section below.
 
 ## [Unreleased]
 
+## [v0.4.1] - 2026-11-01
+
+Each card on a machine with several now has its own gateway URL, `/cards/CARD/v1`, and one model can be served
+on more than one card. A plain `/v1` request goes to the card that costs least to reach. `berth cordon gpu1` takes
+a card out of rotation while the others serve, and the gateway's `/gui/` page names each engine's card.
+`berth hold --gpu`, `berth vfio run --gpu` and `gpu = ...` on a `[[claim]]` hold only the cards they name. An
+engine can run under a systemd slice, the harbor shows the claims that match now, and an engine Berth stopped
+no longer shows as unresponsive.
+
 ### Added
 
 - `GET /v1/berth/board` names the cards each engine's entry runs on (`cards`), and each card's base URL on the
