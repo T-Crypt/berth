@@ -6,6 +6,15 @@ has a matching GitHub release whose body comes from its section below.
 
 ## [Unreleased]
 
+### Added
+
+- The harbor has a SWITCH tab: each card with its state, holders and cordon, and every engine with its state
+  and models. A device paired with `berth pair` can switch the card to an engine or stop the engine that holds
+  it, from a phone. A pinned holder shows PINNED and has no stop. On a machine with several cards a picker
+  narrows the engines to one card. A paired device can pair another phone from a QR code. The harbor sends the
+  gateway's own board, switch and stop with the node's API key, so `berth gateway` must run; `berth harbor
+  --gateway` and `--key-file` name them when they are not in the default place.
+
 ## [v0.4.1] - 2026-11-01
 
 Each card on a machine with several now has its own gateway URL, `/cards/CARD/v1`, and one model can be served
