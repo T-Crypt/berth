@@ -12,7 +12,7 @@
 | P5.5 | Harbor router: one URL serves models from any node in the fleet | Planned |
 | P6 | ComfyUI job-boundary handoff on Linux (**done**); ComfyUI started on demand through the gateway (**done**); Windows node (**experimental**) | Partly done |
 | P7 | Offers: a waiting request can offer for an idle card on another machine; the holder decides | Planned |
-| P8 | Multi-GPU scheduling: a lease table per card, "any card that fits" | Started: one berthd for every card, an engine on one card or a lease on several (experimental); per-card gateway URLs in v0.5 |
+| P8 | Multi-GPU scheduling: a lease table per card, "any card that fits" | Started: one berthd for every card, an engine on one card or a lease on several (experimental); per-card gateway URLs and cordon in v0.4.1 |
 | P9 | Organisations: single sign-on, role-based access, audit log, Postgres, regional federation; a mobile app after | Planned |
 | P10 | Opt-in auto-yield: a card's owner can pre-approve offers for their own card | Later |
 
@@ -93,11 +93,19 @@ v0.4.0 puts a whole machine under one berthd. Testers ran it first as pre-releas
 
 The [CHANGELOG](https://github.com/T-Crypt/berth/blob/main/CHANGELOG.md) has every entry.
 
-## On `next`, for v0.4.1
+## Shipped: v0.4.1, a base URL per card (2026-11-01)
 
-Merged to the `next` branch and in no release yet. Testers get them in a `v0.4.1-rc.N` pre-release first
-([Testing a pre-release](prerelease.md)).
+v0.4.1 lets a client choose the card on a node with several. Testers ran it first as `v0.4.1-rc.1`.
 
+- **One base URL per card.** `/cards/CARD/v1` reaches only the engines on that card, and one model can be served
+  on several cards, one engine entry per card.
+- **Placement for a plain `/v1` request.** When several cards serve the model, the gateway picks one: the card
+  where it already runs, then one where it is parked, then a free card, then one whose holder drains, and last a
+  card a VM, a game or a cordon keeps.
+- **Cordon a card.** `berth cordon gpu1` stops new grants on the card, holds aside, until `berth uncordon`, so it
+  can be drained for maintenance or a VM while the others serve.
+- **A card picker on the board.** `GET /v1/berth/board` names each engine's cards and each card's base URL and
+  cordon, and the gateway's `/gui/` page names each engine's card.
 - **The card for holds, VFIO runs and claims.** `berth hold --gpu`, `berth vfio run --gpu` and `gpu = ...` on a
   `[[claim]]` take only the cards they name on a node with several, so the other cards keep serving.
 - **Engines under a systemd slice.** `slice = "NAME.slice"` on an engine entry, or `berth run --slice`, puts the
@@ -105,20 +113,14 @@ Merged to the `next` branch and in no release yet. Testers get them in a `v0.4.1
 - **The harbor.** A CLAIMS panel on the card tab, a rewritten About tab, and a header that no longer clips.
 - **Status after a stop.** An engine Berth stopped shows as offline, not unresponsive.
 
-## Next: v0.5, per-card gateway endpoints
+## Next: v0.5, choosing the card from the harbor
 
-v0.5 lets a client choose the card on a node with several. Each slice ships on its own, in this order:
+- **A SWITCH tab in the harbor** with a card picker, as the gateway's `/gui/` page has.
 
-1. **One base URL per card**, merged in [#278](https://github.com/T-Crypt/berth/pull/278). `/cards/CARD/v1` reaches only
-   the engines on that card, and one model can be served on several cards, one engine entry per card.
-2. **Placement for a plain `/v1` request**, merged in [#280](https://github.com/T-Crypt/berth/pull/280). When
-   several cards serve the model, the gateway picks one: the card where it already runs, then one where it is
-   parked, then a free card, then one whose holder drains, and last a card a VM, a game or a cordon keeps.
-3. **Cordon a card.** `berth cordon gpu1` stops new grants on the card, holds aside, until `berth uncordon`, so it
-   can be drained for maintenance or a VM while the others serve.
-4. **A card picker on the board.** `GET /v1/berth/board` names each engine's cards and each card's base URL and
-   cordon, and the gateway's `/gui/` page names each engine's card, so launching an engine picks its card. The
-   harbor's own SWITCH tab is still to come.
+Still to decide, with data from multi-card users:
+
+- Whether a cordon survives a berthd restart. Today it lives in berthd's memory, and a restart clears it.
+- Whether measured switch costs rank the cards for a plain `/v1` request. Today the gateway ranks them by reach.
 
 ## Also queued
 
