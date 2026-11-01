@@ -1,0 +1,87 @@
+{
+  "name": "demo-node",
+  "reachable": true,
+  "cards": [
+    {
+      "card": "gpu0",
+      "index": 0,
+      "name": "NVIDIA GeForce RTX 4090",
+      "state": "held",
+      "base": "/cards/gpu0/v1",
+      "total": 25757220864,
+      "used": 22548578304,
+      "holders": [
+        { "name": "llama-swap", "state": "active" },
+        { "name": "blender", "state": "active", "pinned": true }
+      ]
+    },
+    {
+      "card": "gpu1",
+      "index": 1,
+      "name": "NVIDIA GeForce RTX 3090",
+      "state": "free",
+      "cordoned": true,
+      "base": "/cards/gpu1/v1",
+      "total": 25769803776,
+      "used": 314572800,
+      "holders": []
+    }
+  ],
+  "engines": [
+    {
+      "name": "llama-swap",
+      "api": "http://127.0.0.1:9090",
+      "launch": true,
+      "state": "up",
+      "message": "llama-swap is ready",
+      "cards": ["gpu0"],
+      "stoppable": true,
+      "models": [
+        { "id": "qwen3.6-35b-a3b", "loaded": true },
+        { "id": "gemma-4-27b" },
+        { "id": "qwen3.6-coder-30b" }
+      ]
+    },
+    {
+      "name": "blender",
+      "launch": false,
+      "state": "up",
+      "message": "blender holds the card under a pinned lease",
+      "cards": ["gpu0"],
+      "stoppable": false,
+      "models": []
+    },
+    {
+      "name": "comfyui",
+      "gui": "http://127.0.0.1:8188/",
+      "launch": true,
+      "state": "offline",
+      "message": "comfyui is offline; the card is in use by llama-swap. Start asks it to release the card once its current request finishes",
+      "card": [{ "name": "llama-swap", "state": "active" }],
+      "cards": ["gpu0"],
+      "stoppable": false,
+      "models": []
+    },
+    {
+      "name": "strata",
+      "api": "http://127.0.0.1:8080",
+      "launch": true,
+      "state": "starting",
+      "message": "strata is loading its weights",
+      "cards": ["gpu1"],
+      "stoppable": false,
+      "models": [{ "id": "qwen3.8-flash-next" }]
+    },
+    {
+      "name": "acestep",
+      "api": "http://127.0.0.1:8001",
+      "launch": true,
+      "state": "failed",
+      "message": "acestep did not come up",
+      "detail": "exit status 1: CUDA out of memory",
+      "cards": ["gpu1"],
+      "stoppable": false,
+      "models": [{ "id": "acestep-1.5" }]
+    }
+  ]
+}

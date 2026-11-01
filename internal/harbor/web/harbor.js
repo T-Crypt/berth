@@ -12,6 +12,7 @@ import { Ticket } from "./ticket.js";
 import { EngineView } from "./engines.js";
 import { LibraryView } from "./library.js";
 import { ResidencyView } from "./residency.js";
+import { initSwitch } from "./switch.js";
 import { sparkline, lineChart, stackedArea, timelineChart } from "./charts.js";
 import { PAL } from "./palette.js";
 import { GIB } from "./util.js";
@@ -123,7 +124,7 @@ function initialLbRange() {
   return "24h";
 }
 
-let board, ticket, engineView, residency, priorityView, libraryView;
+let board, ticket, engineView, residency, priorityView, libraryView, switchView;
 let connPill, statePill, vmPill, nodeVersion, lastUpdate, demoStrip, alertStripEl;
 let odometerReels, counterSince, counterMeta;
 let ctiles;
@@ -201,6 +202,7 @@ function main() {
   engineView.colorOf = (name) => engineColor(name);
   residency = new ResidencyView($("residency-canvas"), $("residency-legend"), $("residency-sessions"), $("residency-meta"));
   residency.colorOf = (name) => engineColor(name);
+  switchView = initSwitch({ demo: state.demo });
   buildKpiStrip();
   wireMode();
   applyMode();
@@ -467,8 +469,8 @@ function applyMode() {
 
 // ---------------- tabs ----------------
 function wireTabs() {
-  const tabs = { harbor: $("tab-harbor"), engines: $("tab-engines"), about: $("tab-about") };
-  const panels = { harbor: $("panel-harbor"), engines: $("panel-engines"), about: $("panel-about") };
+  const tabs = { harbor: $("tab-harbor"), switch: $("tab-switch"), engines: $("tab-engines"), about: $("tab-about") };
+  const panels = { harbor: $("panel-harbor"), switch: $("panel-switch"), engines: $("panel-engines"), about: $("panel-about") };
   const show = (key) => {
     if (!tabs[key]) key = "harbor";
     for (const k of Object.keys(tabs)) {
@@ -477,7 +479,7 @@ function wireTabs() {
       else tabs[k].removeAttribute("aria-current");
     }
     if (key === "engines" && state.status) engineView.render(state.status);
-    if (key !== "harbor") { /* other panels are static or already rendered */ }
+    if (key === "switch") switchView.show(); else switchView.hide();
   };
   for (const key of Object.keys(tabs)) {
     tabs[key].addEventListener("click", () => {
@@ -513,6 +515,7 @@ const ENGINES_SECTIONS = [
   ["sec-throughput", "Throughput"], ["sec-ledger", "Ledger"], ["sec-lb", "Leaderboard"],
   ["sec-recent", "Recent"], ["sec-residency", "Residency"], ["sec-storage", "Storage"],
 ];
+const SWITCH_SECTIONS = [["sec-switch-cards", "Cards"], ["sec-switch-engines", "Engines"]];
 const ABOUT_SECTIONS = [
   ["about-top", "Berth"], ["about-cards", "Cards"], ["about-modes", "Modes"], ["about-nav", "Getting around"],
   ["about-keys", "Keyboard"], ["about-states", "Status words"], ["about-kpis", "KPIs"], ["about-counters", "Counters"],
@@ -525,6 +528,7 @@ function wireChrome() {
     if (stored) state.collapsed = JSON.parse(stored) || [];
   } catch (e) { state.collapsed = []; }
   buildSubnav($("subnav-harbor"), HARBOR_SECTIONS);
+  buildSubnav($("subnav-switch"), SWITCH_SECTIONS);
   buildSubnav($("subnav-engines"), ENGINES_SECTIONS);
   buildSubnav($("subnav-about"), ABOUT_SECTIONS);
   wireCollapse();
@@ -623,7 +627,7 @@ function wireShortcuts() {
   const mode = document.querySelector(".app-header .mode");
   if (mode) mode.before(keys);
   shortcutsDlg.querySelector(".sc-close").addEventListener("click", () => shortcutsDlg.close());
-  const tabFor = { 1: "tab-harbor", 2: "tab-engines", 3: "tab-about" };
+  const tabFor = { 1: "tab-harbor", 2: "tab-switch", 3: "tab-engines", 4: "tab-about" };
   for (const k of Object.keys(tabFor)) onKey(k, () => $(tabFor[k]).click());
   onKey("b", () => setMode("basic", true));
   onKey("a", () => setMode("advanced", true));

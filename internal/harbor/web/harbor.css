@@ -1029,6 +1029,34 @@ body.ready #panel-engines > :nth-child(n+2) { animation-delay: 60ms; }
 .sq.claim-track { border-left-color: var(--cyan); }
 .sq.claim-hold .name { color: var(--amber); }
 .sq.claim-track .name { color: var(--cyan); }
+/* SWITCH tab: the cards, the card picker and the engine rows. A row's
+   left edge is its state, as a lease's is on the board. */
+.sq.sw-card, .sq.sw-engine { border-left-color: var(--dim-2); }
+.sq.sw-card .name, .sq.sw-engine .name { color: var(--ink-strong); }
+.sq.sw-up { border-left-color: var(--green); }
+.sq.sw-waiting, .sq.sw-starting { border-left-color: var(--amber); }
+.sq.sw-failed { border-left-color: var(--magenta); }
+.sw-state { display: inline-flex; align-items: center; gap: var(--s1); white-space: nowrap; }
+.sw-chip { border: 1px solid var(--hair-2); border-radius: var(--r-pill); padding: 0 var(--s2); font-size: var(--fs-micro); color: var(--dim); }
+.sw-cordon, .sw-pinned { color: var(--amber); border-color: var(--amber-dim); }
+.sw-picker { margin-bottom: var(--s3); flex-wrap: wrap; }
+.sw-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin-top: var(--s1); }
+.sw-btn { min-height: var(--touch); min-width: 88px; }
+.sw-btn:disabled { opacity: 0.5; cursor: progress; }
+.sw-stop { color: var(--amber); border-color: var(--amber-dim); }
+.sw-error { color: var(--magenta); }
+.sw-detail { color: var(--amber); }
+.sw-paired { font-family: var(--mono); font-size: var(--fs-small); color: var(--dim); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s2); margin-bottom: var(--s3); }
+#sw-note > .empty-note { margin-bottom: var(--s3); }
+.sw-model-list { list-style: none; margin: var(--s1) 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; color: var(--dim); }
+.sw-model-list li { display: flex; align-items: center; gap: var(--s2); overflow-wrap: anywhere; }
+.sw-model-list li.loaded { color: var(--ink-strong); }
+.sw-loaded { color: var(--green); }
+dialog#pair-dlg { border: 1px solid var(--hair-2); padding: 0; background: var(--panel); color: var(--ink); border-radius: 8px; box-shadow: var(--shadow-pop); max-width: 360px; width: calc(100vw - 48px); }
+dialog#pair-dlg::backdrop { background: var(--scrim); backdrop-filter: blur(3px); }
+.pair-body { padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); font-family: var(--mono); font-size: var(--fs-small); }
+.pair-qr { width: 100%; height: auto; image-rendering: pixelated; border-radius: var(--r1); }
+.pair-link { color: var(--dim); overflow-wrap: anywhere; user-select: all; }
 .sq .claim-builtin { color: var(--dim-2); font-size: var(--fs-small); }
 .empty-note {
   border: 1px dashed var(--hair-2);
