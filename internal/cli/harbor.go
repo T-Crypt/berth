@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/T-Crypt/berth/internal/apikey"
 	"github.com/T-Crypt/berth/internal/config"
 	"github.com/T-Crypt/berth/internal/harbor"
 	"github.com/T-Crypt/berth/internal/models"
@@ -29,6 +30,8 @@ func runHarbor(c *Context) int {
 	retention := fs.Duration("retention", 720*time.Hour, "how long the store keeps samples and requests")
 	var allow hostList
 	fs.Var(&allow, "allow-host", "extra Host name a loopback harbor answers to, for a same-machine reverse proxy such as tailscale serve (repeatable or comma-separated)")
+	gatewayURL := fs.String("gateway", "", "the gateway's base URL for the SWITCH tab; empty = http:// plus [gateway] listen in berth.toml, itself 127.0.0.1:9799")
+	keyFile := fs.String("key-file", apikey.DefaultPath(), "the node's API key the SWITCH tab sends to the gateway; read, never created ($BERTH_API_KEY_FILE)")
 	cfgPath := fs.String("config", config.DefaultPath(), "berth.toml ($BERTH_CONFIG): the model roots and the [update] check switch")
 	if code, done := c.Parse(fs); done {
 		return code
@@ -57,6 +60,14 @@ func runHarbor(c *Context) int {
 		}
 	}
 	addr := resolveListen(*listen, cfg.Harbor.Listen, DefaultHarborListen)
+	gw := *gatewayURL
+	if gw == "" {
+		gw = "http://" + resolveListen("", cfg.Gateway.Listen, DefaultGatewayListen)
+	}
+	key, err := apikey.Load(*keyFile)
+	if err != nil {
+		log.Warn("harbor: no node API key, so the SWITCH tab cannot reach the gateway", "path", *keyFile, "err", err)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	st, err := store.Open(*db, *retention)
@@ -66,7 +77,7 @@ func runHarbor(c *Context) int {
 	defer st.Close()
 	h := &harbor.Harbor{Socket: *sock, Version: c.Version, Log: log, Store: st, AllowHosts: allow,
 		UpdateCheck: updateCheck, UpdateCache: defaultStateFile("update.json"),
-		Dirs: cfg.Models.Dirs, Shelves: shelves}
+		Dirs: cfg.Models.Dirs, Shelves: shelves, Gateway: gw, GatewayKey: key}
 	h.RunCollector(ctx)
 	h.RunUpdate(ctx)
 	if err := h.Serve(ctx, addr); err != nil {

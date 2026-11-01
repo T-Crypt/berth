@@ -41,7 +41,7 @@ Reading the harbor needs no login, so publish it only on a tailnet or a home net
 
 ### Pair a device
 
-Switching and stopping engines from the harbor will need a paired device. Pair one from the
+Switching and stopping engines on the harbor's SWITCH tab needs a paired device. Pair one from the
 Berth machine:
 
 ```sh
@@ -126,7 +126,7 @@ for a phone.
   uses `notify-send`, so any desktop or notification daemon shows it.
 
 ## The harbor's views
-Everything the node collects shows in one of three tabs, and every panel answers a
+Everything the node collects shows in one of four tabs, and every panel answers a
 question an operator actually asks.
 
 **The CARD tab.**
@@ -156,6 +156,26 @@ question an operator actually asks.
   ticket reads its own card's figures, and the tide draws the memory history against the sum of the
   scheduled cards. Past three cards the berth label gives the count. One card in a VM marks only that card.
   A hidden tab stops the header clock and the polling for updates.
+
+**The SWITCH tab** answers "what can I put on the card from here?" It lists each card with its
+state, its memory, its holders and a CORDONED mark, and every engine in `berth.toml` with its state
+and models (a dot marks a loaded one). On a machine with several cards, a picker narrows the engines
+to one card, and the page remembers the pick.
+
+A paired device (see [Pair a device](#pair-a-device)) also gets the actions:
+
+- **SWITCH** starts an engine that is not up. Berth drains the card's holder first, as it does
+  for a request to that engine's model.
+- **STOP** asks the engine that holds the card to give it back at its next request boundary,
+  as `berth stop` does.
+- A pinned holder, such as a game or `berth hold`, shows **PINNED** and has no STOP.
+- **PAIR A PHONE** shows a QR code that pairs another phone.
+
+The board and both actions are the gateway's (`GET /v1/berth/board`, `POST /v1/berth/switch` and
+`POST /v1/berth/stop`, see [the gateway](gateway.md)). The harbor sends them with the node's API key,
+so `berth gateway` must be running. `berth harbor --gateway URL` names the gateway when it is not on
+`[gateway] listen`, and `--key-file` names the key when it is not in the default place. The harbor
+reads the key and never creates it. Without a key, the tab says so and offers no actions.
 
 **The ENGINES tab.**
 - **The engine cards** answer "is this engine up and serving?" with the state the

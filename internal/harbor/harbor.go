@@ -61,7 +61,11 @@ type Harbor struct {
 	// declares.
 	Dirs    []string
 	Shelves []models.RootShelf
-	library libraryCache
+	// Gateway is the gateway's base URL and GatewayKey the node's API key,
+	// for the SWITCH tab's board and actions. No key: the tab says so.
+	Gateway    string
+	GatewayKey string
+	library    libraryCache
 }
 
 // Serve listens on addr. A loopback address keeps the harbor on this machine;
@@ -124,6 +128,10 @@ func (h *Harbor) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/me", h.me)
 	mux.HandleFunc("GET /pair", h.pairShow)
 	mux.HandleFunc("POST /pair", h.pairRedeem)
+	mux.HandleFunc("GET /v1/board", h.boardRead)
+	mux.HandleFunc("POST /v1/board/switch", h.boardAction("switch"))
+	mux.HandleFunc("POST /v1/board/stop", h.boardAction("stop"))
+	mux.HandleFunc("POST /v1/pair/code", h.pairCode)
 	return h.guard(mux)
 }
 
@@ -164,11 +172,12 @@ func (h *Harbor) guard(next http.Handler) http.Handler {
 		hd.Set("X-Content-Type-Options", "nosniff")
 		hd.Set("Referrer-Policy", "no-referrer")
 		hd.Set("Cross-Origin-Resource-Policy", "same-origin")
-		// Pairing is the one write so far: its POST checks its own origin.
+		// The writes are pairing and the SWITCH tab's actions; each handler
+		// checks its own origin and device. Everything else only reads.
 		read := r.Method == http.MethodGet || r.Method == http.MethodHead
-		pairing := r.Method == http.MethodPost && r.URL.Path == "/pair"
-		if !read && !pairing {
-			apiError(w, http.StatusMethodNotAllowed, "read_only", "the harbor only reads, apart from pairing a device")
+		write := r.Method == http.MethodPost && writePaths[r.URL.Path]
+		if !read && !write {
+			apiError(w, http.StatusMethodNotAllowed, "read_only", "the harbor only reads, apart from pairing and the switchboard")
 			return
 		}
 		if h.Mode != ModeLAN && !loopbackHost(r.Host) && !h.allowedHost(r.Host) {
@@ -178,6 +187,9 @@ func (h *Harbor) guard(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// writePaths are the only paths the harbor takes a POST on.
+var writePaths = map[string]bool{"/pair": true, "/v1/board/switch": true, "/v1/board/stop": true, "/v1/pair/code": true}
 
 // mode tells the page which guard this harbor runs under. It is a harbor
 // fact, stable for the process lifetime, so the page fetches it once: unlike
