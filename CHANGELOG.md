@@ -8,6 +8,11 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Added
 
+- `berth unpark ENGINE` and `berth unpark --all`: drop a parked engine from RAM now instead of at its ttl, for a job
+  that needs the machine's RAM. Only parked engines are touched; nothing parked is no error. `berth park off|on|status`
+  switches RAM parking off for every card (evicting what is parked) and back on; `berth status` carries `park_off`
+  while it is off. The switch lives in the daemon, so a restart starts with parking on. docs/gateway.md has the section.
+
 - `needs_mib = [18000, 6000]` on an `[[engine]]` entry with `gpu = "gpu0,gpu1"`, and `berth run --needs-mib 18000,6000`:
   a size per card, in the order the cards are named, for a model split unevenly across cards (llama.cpp
   `--tensor-split`). Each card's share of the lease reserves its own size, so the room left on the lighter card can

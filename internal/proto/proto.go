@@ -46,6 +46,15 @@ const (
 	// higher-priority waiter would. The server answers once with the leases
 	// it asked.
 	OpStop = "stop"
+	// OpUnpark: client: evict the parked and parking leases of Engine (by
+	// name or group; "" = every one) so the RAM they hold is freed. The
+	// server answers once with the leases it evicted (none is no error).
+	OpUnpark = "unpark"
+	// OpParkMode: client: with ParkOff set, switch parking off (true, which
+	// also evicts every parked lease) or back on (false); without it, ask.
+	// The server answers once with the state in ParkOff and the leases it
+	// evicted.
+	OpParkMode = "park_mode"
 	// OpCordon, OpUncordon: client: stop or resume new grants on the cards
 	// Card names (as OpAcquire names them). A cordoned card keeps its
 	// holders and still grants a hold. The server answers with the same op
@@ -161,7 +170,10 @@ type Msg struct {
 	Container string `json:"container,omitempty"`
 	Lease     string `json:"lease,omitempty"`
 	// OpStop: Leases is the reply, the leases the daemon asked to drain.
+	// OpUnpark, OpParkMode: the leases evicted.
 	Leases []string `json:"leases,omitempty"`
+	// OpParkMode: the parking switch, asked (true = off) and answered.
+	ParkOff *bool `json:"park_off,omitempty"`
 	// OpCordon, OpUncordon: Cards is the reply, the cards' names.
 	Cards    []string  `json:"cards,omitempty"`
 	Reason   string    `json:"reason,omitempty"`
@@ -340,6 +352,9 @@ type Status struct {
 	// scope's anon plus shmem, or its VRAM footprint where Berth reads no
 	// scope. A reading, never a reservation.
 	ParkedBytes uint64 `json:"parked_bytes,omitempty"`
+	// ParkOff is set while berth park off has parking switched off: a
+	// drain stops its engine instead of parking it in RAM.
+	ParkOff bool `json:"park_off,omitempty"`
 	// Passthrough is the VM state of the first scheduled card, set only
 	// while every scheduled card in this status is bound to vfio-pci or
 	// switching to or from it, so none serves. With one card of several in

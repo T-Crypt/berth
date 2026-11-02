@@ -175,6 +175,11 @@ func (b *Broker) Park(id string) (bool, string) {
 	if !ok || l.state != draining {
 		return false, fmt.Sprintf("lease %s is not draining", id)
 	}
+	if b.parkOff {
+		why := "park refused: parking is switched off (berth park on turns it back on)"
+		b.emit(proto.Event{Kind: proto.EvParkRefused, Lease: id, Engine: l.engine, Detail: why})
+		return false, why
+	}
 	if b.snap.APU {
 		why := "park refused: APU VRAM/GTT offload accounting is not yet supported; using normal drain"
 		b.emit(proto.Event{Kind: proto.EvParkRefused, Lease: id, Engine: l.engine, Detail: why})
