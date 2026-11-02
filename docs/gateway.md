@@ -353,12 +353,16 @@ container  = "immich-pet-tagger"   # the drain runs docker stop
 needs_mib  = 2560
 background = true
 idle_after = "60s"                 # how long the card must stay free first (default 60 s)
+window     = "23:00-07:00"         # optional: hold the engine to these hours
 ```
 
 - **Free** means the card serves this machine (not in a VM, its probe answering), and no lease, waiter, stowaway or
   running claimed app is on it. A parked engine counts as holding it, so a background start never evicts what you
   parked in RAM.
 - Once the card has been free for `idle_after`, the gateway starts the first background engine in `berth.toml`.
+- `window = "23:00-07:00"` holds the engine to set hours, so the gateway never starts it outside them and a window
+  close drains one that is already running at its boundary. Read:
+  [Run work when you're away or power is cheap](leasing.md#run-work-when-youre-away-or-power-is-cheap).
 - Any other request drains it, as it drains any `batch` lease. It stays out until the card has been free for
   `idle_after` again, so a game, a `berth hold` or an engine that stays loaded keeps it out for as long as they last.
 - A desktop app with some card memory (a browser, a terminal) is a stowaway, so on a desktop the card is seldom
