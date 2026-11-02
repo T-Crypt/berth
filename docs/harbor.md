@@ -182,9 +182,12 @@ shows each under its card.
 
 The board and the actions are the gateway's (`GET /v1/berth/board`, `POST /v1/berth/switch`,
 `POST /v1/berth/stop` and `POST /v1/berth/load`, see [the gateway](gateway.md)). The harbor sends them with the node's API key,
-so `berth gateway` must be running. `berth harbor --gateway URL` names the gateway when it is not on
+so `berth gateway` must be running. The page asks the harbor and the harbor asks the gateway, so the browser only
+ever opens the harbor's own origin. `berth harbor --gateway URL` names the gateway when it is not on
 `[gateway] listen`, and `--key-file` names the key when it is not in the default place. The harbor
-reads the key and never creates it. Without a key, the tab says so and offers no actions.
+reads the key and never creates it. Without a key, the tab says so and offers no actions. On the gateway side,
+`berth gateway --harbor URL` redirects the gateway's old `/gui/` index and `/` to `URL/#switch`, so a bookmark of the
+engine list lands on this tab; its per-engine wake pages keep answering.
 
 **The ENGINES tab.**
 - **The engine cards** answer "is this engine up and serving?" with the state the
