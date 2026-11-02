@@ -6,9 +6,12 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -46,6 +49,7 @@ func runGateway(c *Context) int {
 	headroomMiB := fs.Uint64("headroom-mib", 2048, "RAM kept for the machine on a cold start; a start leaving less available is refused")
 	comfyListen := fs.String("comfyui-listen", "", "serve ComfyUI's own port behind Berth on this loopback address (web UI, API, websocket; a queued prompt wakes or starts ComfyUI first); empty = off")
 	guiListen := fs.String("gui-listen", "", "serve the gui plane (/gui/ lists every engine with its state and one button; /gui/<engine> starts an engine with a gui URL, then opens its web UI) on this loopback address; empty = off")
+	harborFlag := fs.String("harbor", "", "harbor base URL to redirect the gui plane's index (/gui/ and /) to, as its SWITCH tab is the one board; the wake pages and /gui/state keep answering; empty = keep the index page")
 	keyFile := fs.String("key-file", apikey.DefaultPath(), "the node's API key, created on first start ($BERTH_API_KEY_FILE)")
 	var allow hostList
 	fs.Var(&allow, "allow-host", "extra Host name the loopback gateway answers to, for a same-machine reverse proxy such as tailscale serve (repeatable or comma-separated)")
@@ -54,6 +58,10 @@ func runGateway(c *Context) int {
 	}
 	if code, done := c.noArgs(); done {
 		return code
+	}
+	harborURL, err := harborBase(*harborFlag)
+	if err != nil {
+		return c.fail(Failf("%v", err))
 	}
 	log := c.Log()
 	cfg, warns, err := suite.Merged(*cfgPath)
@@ -83,7 +91,7 @@ func runGateway(c *Context) int {
 		return c.fail(Systemf("api key: %v", err))
 	}
 	g := &gateway.Gateway{Socket: *sock, Engines: cfg.Engine, Ready: *ready, Key: key, Log: log, HeadroomFloor: *headroomMiB << 20,
-		AllowHosts: allow, StateFile: defaultStateFile("gateway-engines.json"),
+		AllowHosts: allow, StateFile: defaultStateFile("gateway-engines.json"), Harbor: harborURL,
 		CostFile: defaultStateFile("swapcost.json"), DeferredFile: defaultStateFile("comfyui-queue.json"), ConfigPath: *cfgPath}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -117,4 +125,19 @@ func runGateway(c *Context) int {
 		return c.fail(Systemf("gateway: %v", err))
 	}
 	return ExitOK
+}
+
+// harborBase is the harbor's base URL as the browser reaches it, with no
+// trailing "/". Anything but an http or https address with a host fails at
+// startup: every old bookmark would follow the typo instead of the index.
+func harborBase(raw string) (string, error) {
+	if raw == "" {
+		return "", nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return "", fmt.Errorf("--harbor %q is not an http or https address", raw)
+	}
+	u.Fragment = "" // the SWITCH tab's own link carries #switch, which is what an operator copies
+	return strings.TrimRight(u.String(), "/"), nil
 }

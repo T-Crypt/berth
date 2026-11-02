@@ -419,6 +419,72 @@ func TestGUIPlaneLaunchAPIOnly(t *testing.T) {
 	}
 }
 
+// The harbor's SWITCH tab is the one board: with --harbor the plane's index
+// redirects an old bookmark there, and the wake page and the plane's state
+// answer as before. Without it both index URLs are the index page.
+func TestGUIPlaneIndexToSwitch(t *testing.T) {
+	const harbor = "https://box.tailnet.ts.net:9798"
+	// / with no harbor keeps the relative Location it has always sent.
+	for _, c := range []struct {
+		harbor string
+		path   string
+		want   int
+		loc    string // the Location header, empty for the index page
+	}{{harbor, "/gui/", http.StatusFound, harbor + "/#switch"},
+		{harbor, "/", http.StatusFound, harbor + "/#switch"},
+		{"", "/gui/", http.StatusOK, ""},
+		{"", "/", http.StatusFound, "/gui/"},
+	} {
+		sock, b := daemon(t)
+		g := &Gateway{Socket: sock, Ready: time.Second, Key: testKey, Harbor: c.harbor,
+			Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+			Engines: []config.Engine{{Name: "comfyui", Type: "comfyui", URL: "http://127.0.0.1:1",
+				Start: []string{"false"}, GUI: "http://127.0.0.1:1/"}}}
+		srv := httptest.NewServer(g.GUIHandler())
+		resp := guiReq(t, "GET", srv.URL+c.path, nil)
+		page, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		srv.Close()
+		loc := resp.Header.Get("Location")
+		if c.loc == "" {
+			if resp.StatusCode != c.want || !strings.Contains(string(page), `data-name="comfyui"`) {
+				t.Errorf("%s with no harbor = %d: %s", c.path, resp.StatusCode, page)
+			}
+		} else if resp.StatusCode != c.want || loc != c.loc {
+			t.Errorf("%s with harbor %q = %d to %q, want %d to %q", c.path, c.harbor, resp.StatusCode, loc, c.want, c.loc)
+		}
+		if st := b.Status(); len(st.Leases) != 0 {
+			t.Fatalf("opening the index took a lease: %+v", st.Leases)
+		}
+	}
+}
+
+// The harbor does not take the wake page or the plane's state away: an
+// engine's own bookmark still lands on its page, and the state endpoint
+// still answers JSON.
+func TestGUIPlaneWakeAndStateWithHarbor(t *testing.T) {
+	sock, b := daemon(t)
+	g := &Gateway{Socket: sock, Ready: time.Second, Key: testKey, Harbor: "https://box.tailnet.ts.net:9798",
+		Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Engines: []config.Engine{{Name: "comfyui", Type: "comfyui", URL: "http://127.0.0.1:1",
+			Start: []string{"false"}, GUI: "http://127.0.0.1:1/"}}}
+	srv := httptest.NewServer(g.GUIHandler())
+	defer srv.Close()
+
+	resp := guiReq(t, "GET", srv.URL+"/gui/comfyui", nil)
+	page, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(page), `data-engine="comfyui"`) {
+		t.Fatalf("wake page with a harbor = %d: %s", resp.StatusCode, page)
+	}
+	if rows := guiPlaneRows(t, srv.URL); len(rows) != 1 || rows[0].Name != "comfyui" {
+		t.Fatalf("/gui/state with a harbor = %+v", rows)
+	}
+	if st := b.Status(); len(st.Leases) != 0 {
+		t.Fatalf("reading the plane took a lease: %+v", st.Leases)
+	}
+}
+
 // A rebinding name cannot read the plane's state.
 func TestGUIPlaneGuard(t *testing.T) {
 	sock, b := daemon(t)

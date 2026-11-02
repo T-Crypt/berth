@@ -52,7 +52,18 @@ func (g *Gateway) GUIHandler() http.Handler {
 	assets, _ := fs.Sub(guiFS, "gui")
 	mux := http.NewServeMux()
 	mux.Handle("GET /_wake/", http.StripPrefix("/_wake/", http.FileServerFS(assets)))
-	mux.HandleFunc("GET /gui/{$}", g.guiIndex)
+	// The harbor's SWITCH tab is the switchboard. When the operator names the
+	// harbor, that tab is the index, so an old bookmark to /gui/ or / lands
+	// there. Empty keeps the plane's own index page. The wake pages and
+	// /gui/state answer either way: they are bookmarks to an engine's web UI.
+	var index http.Handler = http.HandlerFunc(g.guiIndex)
+	root := "/gui/"
+	if g.Harbor != "" {
+		to := g.Harbor + "/#switch"
+		index = http.RedirectHandler(to, http.StatusFound)
+		root = to
+	}
+	mux.Handle("GET /gui/{$}", index)
 	// The static route beats GET /gui/{name} in Go's ServeMux, so an engine
 	// named "state" loses that one URL to the plane's state endpoint.
 	mux.HandleFunc("GET /gui/state", func(w http.ResponseWriter, r *http.Request) {
@@ -65,7 +76,7 @@ func (g *Gateway) GUIHandler() http.Handler {
 	mux.HandleFunc("GET /gui/{name}/state", g.guiState)
 	mux.HandleFunc("POST /gui/{name}/wake", g.guiWake)
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/gui/", http.StatusFound)
+		http.Redirect(w, r, root, http.StatusFound)
 	})
 	return g.guiGuard(mux)
 }
