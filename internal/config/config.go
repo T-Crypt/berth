@@ -106,6 +106,11 @@ type Engine struct {
 	// time, whatever its priority, only a hold takes the card out. When
 	// the turn ends the normal rules apply. 0 = off, the default.
 	MinTurn Duration `toml:"min_turn,omitzero" json:"min_turn,omitempty" yaml:"min_turn,omitempty"`
+	// Window holds the lease to set hours: window = "23:00-07:00". A
+	// waiting lease outside it is not granted, and a holder is drained when
+	// the window closes, at its usual boundary. A background engine with a
+	// window is never started outside it. Unset = no window.
+	Window proto.Window `toml:"window,omitzero" json:"window,omitempty" yaml:"window,omitempty"`
 	// ParkTTL is how long this engine stays parked before Berth stops it,
 	// in place of [park] ttl. A short one suits keep_comfyui_up: a drain
 	// leaves ComfyUI up, so work its own nodes run outside the queue (a
