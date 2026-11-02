@@ -395,7 +395,7 @@ func Run(o Options) int {
 		err = nil // exited cleanly; a grandchild still held the output copy
 	}
 	code := exitCode(cmd, err)
-	if code == 0 || line.stopWasAsked() {
+	if code == 0 || line.stopWasAsked() || stopSignal(code) {
 		_ = line.send(proto.Msg{Op: proto.OpFinished})
 	}
 	close(done)

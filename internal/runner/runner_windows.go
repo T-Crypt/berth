@@ -98,3 +98,7 @@ func exitCode(_ *exec.Cmd, err error) int {
 	}
 	return 1
 }
+
+// stopSignal is false on Windows: there are no stop signals, and an exit
+// code says nothing about who ended the engine.
+func stopSignal(int) bool { return false }

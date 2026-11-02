@@ -105,3 +105,10 @@ func exitCode(cmd *exec.Cmd, err error) int {
 	}
 	return ee.ExitCode()
 }
+
+// stopSignal is whether the engine died of a signal that asks a process to
+// stop, SIGTERM or SIGINT, as kill PID, a script's stop or Ctrl+C sends it:
+// a stop on purpose, not a crash.
+func stopSignal(code int) bool {
+	return code == 128+int(syscall.SIGTERM) || code == 128+int(syscall.SIGINT)
+}
