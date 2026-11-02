@@ -143,10 +143,7 @@ func AcquireAll(ctx context.Context, cards []*Broker, needs []uint64, r Request,
 		s.b.mu.Unlock()
 	}
 
-	wait := r.Wait
-	if wait == 0 {
-		wait = sorted[0].cfg.DefaultWait
-	}
+	wait := sorted[0].waitFor(r)
 	var timeout <-chan time.Time
 	if wait > 0 {
 		timer := time.NewTimer(wait)

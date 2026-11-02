@@ -16,7 +16,7 @@ has a matching GitHub release whose body comes from its section below.
 
 - `window = "23:00-07:00"` on an `[[engine]]` entry, and `berth run --window 23:00-07:00`: a lease window, for work that should only run
   in cheap hours. berthd grants the lease inside them and drains its holder when they close, at the same boundary as any other drain. A
-  run that asks outside its window waits for it with no deadline unless `--wait` sets one, holds up no waiter behind it, and `berth
+  run that asks outside its window, on one card or several, waits for it with no deadline unless `--wait` sets one, holds up no waiter behind it, and `berth
   status` says when the window opens. A gateway background engine is not started outside its window at all. A window needs a lease that can be asked back, so it goes with neither `--pinned` nor
   `--priority hold`.
 
