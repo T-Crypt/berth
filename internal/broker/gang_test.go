@@ -38,7 +38,7 @@ type gangResult struct {
 func acquireAll(cards []*Broker, r Request) chan gangResult {
 	ch := make(chan gangResult, 1)
 	go func() {
-		ls, err := AcquireAll(context.Background(), cards, r, nil)
+		ls, err := AcquireAll(context.Background(), cards, nil, r, nil)
 		ch <- gangResult{ls, err}
 	}()
 	return ch
@@ -148,7 +148,7 @@ func TestTwoGangsInOppositeCardOrderBothFinish(t *testing.T) {
 // lease ID after a berthd restart, or on neither.
 func TestReattachAllIsOneLeaseOnEveryCard(t *testing.T) {
 	cards := node(t, "gpu0", "gpu1")
-	ls, err := ReattachAll(cards, Request{Engine: "maya"}, 100, 7)
+	ls, err := ReattachAll(cards, nil, Request{Engine: "maya"}, 100, 7)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestReattachAllIsOneLeaseOnEveryCard(t *testing.T) {
 	if _, err := cards[1].Reattach(Request{Engine: "voice"}, 100, 7); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ReattachAll(cards, Request{Engine: "maya"}, 100, 7); err == nil {
+	if _, err := ReattachAll(cards, nil, Request{Engine: "maya"}, 100, 7); err == nil {
 		t.Fatal("pid 100 already holds a lease on gpu1, and the re-attach was granted")
 	}
 	tickAll(cards)
@@ -225,5 +225,36 @@ func TestPinnedLeaseOnSeveralCardsIsNeverDrained(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("gpu1 stayed shut after the pinned run released")
+	}
+}
+
+// A model split unevenly across two cards (llama.cpp --tensor-split 3,1)
+// leases its own size on each, so the room left on the lighter card still
+// serves another engine without a drain.
+func TestSeveralCardsEachTakeTheirOwnSize(t *testing.T) {
+	bs := node(t, "gpu0", "gpu1")
+	ch := make(chan gangResult, 1)
+	go func() {
+		ls, err := AcquireAll(context.Background(), bs, []uint64{18 * GiB, 6 * GiB}, Request{Engine: "llama-70b", Priority: Foreground}, nil)
+		ch <- gangResult{ls, err}
+	}()
+	select {
+	case r := <-ch:
+		if r.err != nil || len(r.ls) != 2 {
+			t.Fatalf("split lease = %+v", r)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the split lease was not granted on two free cards")
+	}
+	for i, want := range []uint64{18 * GiB, 6 * GiB} {
+		for _, l := range bs[i].Status().Leases {
+			if l.Engine == "llama-70b" && l.Needs != want {
+				t.Errorf("%s share needs %d MiB, want %d MiB", bs[i].cfg.Card, l.Needs>>20, want>>20)
+			}
+		}
+	}
+	must(t, acquire(bs[1], Request{Engine: "comfyui", Priority: Batch, Needs: 16 * GiB}))
+	if !holds(bs[1], "llama-70b") {
+		t.Fatal("comfyui's grant on gpu1 drained the split model")
 	}
 }

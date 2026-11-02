@@ -48,7 +48,7 @@ func TestRunAuthenticatesParkAndResume(t *testing.T) {
 			defer srv.Close()
 			card := &parkCard{total: 24 << 30}
 			sock, b := parkDaemon(t, card, 24<<30)
-			e := config.Engine{Name: "fixture", Type: kind, URL: srv.URL, Park: "hook", NeedsMiB: 8192, APIKeyEnv: "FIXTURE_PARK_KEY"}
+			e := config.Engine{Name: "fixture", Type: kind, URL: srv.URL, Park: "hook", NeedsMiB: config.MiBs{8192}, APIKeyEnv: "FIXTURE_PARK_KEY"}
 			var logs syncBuf
 			exited := make(chan int, 1)
 			o := OptionsFor(&e, Over{Socket: sock, Grace: 20 * time.Millisecond, Argv: []string{"sleep", "30"}, Stderr: &logs})

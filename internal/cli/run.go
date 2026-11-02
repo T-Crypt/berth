@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -29,7 +28,8 @@ func runRun(c *Context) int {
 	prio := fs.String("priority", "interactive", "batch, interactive, foreground or hold")
 	pinned := fs.Bool("pinned", false, "never drained: the card stays CMD's until it exits (an app like Blender, or a training run; not an engine a request should swap out)")
 	switched := fs.Bool("switched", false, "a person's switch (the gateway sets it for the wake page's Launch and /v1/berth/switch): wins a juggle")
-	needs := fs.Uint64("needs-mib", 0, "memory this engine needs; 0 = the whole card")
+	var needs config.MiBs
+	fs.Var(&needs, "needs-mib", "memory this engine needs in MiB; 0 = the whole card; with --gpu gpu0,gpu1, one size for every card or one per card in the same order (18000,6000)")
 	wait := fs.Duration("wait", 0, "how long to wait for a berth; 0 = berthd's default; negative = no deadline")
 	drainPost := fs.String("drain-post", "", "URL to POST when asked to drain, before signalling (e.g. llama-swap's unload)")
 	drainSlots := fs.String("drain-slots", "", "engine base URL whose /slots must show idle before a drain unloads or stops it (Strata, or a llama-swap model's /upstream/<model>)")
@@ -85,7 +85,7 @@ func runRun(c *Context) int {
 		return c.fail(required)
 	}
 	applyEngineEntry(c, &e, engineFlags{
-		priority: prio, needsMiB: needs, drainPost: drainPost, drainSlots: drainSlots,
+		priority: prio, needsMiB: &needs, drainPost: drainPost, drainSlots: drainSlots,
 		drainComfyUI: drainComfy, keepComfyUI: keepComfy, drainMax: drainMax, minTurn: minTurn,
 		window: &win, container: container, compose: composeFile,
 	})
@@ -148,6 +148,9 @@ func runRun(c *Context) int {
 	}); err != nil {
 		return c.fail(Systemf("%v", err))
 	}
+	if err := config.CheckNeeds(e.NeedsMiB, e.GPU); err != nil {
+		return c.fail(Systemf("--needs-mib: %v", err))
+	}
 	// Nothing here goes to stdout: the engine owns it. berth's own notices are
 	// diagnostics on stderr, and --quiet never hides the unprotected warning.
 	return runner.Run(runner.OptionsFor(&e, runner.Over{
@@ -203,7 +206,7 @@ func engineEntry(cfg config.Config, as, group string) *config.Engine {
 // engineFlags are the `berth run` flags that fold onto an engine's entry.
 type engineFlags struct {
 	priority     *string
-	needsMiB     *uint64
+	needsMiB     *config.MiBs
 	drainPost    *string
 	drainSlots   *string
 	drainComfyUI *string
@@ -235,8 +238,8 @@ func applyEngineEntry(c *Context, e *config.Engine, f engineFlags) {
 		e.Priority = *prio
 	}
 	if c.Changed("needs-mib") {
-		if e.NeedsMiB > 0 && e.NeedsMiB != *needs {
-			notice("needs-mib", "needs_mib", strconv.FormatUint(e.NeedsMiB, 10))
+		if len(e.NeedsMiB.Bytes()) > 0 && !slices.Equal(e.NeedsMiB, *needs) {
+			notice("needs-mib", "needs_mib", e.NeedsMiB.String())
 		}
 		e.NeedsMiB = *needs
 	}

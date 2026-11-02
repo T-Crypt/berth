@@ -143,8 +143,8 @@ func engineExtra(e config.Engine) string {
 	if len(e.Serves) > 0 {
 		parts = append(parts, "serves: "+strings.Join(e.Serves, ", "))
 	}
-	if e.NeedsMiB > 0 {
-		parts = append(parts, fmt.Sprintf("needs_mib: %d", e.NeedsMiB))
+	if len(e.NeedsMiB.Bytes()) > 0 {
+		parts = append(parts, "needs_mib: "+e.NeedsMiB.String())
 	}
 	if len(e.Start) > 0 {
 		parts = append(parts, "start: "+e.Start[0])

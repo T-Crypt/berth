@@ -120,7 +120,7 @@ func TestRunFailOpenStartsWithAWarningEvenQuiet(t *testing.T) {
 func TestApplyEngineEntry(t *testing.T) {
 	night := proto.Window{Start: 23 * 60, End: 7 * 60}
 	noon := proto.Window{Start: 12 * 60, End: 13 * 60}
-	e := &config.Engine{Name: "comfyui", Priority: "batch", NeedsMiB: 8192,
+	e := &config.Engine{Name: "comfyui", Priority: "batch", NeedsMiB: config.MiBs{8192},
 		DrainPost: "http://127.0.0.1:1/free", DrainSlots: "http://127.0.0.1:2",
 		DrainComfyUI: "http://127.0.0.1:3", DrainMax: config.Duration{Duration: time.Minute},
 		MinTurn: config.Duration{Duration: 5 * time.Minute}, Window: night}
@@ -128,7 +128,8 @@ func TestApplyEngineEntry(t *testing.T) {
 	var errBuf bytes.Buffer
 	c := &Context{setFlags: map[string]bool{}, Err: &errBuf}
 	prio, keep := "interactive", false
-	needs, dp, ds, dc := uint64(0), "", "", ""
+	var needs config.MiBs
+	dp, ds, dc := "", "", ""
 	var dm, mt time.Duration
 	win, cont, comp := noon, "", ""
 	// The flags ride as pointers, so the local changes below reach the same
@@ -137,10 +138,10 @@ func TestApplyEngineEntry(t *testing.T) {
 		drainComfyUI: &dc, keepComfyUI: &keep, drainMax: &dm, minTurn: &mt, window: &win,
 		container: &cont, compose: &comp}
 	applyEngineEntry(c, e, f)
-	if e.Priority != "batch" || e.NeedsMiB != 8192 || e.DrainPost != "http://127.0.0.1:1/free" ||
+	if e.Priority != "batch" || e.NeedsMiB.String() != "8192" || e.DrainPost != "http://127.0.0.1:1/free" ||
 		e.DrainSlots != "http://127.0.0.1:2" || e.DrainComfyUI != "http://127.0.0.1:3" ||
 		e.DrainMax.Duration != time.Minute || e.MinTurn.Duration != 5*time.Minute || e.Window != night {
-		t.Errorf("defaults from the entry = %q %d %q %q %q %s %s %s", e.Priority, e.NeedsMiB, e.DrainPost, e.DrainSlots, e.DrainComfyUI, e.DrainMax, e.MinTurn, e.Window)
+		t.Errorf("defaults from the entry = %q %s %q %q %q %s %s %s", e.Priority, e.NeedsMiB, e.DrainPost, e.DrainSlots, e.DrainComfyUI, e.DrainMax, e.MinTurn, e.Window)
 	}
 	if errBuf.String() != "" {
 		t.Errorf("no flag set, but a notice was printed: %q", errBuf.String())
@@ -149,13 +150,13 @@ func TestApplyEngineEntry(t *testing.T) {
 	errBuf.Reset()
 	c = &Context{setFlags: map[string]bool{"priority": true, "needs-mib": true, "drain-post": true,
 		"drain-slots": true, "drain-comfyui": true, "drain-max": true, "min-turn": true, "window": true}, Err: &errBuf}
-	prio, needs, dp, ds, dc = "foreground", 4096, "http://127.0.0.1:9", "http://127.0.0.1:9", "http://127.0.0.1:9"
+	prio, needs, dp, ds, dc = "foreground", config.MiBs{4096}, "http://127.0.0.1:9", "http://127.0.0.1:9", "http://127.0.0.1:9"
 	dm = 2 * time.Minute
 	mt = time.Minute
 	applyEngineEntry(c, e, f)
-	if e.Priority != "foreground" || e.NeedsMiB != 4096 || e.DrainPost != "http://127.0.0.1:9" ||
+	if e.Priority != "foreground" || e.NeedsMiB.String() != "4096" || e.DrainPost != "http://127.0.0.1:9" ||
 		e.DrainMax.Duration != 2*time.Minute || e.MinTurn.Duration != time.Minute || e.Window != noon {
-		t.Errorf("explicit flags lost to the entry: %q %d %q %s %s %s", e.Priority, e.NeedsMiB, e.DrainPost, e.DrainMax, e.MinTurn, e.Window)
+		t.Errorf("explicit flags lost to the entry: %q %s %q %s %s %s", e.Priority, e.NeedsMiB, e.DrainPost, e.DrainMax, e.MinTurn, e.Window)
 	}
 	for _, want := range []string{
 		"berth: --priority overrides berth.toml priority = batch for comfyui",
@@ -407,5 +408,17 @@ func TestRunRejectsABadCard(t *testing.T) {
 	}
 	if !strings.Contains(errOut, `gpu "1" must be a card name like gpu1`) {
 		t.Errorf("stderr = %q", errOut)
+	}
+}
+
+// Sizes per card must match the cards --gpu names, before berthd is dialed.
+func TestRunRejectsSizesThatDoNotMatchTheCards(t *testing.T) {
+	isolate(t)
+	code, _, errOut := runCLI(t, "run", "--as", "llama-70b", "--gpu", "gpu0", "--needs-mib", "18000,6000", "--", "true")
+	if code != ExitSystem {
+		t.Fatalf("exit = %d, want %d", code, ExitSystem)
+	}
+	if want := `needs_mib 18000,6000 has 2 sizes for 1 card(s) in gpu "gpu0"`; !strings.Contains(errOut, want) {
+		t.Errorf("stderr = %q, want it to hold %q", errOut, want)
 	}
 }

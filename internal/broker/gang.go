@@ -82,11 +82,13 @@ func (g *gang) commit(now time.Time) bool {
 
 // AcquireAll asks for one lease on every card in cards, granted on all of
 // them at once or on none, and returns its share on each card in the order
-// given. One card is a plain Acquire. Each share needs r.Needs on its card.
-// The cards must share the node's IDs and Seq.
-func AcquireAll(ctx context.Context, cards []*Broker, r Request, onWait func(string)) ([]*Lease, error) {
+// given. One card is a plain Acquire. needs is the size on each card, in
+// the order of cards; nil gives every share r.Needs. The cards must share
+// the node's IDs and Seq.
+func AcquireAll(ctx context.Context, cards []*Broker, needs []uint64, r Request, onWait func(string)) ([]*Lease, error) {
+	per := shareRequests(cards, needs, r)
 	if len(cards) == 1 {
-		l, err := cards[0].Acquire(ctx, r, onWait)
+		l, err := cards[0].Acquire(ctx, per[cards[0]], onWait)
 		if err != nil {
 			return nil, err
 		}
@@ -96,7 +98,7 @@ func AcquireAll(ctx context.Context, cards []*Broker, r Request, onWait func(str
 	slices.SortFunc(sorted, func(a, b *Broker) int { return strings.Compare(a.cfg.Card, b.cfg.Card) })
 	for _, b := range sorted {
 		b.mu.Lock()
-		err := b.refuse(r)
+		err := b.refuse(per[b])
 		b.mu.Unlock()
 		if err != nil {
 			return nil, err
@@ -110,7 +112,7 @@ func AcquireAll(ctx context.Context, cards []*Broker, r Request, onWait func(str
 	defer close(done)
 	for _, b := range sorted {
 		b.mu.Lock()
-		l := newLease(id, r, b.now())
+		l := newLease(id, per[b], b.now())
 		l.arrivedN, l.gang = arrived, g
 		b.queue = append(b.queue, l)
 		b.log.Info("acquire", "lease", l.id, "engine", l.engine, "priority", l.prio, "needs_mib", l.needs>>20, "cards", len(sorted))
@@ -189,11 +191,12 @@ func AcquireAll(ctx context.Context, cards []*Broker, r Request, onWait func(str
 // ReattachAll leases every card in cards again, under one lease ID, to an
 // engine that held a lease on all of them and outlived its daemon. It is
 // all or none: a card that refuses hands back the shares already taken.
-func ReattachAll(cards []*Broker, r Request, pid int, start uint64) ([]*Lease, error) {
+func ReattachAll(cards []*Broker, needs []uint64, r Request, pid int, start uint64) ([]*Lease, error) {
+	per := shareRequests(cards, needs, r)
 	id := fmt.Sprintf("%s-%d", r.Engine, cards[0].cfg.IDs.Add(1))
 	out := make([]*Lease, 0, len(cards))
 	for _, b := range cards {
-		l, err := b.reattach(id, r, pid, start)
+		l, err := b.reattach(id, per[b], pid, start)
 		if err != nil {
 			for _, got := range out {
 				got.Release()
@@ -203,4 +206,18 @@ func ReattachAll(cards []*Broker, r Request, pid int, start uint64) ([]*Lease, e
 		out = append(out, l)
 	}
 	return out, nil
+}
+
+// shareRequests is the request each card's share is made from: r, with that
+// card's size from needs (in the order of cards) when needs is given.
+func shareRequests(cards []*Broker, needs []uint64, r Request) map[*Broker]Request {
+	per := make(map[*Broker]Request, len(cards))
+	for i, b := range cards {
+		rr := r
+		if needs != nil {
+			rr.Needs = needs[i]
+		}
+		per[b] = rr
+	}
+	return per
 }

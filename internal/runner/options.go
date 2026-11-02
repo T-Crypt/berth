@@ -6,6 +6,7 @@ package runner
 import (
 	"io"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/T-Crypt/berth/internal/config"
@@ -60,7 +61,7 @@ func OptionsFor(e *config.Engine, o Over) Options {
 	}
 	opts := Options{
 		Socket: o.Socket, Engine: e.Name, Card: e.GPU, Group: o.Group, Priority: prio,
-		Needs: e.NeedsMiB << 20, Pinned: o.Pinned, Switched: o.Switched, Wait: o.Wait,
+		Needs: e.NeedsMiB.Bytes(), Pinned: o.Pinned, Switched: o.Switched, Wait: o.Wait,
 		DrainPost: e.DrainPost, DrainSlots: e.DrainSlots, DrainComfyUI: e.DrainComfyUI,
 		DrainMax: e.DrainMax.Duration, MinTurn: e.MinTurn.Duration, ParkTTL: e.ParkTTL.Duration, Window: e.Window, Container: e.Container, Compose: e.Compose,
 		APIKeyEnv: e.APIKeyEnv, APIKeyFile: e.APIKeyFile,
@@ -121,4 +122,23 @@ func OptionsFor(e *config.Engine, o Over) Options {
 		}
 	}
 	return opts
+}
+
+// largest is the size a berthd that reads only Needs gets: the biggest card
+// share, so an older daemon over-reserves the smaller cards rather than
+// under-reserving the biggest.
+func largest(needs []uint64) uint64 {
+	if len(needs) == 0 {
+		return 0
+	}
+	return slices.Max(needs)
+}
+
+// each is NeedsEach on the wire: the per-card sizes when there is more than
+// one, nil when a single size covers every card.
+func each(needs []uint64) []uint64 {
+	if len(needs) < 2 {
+		return nil
+	}
+	return needs
 }

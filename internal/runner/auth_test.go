@@ -53,7 +53,7 @@ func TestRunAuthenticatesDrainRequests(t *testing.T) {
 			defer srv.Close()
 			card := &parkCard{total: 24 << 30}
 			sock, b := parkDaemon(t, card, 16<<30)
-			e := config.Engine{Name: "fixture", Priority: "interactive", NeedsMiB: 8192, APIKeyEnv: "FIXTURE_DRAIN_KEY"}
+			e := config.Engine{Name: "fixture", Priority: "interactive", NeedsMiB: config.MiBs{8192}, APIKeyEnv: "FIXTURE_DRAIN_KEY"}
 			switch kind {
 			case "file":
 				e.APIKeyEnv = ""

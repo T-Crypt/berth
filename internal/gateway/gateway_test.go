@@ -92,7 +92,8 @@ func testRun(argv []string) {
 	as := fs.String("as", "", "")
 	group := fs.String("group", "", "")
 	prio := fs.String("priority", "", "")
-	needs := fs.Uint64("needs-mib", 0, "")
+	var needs config.MiBs
+	fs.Var(&needs, "needs-mib", "")
 	wait := fs.Duration("wait", 0, "")
 	grace := fs.Duration("grace", 0, "")
 	card := fs.String("gpu", "", "")
@@ -113,7 +114,7 @@ func testRun(argv []string) {
 		os.Exit(2)
 	}
 	os.Exit(runner.Run(runner.Options{
-		Socket: *socket, Engine: *as, Group: *group, Priority: *prio, Needs: *needs << 20, Card: *card,
+		Socket: *socket, Engine: *as, Group: *group, Priority: *prio, Needs: needs.Bytes(), Card: *card,
 		Switched: *switched, Wait: *wait, Grace: *grace, Argv: fs.Args(), Stderr: os.Stderr,
 	}))
 }

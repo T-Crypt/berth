@@ -6,11 +6,14 @@
 package runner
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -178,5 +181,58 @@ func TestReattachNamesTheCard(t *testing.T) {
 		101, 7, &containerRef{}, false, newLine(nil))
 	if m.Op != proto.OpReattach || m.Card != "gpu1" || m.Window != "23:00-07:00" {
 		t.Fatalf("reattach msg = op %s card %q window %q, want reattach on gpu1 with its window", m.Op, m.Card, m.Window)
+	}
+}
+
+// A run split unevenly across two cards leases each card's own size, in the
+// order --gpu names them, through the socket and berthd; sizes that do not
+// match the cards are refused.
+func TestRunSizesEachCard(t *testing.T) {
+	sock, n := twoCardDaemon(t)
+	done := make(chan int, 1)
+	go func() {
+		done <- Run(Options{Socket: sock, Engine: "llama-70b", Priority: "interactive", Card: "gpu1,gpu0",
+			Needs: []uint64{6 << 30, 18 << 30}, Grace: time.Second, Argv: []string{"sleep", "2"}, Stderr: io.Discard})
+	}()
+	want := map[string]uint64{"gpu0": 18 << 30, "gpu1": 6 << 30}
+	got := map[string]uint64{}
+	for deadline := time.Now().Add(3 * time.Second); len(got) < 2 && time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		for name := range want {
+			c, err := n.Card(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, l := range c.B.Status().Leases {
+				if l.Engine == "llama-70b" {
+					got[name] = l.Needs
+				}
+			}
+		}
+	}
+	if got["gpu0"] != want["gpu0"] || got["gpu1"] != want["gpu1"] {
+		t.Errorf("shares = %v, want %v", got, want)
+	}
+	if code := <-done; code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+
+	var errBuf bytes.Buffer
+	code := Run(Options{Socket: sock, Engine: "llama-70b", Priority: "interactive", Card: "gpu0",
+		Needs: []uint64{6 << 30, 18 << 30}, Grace: time.Second, Argv: []string{"true"}, Stderr: &errBuf})
+	if code != ExitRefused || !strings.Contains(errBuf.String(), `2 sizes for 1 card(s) in "gpu0"`) {
+		t.Errorf("exit %d, output %q; want a refusal naming 2 sizes for 1 card", code, errBuf.String())
+	}
+}
+
+// A re-attach carries the per-card sizes too, with the largest in Needs for
+// a berthd that reads only that.
+func TestReattachCarriesEachCardsSize(t *testing.T) {
+	m := reattachMsg(Options{Engine: "llama-70b", Card: "gpu0,gpu1", Needs: []uint64{18 << 30, 6 << 30}}, 100, 7, &containerRef{}, false, newLine(nil))
+	if m.Needs != 18<<30 || !slices.Equal(m.NeedsEach, []uint64{18 << 30, 6 << 30}) {
+		t.Errorf("needs %d, each %v; want 18 GiB and [18 GiB 6 GiB]", m.Needs, m.NeedsEach)
+	}
+	m = reattachMsg(Options{Engine: "llama-70b", Card: "gpu0,gpu1", Needs: []uint64{8 << 30}}, 100, 7, &containerRef{}, false, newLine(nil))
+	if m.Needs != 8<<30 || m.NeedsEach != nil {
+		t.Errorf("one size: needs %d, each %v; want 8 GiB and none", m.Needs, m.NeedsEach)
 	}
 }
