@@ -77,6 +77,14 @@ func (g *Gateway) Background(ctx context.Context, every time.Duration) {
 		}
 		now := time.Now()
 		for _, e := range bg {
+			// Outside its window the engine stays down: started, it would
+			// only sit in the queue all day for a lease berthd cannot grant
+			// yet. Its idle clock keeps running (freeSince is the card's,
+			// shared by every engine on it), so it starts on the tick its
+			// window opens with.
+			if !e.Window.Contains(now) {
+				continue
+			}
 			if !cardFree(node.View(st, e.GPU)) {
 				delete(freeSince, e.GPU)
 				continue
