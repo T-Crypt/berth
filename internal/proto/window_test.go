@@ -19,6 +19,7 @@ func TestWindowParses(t *testing.T) {
 		{in: "00:00-23:59", want: "00:00-23:59"},
 		{in: "", want: ""},
 		{in: "7:00-9:00", wantErr: `window "7:00-9:00": "7:00" is not HH:MM`},
+		{in: "1O:00-08:00", wantErr: `window "1O:00-08:00": "1O:00" is not HH:MM`},
 		{in: "25:00-01:00", wantErr: `window "25:00-01:00": "25:00" is not a time of day`},
 		{in: "23:00-24:00", wantErr: `window "23:00-24:00": "24:00" is not a time of day`},
 		{in: "23:60-07:00", wantErr: `window "23:60-07:00": "23:60" is not a time of day`},
