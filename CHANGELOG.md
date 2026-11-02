@@ -20,6 +20,13 @@ has a matching GitHub release whose body comes from its section below.
   gateway's own board, switch and stop with the node's API key, so `berth gateway` must run; `berth harbor
   --gateway` and `--key-file` name them when they are not in the default place.
 
+### Fixed
+
+- An engine stopped by a SIGTERM or SIGINT sent to it directly, as `kill PID`, a stop script or Ctrl+C sends,
+  no longer shows as unresponsive (LATCHED) in `berth status` and the harbor. It shows as offline, as an engine
+  Berth or its supervisor stopped already does. One killed by SIGKILL or any other signal still shows as
+  unresponsive, as a crash does.
+
 ## [v0.4.1] - 2026-11-01
 
 Each card on a machine with several now has its own gateway URL, `/cards/CARD/v1`, and one model can be served

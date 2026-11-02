@@ -30,8 +30,9 @@ import (
 // A batch engine that exits 0 stopped answering on purpose: the engines
 // tab shows it down, not latched (issue 265). So does one Berth stopped,
 // through berth stop or a stop signal from its supervisor, whatever code
-// the signal leaves it. One that exits non-zero on its own keeps the
-// latch, so a crash still reads as one.
+// the signal leaves it, and one stopped by a SIGTERM or SIGINT sent to it
+// directly. One that exits non-zero on its own, or dies of any other
+// signal, keeps the latch, so a crash still reads as one.
 func TestACleanExitDoesNotLatchTheEngine(t *testing.T) {
 	forever := []string{"sh", "-c", "exec sleep 30"}
 	for _, c := range []struct {
@@ -42,6 +43,12 @@ func TestACleanExitDoesNotLatchTheEngine(t *testing.T) {
 	}{
 		{"exit 0", []string{"sh", "-c", "exit 0"}, nil, "down"},
 		{"exit 1", []string{"sh", "-c", "exit 1"}, nil, "latched"},
+		// A stop sent to the engine itself, as a shell's strata stop or
+		// kill PID does, is on purpose too. A SIGKILL is what the OOM killer
+		// and a crash look like, so it keeps the latch.
+		{"SIGTERM to the engine", []string{"sh", "-c", "kill -TERM $$"}, nil, "down"},
+		{"SIGINT to the engine", []string{"sh", "-c", "kill -INT $$"}, nil, "down"},
+		{"SIGKILL to the engine", []string{"sh", "-c", "kill -KILL $$"}, nil, "latched"},
 		{"berth stop", forever, func(t *testing.T, b *broker.Broker) {
 			if _, err := b.Stop("deduper"); err != nil {
 				t.Fatal(err)
