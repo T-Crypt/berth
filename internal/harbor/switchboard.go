@@ -45,9 +45,9 @@ func (h *Harbor) boardRead(w http.ResponseWriter, r *http.Request) {
 	h.toGateway(w, r, http.MethodGet, "/v1/berth/board", nil)
 }
 
-// boardAction is POST /v1/board/switch and /v1/board/stop. The body is the
-// gateway's own, {"engine":"NAME"}, checked here so a bad one never leaves
-// the harbor.
+// boardAction is POST /v1/board/switch, /v1/board/stop and /v1/board/load.
+// The body is the gateway's own, {"engine":"NAME"}, plus "model" for a load,
+// checked here so a bad one never leaves the harbor.
 func (h *Harbor) boardAction(action string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !h.writeOK(w, r) {
@@ -55,11 +55,20 @@ func (h *Harbor) boardAction(action string) http.HandlerFunc {
 		}
 		var req struct {
 			Engine string `json:"engine"`
+			Model  string `json:"model,omitempty"`
 		}
 		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<16))
-		if err != nil || json.Unmarshal(body, &req) != nil || req.Engine == "" {
-			apiError(w, http.StatusBadRequest, "bad_body", `the body must be JSON like {"engine":"NAME"}`)
+		load := action == "load"
+		if err != nil || json.Unmarshal(body, &req) != nil || req.Engine == "" || load && req.Model == "" {
+			want := `{"engine":"NAME"}`
+			if load {
+				want = `{"engine":"NAME","model":"MODEL"}`
+			}
+			apiError(w, http.StatusBadRequest, "bad_body", "the body must be JSON like "+want)
 			return
+		}
+		if !load {
+			req.Model = ""
 		}
 		out, _ := json.Marshal(req)
 		h.toGateway(w, r, http.MethodPost, "/v1/berth/"+action, out)
