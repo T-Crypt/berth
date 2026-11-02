@@ -240,6 +240,10 @@ type Request struct {
 	// ParkTTL is how long the lease may stay parked before the broker
 	// stops its engine, in place of the node's ParkTTL. 0 = the node's.
 	ParkTTL time.Duration
+	// Window holds the lease to set hours: it is not granted outside them,
+	// and its holder is drained when they close. The zero value is no
+	// window.
+	Window proto.Window
 	// Containers are the containers the engine runs in: Acquire takes the
 	// names the operator gave (--container), the attach resolves the full
 	// IDs, a Compose engine's whole project arriving as one set. A GPU
@@ -268,6 +272,7 @@ type lease struct {
 	switched bool // a person's switch (Request.Switched)
 	minTurn  time.Duration
 	parkTTL  time.Duration // 0 = the node's
+	window   proto.Window  // zero = no window
 	prio     Priority
 	needs    uint64
 	state    state
@@ -407,6 +412,7 @@ func newLease(id string, r Request, now time.Time) *lease {
 		switched:     r.Switched,
 		minTurn:      r.MinTurn,
 		parkTTL:      r.ParkTTL,
+		window:       r.Window,
 		lendCap:      r.Lend,
 		wholeMachine: r.WholeMachine,
 		gpu:          map[ident]gpu.Proc{},
@@ -926,6 +932,7 @@ func (b *Broker) Tick(ctx context.Context) {
 		b.measureParkedRAM(l)
 	}
 	b.claimed = claimed
+	b.closeWindows(now)
 	b.evictParked(now)
 	b.schedule(now)
 }
@@ -1118,22 +1125,30 @@ func (b *Broker) schedule(now time.Time) {
 			continue
 		}
 		for _, v := range victims {
-			v.state = draining
-			// Its memory goes with the drain: an open lend is dropped, and
-			// never asked back, since the borrower still holds it (rule 2).
-			b.clearLend(v, "it is draining")
-			msg := fmt.Sprintf("%s (%s) needs the card", w.engine, w.prio)
-			select {
-			case v.drainCh <- msg:
-			default:
-			}
-			b.log.Info("draining", "lease", v.id, "engine", v.engine, "for", w.engine)
-			b.counters.Drains++
-			b.emit(proto.Event{Kind: proto.EvDraining, Lease: v.id, Engine: v.engine, Detail: msg})
+			b.drain(v, fmt.Sprintf("%s (%s) needs the card", w.engine, w.prio))
 		}
 		b.notifyWait(b.queue, reason)
 		return
 	}
+}
+
+// drain asks a holder to give the card back: its runner hears OpDrain with
+// why and stops the engine at the boundary it names (a slot, a job), never
+// mid-request. why is what the holder and the event stream read, so it names
+// what asked: the waiter that needs the card, or the window that closed.
+// Called with b.mu held.
+func (b *Broker) drain(l *lease, why string) {
+	l.state = draining
+	// Its memory goes with the drain: an open lend is dropped, and
+	// never asked back, since the borrower still holds it (rule 2).
+	b.clearLend(l, "it is draining")
+	select {
+	case l.drainCh <- why:
+	default:
+	}
+	b.log.Info("draining", "lease", l.id, "engine", l.engine, "why", why)
+	b.counters.Drains++
+	b.emit(proto.Event{Kind: proto.EvDraining, Lease: l.id, Engine: l.engine, Detail: why})
 }
 
 // grant gives the card to w, a waiter at the head of the queue. b.mu must be
@@ -1340,6 +1355,11 @@ func (c cardBudget) avail() uint64   { return sat(c.ceiling(), c.held) }
 func (b *Broker) evaluate(w *lease, now time.Time) (bool, string, []*lease) {
 	if b.cordoned && w.prio != Hold {
 		return false, "the card is cordoned; berth uncordon lets new work in", nil
+	}
+	if !w.window.Contains(now) {
+		// Its own hours decide this waiter alone: no holder is a victim,
+		// because nothing it drains would put it inside its window.
+		return false, fmt.Sprintf("outside its window %s; opens in %s", w.window, opensIn(w.window.Opens(now))), nil
 	}
 	// A resumed lease is still in b.leases while it waits: its own
 	// residual is the copy it comes back to, never a holder it waits on.

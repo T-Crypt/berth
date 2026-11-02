@@ -140,6 +140,10 @@ type Msg struct {
 	// ParkTTL is how long the lease may stay parked, in seconds, in place
 	// of the node's [park] ttl. OpAcquire and OpReattach; 0 = the node's.
 	ParkTTL float64 `json:"park_ttl,omitempty"`
+	// Window is the lease's hours as its entry wrote them, or berth run
+	// --window, "23:00-07:00": berthd grants the lease inside them and asks
+	// the holder back when they close. OpAcquire and OpReattach; "" = none.
+	Window string `json:"window,omitempty"`
 	// Containers is the containers the engine runs in: OpAcquire and
 	// OpReattach carry the names the operator gave (--container), OpAttach
 	// the full IDs berth run resolved them to. A Compose project is a set;
@@ -249,7 +253,7 @@ const (
 	EvParkRefused    = "lease.park_refused" // the RAM could not take the park; the drain runs as before
 	EvCordoned       = "card.cordoned"      // berth cordon: no new grants on the card but holds
 	EvUncordoned     = "card.uncordoned"    // berth uncordon: the card grants again
-	EvParkEvicted    = "lease.park_evicted" // the parked engine is being stopped: ttl, RAM floor or pressure
+	EvParkEvicted    = "lease.park_evicted" // the parked engine is being stopped: ttl, RAM floor, pressure, a window
 	EvLending        = "lease.lending"      // a serving holder was asked to give part of its card to a waiter
 	EvLent           = "lease.lent"         // the engine gave it, and a card read after the answer shows it free
 	EvReturned       = "lease.returned"     // the borrower is gone; the holder took its memory back
