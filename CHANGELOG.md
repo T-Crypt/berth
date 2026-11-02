@@ -8,6 +8,11 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Added
 
+- The harbor's SWITCH tab loads one llama-swap model: a paired device taps LOAD on a model that is not loaded, and
+  the model shows loading until llama-swap reports it ready. The gateway's new `POST /v1/berth/load
+  {"engine","model"}` does it by asking llama-swap for the model's `/upstream/MODEL/health`, since llama-swap has
+  no load call of its own. The board's models carry `loading`, and its engines their `type`.
+
 - The harbor has a SWITCH tab: each card with its state, holders and cordon, and every engine with its state
   and models. A device paired with `berth pair` can switch the card to an engine or stop the engine that holds
   it, from a phone. A pinned holder shows PINNED and has no stop. On a machine with several cards a picker

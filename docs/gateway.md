@@ -266,6 +266,7 @@ name the engine:
 ```sh
 curl -s http://127.0.0.1:9799/v1/berth/switch -H "Authorization: Bearer $(berth key)" -d '{"engine":"strata"}'
 curl -s http://127.0.0.1:9799/v1/berth/stop   -H "Authorization: Bearer $(berth key)" -d '{"engine":"strata"}'
+curl -s http://127.0.0.1:9799/v1/berth/load   -H "Authorization: Bearer $(berth key)" -d '{"engine":"llama-swap","model":"qwen3.6-35b-a3b"}'
 ```
 
 - **Switch** answers `202` once the start is under way, and starts the engine under a lease the same way a request
@@ -273,11 +274,16 @@ curl -s http://127.0.0.1:9799/v1/berth/stop   -H "Authorization: Bearer $(berth 
 - **Stop** answers `202` with the leases berthd asked to give the card back, the same drain as `berth stop`. A
   pinned holder (a game, a render, `berth hold`) is a `409`: Berth never stops it from the network. An engine that is
   not running under a lease is a `409` too, and berthd not answering is a `503`.
+- **Load** answers `202` once llama-swap is asked for the model, by a `GET` of `/upstream/MODEL/health` on it:
+  llama-swap has no load call, and any request there starts the model. It takes an engine of `type = "llama-swap"`
+  and a model that engine lists; another engine is a `409` and an unlisted model a `404`. A second load of the same
+  model while one is under way joins it.
 
 `GET /v1/berth/board` is the node in one read, for a board or a script: the card (who holds it, and whether it is
 free, held, draining, in a VM or failing its probe), then every engine in `berth.toml` with its state (up, offline,
 waiting, starting, failed), whether it can be switched to (`launch`) or stopped (`stoppable`), and its models with a
-`loaded` flag from the engine's own reader. `cards` lists every card the node governs, each with its name
+`loaded` flag from the engine's own reader and a `loading` flag while a load is under way or the engine reports the
+model starting. Each engine also carries its `type`. `cards` lists every card the node governs, each with its name
 on the node (`card`, such as `gpu1`), its base URL on this gateway (`base`, `/cards/gpu1/v1`), `cordoned` when
 `berth cordon` closed it, and the holders on that card alone. Each engine names the cards its entry runs on
 (`cards`), so a board for several cards can put each engine under its card.
