@@ -78,6 +78,7 @@ func TestWindowWaiterHoldsUpNobody(t *testing.T) {
 // asks once. A lease with no window is untouched at the same instant.
 func TestWindowCloseDrainsItsHolder(t *testing.T) {
 	b, clk := startTurnBroker(t, procs.Map{})
+	clk.set(at2330)
 	closed := must(t, acquire(b, Request{Engine: "trainer", Priority: Batch, Needs: 8 * GiB, Window: night}))
 	open := must(t, acquire(b, Request{Engine: "watcher", Priority: Batch, Needs: 8 * GiB}))
 	clk.set(at0730)
