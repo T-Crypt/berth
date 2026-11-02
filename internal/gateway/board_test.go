@@ -99,21 +99,27 @@ func TestBoardOf(t *testing.T) {
 		card      string
 		stoppable []bool
 		loaded    []boardModel
+		inFlight  map[loadKey]bool
 	}{
-		{"unreachable", nil, "", []bool{false, false}, []boardModel{{ID: "qwen"}, {ID: "gemma"}}},
+		{"unreachable", nil, "", []bool{false, false}, []boardModel{{ID: "qwen"}, {ID: "gemma"}}, nil},
 		{"held, one model ready", &proto.Status{GPUs: gpu,
 			Leases:  []proto.Lease{{Engine: "llama-swap", Group: "qwen", State: "active"}},
 			Engines: []proto.Engine{{Name: "llama-swap", Models: []proto.Model{{Name: "qwen", State: "ready"}, {Name: "gemma", State: "starting"}}}}},
-			"held", []bool{true, false}, []boardModel{{ID: "qwen", Loaded: true}, {ID: "gemma"}}},
+			"held", []bool{true, false}, []boardModel{{ID: "qwen", Loaded: true}, {ID: "gemma", Loading: true}}, nil},
+		{"a switchboard load under way", &proto.Status{GPUs: gpu},
+			"free", []bool{false, false}, []boardModel{{ID: "qwen"}, {ID: "gemma", Loading: true}}, map[loadKey]bool{{"llama-swap", "gemma"}: true}},
+		{"a load under way for a model already ready", &proto.Status{GPUs: gpu,
+			Engines: []proto.Engine{{Name: "llama-swap", Models: []proto.Model{{Name: "qwen", State: "ready"}}}}},
+			"free", []bool{false, false}, []boardModel{{ID: "qwen", Loaded: true}, {ID: "gemma"}}, map[loadKey]bool{{"llama-swap", "qwen"}: true}},
 		{"pinned game", &proto.Status{GPUs: gpu, Leases: []proto.Lease{{Engine: "game", State: "active", Pinned: true}}},
-			"held", []bool{false, false}, []boardModel{{ID: "qwen"}, {ID: "gemma"}}},
+			"held", []bool{false, false}, []boardModel{{ID: "qwen"}, {ID: "gemma"}}, nil},
 		{"draining", &proto.Status{GPUs: gpu, Leases: []proto.Lease{{Engine: "llama-swap", State: "draining"}}},
-			"draining", []bool{false, false}, []boardModel{{ID: "qwen"}, {ID: "gemma"}}},
+			"draining", []bool{false, false}, []boardModel{{ID: "qwen"}, {ID: "gemma"}}, nil},
 		{"in a VM", &proto.Status{GPUs: gpu, Passthrough: &proto.Passthrough{State: proto.CardPassthrough}},
-			"passthrough", []bool{false, false}, []boardModel{{ID: "qwen"}, {ID: "gemma"}}},
+			"passthrough", []bool{false, false}, []boardModel{{ID: "qwen"}, {ID: "gemma"}}, nil},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			n := boardOf("box", c.node, rows, listed)
+			n := boardOf("box", c.node, rows, listed, c.inFlight)
 			if n.Reachable != (c.node != nil) {
 				t.Fatalf("reachable = %v", n.Reachable)
 			}

@@ -5,6 +5,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 	"os"
 
@@ -50,6 +51,9 @@ type boardEngine struct {
 type boardModel struct {
 	ID     string `json:"id"`
 	Loaded bool   `json:"loaded,omitempty"` // the engine's reader reports it loaded
+	// Loading: a switchboard load is under way, or the engine reports the
+	// model starting.
+	Loading bool `json:"loading,omitempty"`
 }
 
 func (g *Gateway) board(w http.ResponseWriter, r *http.Request) {
@@ -66,16 +70,21 @@ func (g *Gateway) board(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	host, _ := os.Hostname()
+	g.mu.Lock()
+	inFlight := maps.Clone(g.loads)
+	g.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
-	_ = json.NewEncoder(w).Encode(boardOf(host, status, rows, listed))
+	_ = json.NewEncoder(w).Encode(boardOf(host, status, rows, listed, inFlight))
 }
 
 // boardOf assembles the board from berthd's status (nil = not answering),
-// the engines' rows in config order and each engine's model list.
-func boardOf(host string, status *proto.Status, rows []guiRow, listed map[string][]string) boardNode {
+// the engines' rows in config order, each engine's model list and the
+// switchboard loads under way.
+func boardOf(host string, status *proto.Status, rows []guiRow, listed map[string][]string, inFlight map[loadKey]bool) boardNode {
 	n := boardNode{Name: host, Reachable: status != nil, Cards: []boardCard{}, Engines: make([]boardEngine, 0, len(rows))}
 	loaded := map[string]map[string]bool{}
+	starting := map[string]map[string]bool{}
 	if status != nil {
 		for _, gp := range status.GPUs {
 			if !gp.Scheduled {
@@ -105,8 +114,10 @@ func boardOf(host string, status *proto.Status, rows []guiRow, listed map[string
 		}
 		for _, e := range status.Engines {
 			loaded[e.Name] = map[string]bool{}
+			starting[e.Name] = map[string]bool{}
 			for _, m := range e.Models {
 				loaded[e.Name][m.Name] = m.State == "loaded" || m.State == "ready"
+				starting[e.Name][m.Name] = m.State == "starting"
 			}
 		}
 	}
@@ -120,7 +131,9 @@ func boardOf(host string, status *proto.Status, rows []guiRow, listed map[string
 			}
 		}
 		for _, id := range listed[row.Name] {
-			be.Models = append(be.Models, boardModel{ID: id, Loaded: loaded[row.Name][id]})
+			l := loaded[row.Name][id]
+			be.Models = append(be.Models, boardModel{ID: id, Loaded: l,
+				Loading: !l && (starting[row.Name][id] || inFlight[loadKey{row.Name, id}])})
 		}
 		n.Engines = append(n.Engines, be)
 	}

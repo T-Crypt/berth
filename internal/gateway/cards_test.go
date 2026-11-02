@@ -84,7 +84,7 @@ func TestBackgroundEngineStartsOnItsCardWhileAnotherIsHeld(t *testing.T) {
 	})
 	holders := map[string][]string{}
 	st := n.Status()
-	for _, c := range boardOf("box", &st, nil, nil).Cards {
+	for _, c := range boardOf("box", &st, nil, nil, nil).Cards {
 		for _, h := range c.Holders {
 			holders[c.Card] = append(holders[c.Card], h.Name)
 		}
