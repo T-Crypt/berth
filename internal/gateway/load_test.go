@@ -107,6 +107,9 @@ func TestLoadRefusals(t *testing.T) {
 // llama-swap answers, and a second ask joins the first.
 func TestLoadThroughUpstream(t *testing.T) {
 	srv, f := loadGateway(t, http.StatusOK)
+	if e := readBoard(t, srv.URL).Engines; e[0].Type != "llama-swap" || e[1].Type != "strata" {
+		t.Fatalf("board types = %q, %q", e[0].Type, e[1].Type)
+	}
 	for range 2 {
 		resp := call(t, "POST", srv.URL+"/v1/berth/load", `{"engine":"llama-swap","model":"org/gemma 4"}`)
 		b, _ := io.ReadAll(resp.Body)

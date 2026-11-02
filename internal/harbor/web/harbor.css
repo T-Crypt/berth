@@ -1049,9 +1049,13 @@ body.ready #panel-engines > :nth-child(n+2) { animation-delay: 60ms; }
 .sw-paired { font-family: var(--mono); font-size: var(--fs-small); color: var(--dim); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s2); margin-bottom: var(--s3); }
 #sw-note > .empty-note { margin-bottom: var(--s3); }
 .sw-model-list { list-style: none; margin: var(--s1) 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; color: var(--dim); }
-.sw-model-list li { display: flex; align-items: center; gap: var(--s2); overflow-wrap: anywhere; }
+.sw-model-list li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); overflow-wrap: anywhere; }
 .sw-model-list li.loaded { color: var(--ink-strong); }
 .sw-loaded { color: var(--green); }
+.sw-loading { color: var(--amber); }
+.sw-model-id { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.sw-model-list .sw-load { min-height: var(--touch); min-width: 72px; }
+.sw-model-list .sw-error { flex-basis: 100%; }
 dialog#pair-dlg { border: 1px solid var(--hair-2); padding: 0; background: var(--panel); color: var(--ink); border-radius: 8px; box-shadow: var(--shadow-pop); max-width: 360px; width: calc(100vw - 48px); }
 dialog#pair-dlg::backdrop { background: var(--scrim); backdrop-filter: blur(3px); }
 .pair-body { padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); font-family: var(--mono); font-size: var(--fs-small); }

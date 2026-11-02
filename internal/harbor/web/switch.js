@@ -1,6 +1,6 @@
 // The SWITCH tab: who holds each card, and for a paired device the
-// switchboard's two actions, switch the card to an engine or stop the one
-// that holds it. The board and the actions are the gateway's; the harbor
+// switchboard's actions: switch the card to an engine, stop the one that
+// holds it, or load one llama-swap model. The board and the actions are the gateway's; the harbor
 // forwards them. API strings only ever reach textContent.
 import { $, el, fmtGiB, siEl } from "./util.js";
 import { showDialog, toast } from "./ui.js";
@@ -42,26 +42,27 @@ export function initSwitch({ demo }) {
     }
   }
 
-  async function act(action, engine) {
-    if (demo) { toast("demo: " + action + " " + engine + " is not sent", "info"); return; }
-    busy.add(engine);
-    errors.delete(engine);
+  async function act(action, engine, model) {
+    if (demo) { toast("demo: " + action + " " + (model || engine) + " is not sent", "info"); return; }
+    const key = model ? engine + "\u0000" + model : engine;
+    busy.add(key);
+    errors.delete(key);
     paint();
     try {
       const res = await fetch("/v1/board/" + action, {
         method: "POST",
         headers: { "X-Berth": "1", "Content-Type": "application/json", accept: "application/json" },
-        body: JSON.stringify({ engine }),
+        body: JSON.stringify(model ? { engine, model } : { engine }),
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
-        errors.set(engine, j.message || (j.error && j.error.message) || res.statusText);
+        errors.set(key, j.message || (j.error && j.error.message) || res.statusText);
         if (res.status === 401) paired = false;
       }
     } catch (e) {
-      errors.set(engine, e.message);
+      errors.set(key, e.message);
     }
-    busy.delete(engine);
+    busy.delete(key);
     await read();
   }
 
@@ -139,7 +140,7 @@ export function initSwitch({ demo }) {
     const models = e.models || [];
     if (models.length) actions.append(modelsToggle(e.name, models.length));
     if (actions.childElementCount) row.append(actions);
-    if (models.length && open.has(e.name)) row.append(modelList(models));
+    if (models.length && open.has(e.name)) row.append(modelList(e, models));
     return row;
   }
 
@@ -160,14 +161,30 @@ export function initSwitch({ demo }) {
     return b;
   }
 
-  function modelList(models) {
+  // A llama-swap row loads one model on request; the board marks it loading
+  // until llama-swap reports it ready.
+  function modelList(e, models) {
     const ul = el("ul", "sw-model-list");
     for (const m of models) {
-      const li = el("li", m.loaded ? "loaded" : null, siEl(m.loaded ? "dot" : "ring"), m.id);
-      if (m.loaded) li.append(el("span", "sw-loaded", " loaded"));
+      const li = el("li", m.loaded ? "loaded" : null, siEl(m.loaded ? "dot" : m.loading ? "half" : "ring"), el("span", "sw-model-id", m.id));
+      if (m.loaded) li.append(el("span", "sw-loaded", "loaded"));
+      else if (m.loading) li.append(el("span", "sw-loading", "loading"));
+      else if (paired && e.type === "llama-swap") li.append(loadButton(e.name, m.id));
+      const err = errors.get(e.name + "\u0000" + m.id);
+      if (err) li.append(el("span", "sw-error", err));
       ul.append(li);
     }
     return ul;
+  }
+
+  function loadButton(engine, model) {
+    const key = engine + "\u0000" + model;
+    const b = el("button", "btn sw-btn sw-load", busy.has(key) ? "…" : "LOAD");
+    b.type = "button";
+    b.disabled = busy.has(key);
+    b.setAttribute("aria-label", "load " + model);
+    b.addEventListener("click", () => act("load", engine, model));
+    return b;
   }
 
   function pairButton() {

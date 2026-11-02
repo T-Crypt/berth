@@ -138,6 +138,7 @@ func (g *Gateway) probe(ctx context.Context, e *config.Engine) bool {
 // only) and what it is doing on the card right now.
 type guiRow struct {
 	Name    string    `json:"name"`
+	Type    string    `json:"type"`          // the engine's type in berth.toml; llama-swap rows can load a model
 	GUI     string    `json:"gui,omitempty"` // the engine's web UI; empty = No UI
 	API     string    `json:"api,omitempty"` // the engine's own address, shown when there is no web UI
 	Launch  bool      `json:"launch"`        // true when the engine has a start command
@@ -154,7 +155,7 @@ type guiRow struct {
 // guiRowFor is the static part of an engine's row: what it is. The state
 // fields are filled in once, per request.
 func guiRowFor(e *config.Engine) guiRow {
-	row := guiRow{Name: e.Name, GUI: e.GUI, Launch: len(e.Start) > 0}
+	row := guiRow{Name: e.Name, Type: e.Type, GUI: e.GUI, Launch: len(e.Start) > 0}
 	if e.GUI == "" {
 		row.API = e.URL
 	}
