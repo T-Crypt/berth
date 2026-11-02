@@ -8,6 +8,12 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Added
 
+- `needs_mib = [18000, 6000]` on an `[[engine]]` entry with `gpu = "gpu0,gpu1"`, and `berth run --needs-mib 18000,6000`:
+  a size per card, in the order the cards are named, for a model split unevenly across cards (llama.cpp
+  `--tensor-split`). Each card's share of the lease reserves its own size, so the room left on the lighter card can
+  serve another engine. One value still sizes every card. A berthd from before this release reads only the largest
+  size and reserves it on every card. docs/leasing.md has a new section on splitting one model across cards.
+
 - `window = "23:00-07:00"` on an `[[engine]]` entry, and `berth run --window 23:00-07:00`: a lease window, for work that should only run
   in cheap hours. berthd grants the lease inside them and drains its holder when they close, at the same boundary as any other drain. A
   run that asks outside its window waits for it with no deadline unless `--wait` sets one, holds up no waiter behind it, and `berth

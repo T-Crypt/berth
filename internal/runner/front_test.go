@@ -91,7 +91,7 @@ func TestCheckpointParkHoldsRequestsUntilTheRestore(t *testing.T) {
 	log := &syncBuf{}
 	exited := make(chan int, 1)
 	go func() {
-		exited <- Run(Options{Socket: sock, Engine: "ninfer", Priority: "interactive", Needs: 8 << 30,
+		exited <- Run(Options{Socket: sock, Engine: "ninfer", Priority: "interactive", Needs: []uint64{8 << 30},
 			DrainPost: swap.URL + "/api/models/unload/ninfer",
 			Front:     addr, Checkpoint: true, ParkProbe: "/v1/models", Grace: 2 * time.Second,
 			Argv: []string{os.Args[0], "--port", PortPlaceholder}, Stderr: log})
@@ -184,7 +184,7 @@ func TestCheckpointWithoutTheToolDrainsAndSaysWhy(t *testing.T) {
 	exited := make(chan int, 1)
 	log := &syncBuf{}
 	go func() {
-		exited <- Run(Options{Socket: sock, Engine: "ninfer", Priority: "interactive", Needs: 8 << 30,
+		exited <- Run(Options{Socket: sock, Engine: "ninfer", Priority: "interactive", Needs: []uint64{8 << 30},
 			Front: freeFront(t), Checkpoint: true, ParkProbe: "/v1/models", Grace: time.Second,
 			Argv: []string{os.Args[0], "--port", PortPlaceholder}, Stderr: log})
 	}()
@@ -288,7 +288,7 @@ func TestStopDuringAParkStopsTheEngine(t *testing.T) {
 	log := &syncBuf{}
 	exited := make(chan int, 1)
 	go func() {
-		exited <- Run(Options{Socket: sock, Engine: "ninfer", Priority: "interactive", Needs: 8 << 30,
+		exited <- Run(Options{Socket: sock, Engine: "ninfer", Priority: "interactive", Needs: []uint64{8 << 30},
 			Front: freeFront(t), Checkpoint: true, ParkProbe: "/v1/models", Grace: 2 * time.Second,
 			Argv: []string{os.Args[0], "--port", PortPlaceholder}, Stderr: log})
 	}()

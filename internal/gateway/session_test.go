@@ -52,3 +52,18 @@ func TestRunArgvCarriesSlice(t *testing.T) {
 		t.Fatalf("an entry with no slice gained one: %q", bare)
 	}
 }
+
+// A gateway start of an entry split across cards hands berth run its size
+// on each card, in gpu's order.
+func TestRunArgvCarriesEachCardsSize(t *testing.T) {
+	for _, tc := range []struct {
+		needs config.MiBs
+		want  string
+	}{{config.MiBs{18000, 6000}, "18000,6000"}, {config.MiBs{8192}, "8192"}} {
+		args := runArgv(runner.OptionsFor(&config.Engine{Name: "llama-70b", GPU: "gpu0,gpu1", NeedsMiB: tc.needs}, runner.Over{}))
+		i := slices.Index(args, "--needs-mib")
+		if i < 0 || i+1 >= len(args) || args[i+1] != tc.want {
+			t.Errorf("needs %v: args %q, want --needs-mib %s", tc.needs, args, tc.want)
+		}
+	}
+}

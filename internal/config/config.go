@@ -56,9 +56,9 @@ type Engine struct {
 	// model it serves and it is not running. Start is the engine's command;
 	// it runs under a lease exactly as `berth run` would.
 	Start    []string `toml:"start,omitempty" json:"start,omitempty" yaml:"start,omitempty"`
-	Serves   []string `toml:"serves,omitempty" json:"serves,omitempty" yaml:"serves,omitempty"`         // model names this engine answers for
-	Priority string   `toml:"priority,omitempty" json:"priority,omitempty" yaml:"priority,omitempty"`   // batch, interactive (default) or foreground
-	NeedsMiB uint64   `toml:"needs_mib,omitzero" json:"needs_mib,omitempty" yaml:"needs_mib,omitempty"` // 0 = the whole card
+	Serves   []string `toml:"serves,omitempty" json:"serves,omitempty" yaml:"serves,omitempty"`          // model names this engine answers for
+	Priority string   `toml:"priority,omitempty" json:"priority,omitempty" yaml:"priority,omitempty"`    // batch, interactive (default) or foreground
+	NeedsMiB MiBs     `toml:"needs_mib,omitempty" json:"needs_mib,omitempty" yaml:"needs_mib,omitempty"` // per card, in gpu order; none = the whole card
 	// Background: the gateway starts this engine at batch priority whenever
 	// the card has been free (no lease, no waiter, the card serving this
 	// machine) for IdleAfter. Any other request drains it as any batch
@@ -702,6 +702,9 @@ func (c *Config) Validate() error {
 		}
 		if e.DrainMax.Duration < 0 {
 			errs = append(errs, fmt.Errorf("%s: drain_max %s must be >= 0", where, e.DrainMax))
+		}
+		if err := CheckNeeds(e.NeedsMiB, e.GPU); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", where, err))
 		}
 		if e.MinTurn.Duration < 0 {
 			errs = append(errs, fmt.Errorf("%s: min_turn %s must be >= 0", where, e.MinTurn))

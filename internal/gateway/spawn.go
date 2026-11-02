@@ -14,10 +14,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/T-Crypt/berth/internal/config"
 	"github.com/T-Crypt/berth/internal/procs"
 	"github.com/T-Crypt/berth/internal/runner"
 	"github.com/T-Crypt/berth/internal/sysd"
@@ -96,8 +96,12 @@ func runArgv(o runner.Options) []string {
 	if o.Priority != "" {
 		args = append(args, "--priority", o.Priority)
 	}
-	if o.Needs != 0 {
-		args = append(args, "--needs-mib", strconv.FormatUint(o.Needs>>20, 10))
+	if len(o.Needs) > 0 {
+		mibs := make(config.MiBs, len(o.Needs))
+		for i, b := range o.Needs {
+			mibs[i] = b >> 20
+		}
+		args = append(args, "--needs-mib", mibs.String())
 	}
 	if o.Wait != 0 {
 		args = append(args, "--wait", o.Wait.String())

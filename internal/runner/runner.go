@@ -48,7 +48,9 @@ type Options struct {
 	Card     string
 	Group    string // the engine family for juggles and usage (llama-swap's models: "llama-swap")
 	Priority string
-	Needs    uint64
+	// Needs is the card memory in bytes, one value per card in Card's
+	// order; one value sizes every card, none takes the whole card.
+	Needs    []uint64
 	Pinned   bool // never drained: an app that must not be stopped (Blender, a capture)
 	Switched bool // a person's switch (the wake page's Launch, /v1/berth/switch): wins a juggle
 	// MinTurn is a minimum turn: while the lease is younger than it after
@@ -224,7 +226,7 @@ func Run(o Options) int {
 	}
 	defer raw.Close()
 
-	if err := conn.Send(proto.Msg{Op: proto.OpAcquire, Card: o.Card, Engine: o.Engine, Group: o.Group, Priority: o.Priority, Needs: o.Needs, Wait: o.Wait.Seconds(), Pinned: o.Pinned, Switched: o.Switched, Lend: o.Lend != nil, WholeMachine: o.WholeMachine, MinTurn: o.MinTurn.Seconds(), ParkTTL: o.ParkTTL.Seconds(), Window: o.Window.String()}); err != nil {
+	if err := conn.Send(proto.Msg{Op: proto.OpAcquire, Card: o.Card, Engine: o.Engine, Group: o.Group, Priority: o.Priority, Needs: largest(o.Needs), NeedsEach: each(o.Needs), Wait: o.Wait.Seconds(), Pinned: o.Pinned, Switched: o.Switched, Lend: o.Lend != nil, WholeMachine: o.WholeMachine, MinTurn: o.MinTurn.Seconds(), ParkTTL: o.ParkTTL.Seconds(), Window: o.Window.String()}); err != nil {
 		say("acquire: %v", err)
 		return ExitRefused
 	}
@@ -466,7 +468,7 @@ func reattach(o Options, cmd *exec.Cmd, done <-chan struct{}, cid *containerRef,
 // waiters behind memory that is already gone.
 func reattachMsg(o Options, pid int, start uint64, cid *containerRef, parked bool, line *leaseLine) proto.Msg {
 	m := proto.Msg{Op: proto.OpReattach, Card: o.Card, Engine: o.Engine, Group: o.Group, Priority: o.Priority,
-		Needs: o.Needs, Pinned: o.Pinned, Lend: o.Lend != nil, WholeMachine: o.WholeMachine,
+		Needs: largest(o.Needs), NeedsEach: each(o.Needs), Pinned: o.Pinned, Lend: o.Lend != nil, WholeMachine: o.WholeMachine,
 		MinTurn: o.MinTurn.Seconds(), ParkTTL: o.ParkTTL.Seconds(), Window: o.Window.String(),
 		PID: pid, PIDStart: start, Containers: cid.list(), Parked: parked}
 	if t, ok := line.openLend(); ok {

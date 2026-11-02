@@ -314,7 +314,7 @@ func TestLendAskOnARunWithoutLendCallsIsRefused(t *testing.T) {
 // has lent nothing.
 func TestReattachNamesTheOpenLend(t *testing.T) {
 	o := lendEntry("http://127.0.0.1:1")
-	o.Needs = 16 << 30
+	o.Needs = []uint64{16 << 30}
 
 	line := newLine(nil)
 	line.record(lend.Ticket{ID: "17", GPU: "0000:09:00.0", MiB: 4096})

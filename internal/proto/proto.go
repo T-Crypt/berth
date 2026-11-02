@@ -110,6 +110,11 @@ type Msg struct {
 	Group    string `json:"group,omitempty"` // the engine family the lease counts for in juggles and usage
 	Priority string `json:"priority,omitempty"`
 	Needs    uint64 `json:"needs,omitempty"` // bytes; 0 = the whole card
+	// NeedsEach is the size in bytes on each card Card names, in that
+	// order, when the cards differ. Needs is then the largest, so a berthd
+	// that predates NeedsEach reserves too much on a small card, never too
+	// little.
+	NeedsEach []uint64 `json:"needs_each,omitempty"`
 	// Card is the card an OpAcquire or OpReattach is for: its name on the
 	// node (gpu1) or its PCI address, or a comma list of them for one lease
 	// on several cards. "" is the node's first card.

@@ -176,6 +176,36 @@ A timer can start a one-off batch job at the window's open instead: a systemd us
 Task Scheduler task triggered daily at 23:00. The window is what keeps the job out of the expensive hours when it
 overruns or the machine wakes late.
 
+## Split one model across cards
+
+llama.cpp splits a model that is too big for one card across several with `--tensor-split` (`-ts`). Run it under one
+lease on those cards:
+
+```sh
+berth run --as llama-70b --priority foreground --gpu gpu0,gpu1 \
+  -- llama-server -m llama-70b-q4.gguf -ngl 99 --tensor-split 3,1 --port 8080
+```
+
+- berthd grants both cards at once, or neither, so the model never loads onto one card while it waits for the other.
+- The engine starts with `CUDA_VISIBLE_DEVICES` set to the cards' UUIDs in the order `--gpu` names them. The first
+  `--tensor-split` value goes to the first card named, the second to the second.
+- A request that drains either card stops the engine, and its exit frees both. A lease on several cards cannot park
+  yet, so the next start loads the model from disk again.
+- Without `--needs-mib` the lease takes the whole of each card. That is the safe choice when nothing else runs there.
+- To leave room beside an uneven split, give one size per card, in the same order:
+  `--needs-mib 18000,6000`, or on the engine entry:
+
+  ```toml
+  [[engine]]
+  name      = "llama-70b"
+  gpu       = "gpu0,gpu1"
+  needs_mib = [18000, 6000]   # MiB on gpu0, then gpu1
+  ```
+
+  A size is what the engine holds on that card at its peak, KV cache and compute buffers included, not the share of
+  the weights. Start it once with the whole cards, read each card's HOLDS in `berth status`, and add some headroom.
+  One value, as before, is the size on every card.
+
 ## Training runs
 
 A training run that loses its cards loses everything since its last checkpoint. Run it under one pinned lease:

@@ -268,6 +268,13 @@ func hold(ctx context.Context, conn *proto.Conn, req proto.Msg, n *node.Node, fi
 		Window:       win,
 		Containers:   req.ContainerIDs(),
 	}
+	if len(req.NeedsEach) > 0 && len(req.NeedsEach) != len(cards) {
+		reply(conn, log, proto.Msg{Op: proto.OpRefused, Reason: fmt.Sprintf("%d sizes for %d card(s) in %q: give one size, or one per card", len(req.NeedsEach), len(cards), req.Card)})
+		return
+	}
+	if len(req.NeedsEach) == 1 {
+		r.Needs = req.NeedsEach[0]
+	}
 	if len(cards) > 1 {
 		holdAll(ctx, u, req, r, cards, incoming, cancel, log)
 		return
@@ -386,9 +393,9 @@ func holdAll(ctx context.Context, u *consumer, req proto.Msg, r broker.Request, 
 	var leases []*broker.Lease
 	var err error
 	if req.Op == proto.OpReattach {
-		leases, err = broker.ReattachAll(bs, r, req.PID, req.PIDStart)
+		leases, err = broker.ReattachAll(bs, req.NeedsEach, r, req.PID, req.PIDStart)
 	} else {
-		leases, err = broker.AcquireAll(ctx, bs, r, func(reason string) {
+		leases, err = broker.AcquireAll(ctx, bs, req.NeedsEach, r, func(reason string) {
 			if !u.send(proto.Msg{Op: proto.OpWaiting, Reason: reason}) {
 				cancel()
 			}
