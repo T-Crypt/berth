@@ -91,6 +91,7 @@ type Gateway struct {
 	failed     map[string]*failure // engines whose last start died before answering
 	lists      map[string]cached   // engine URL -> its /v1/models, briefly cached
 	wakes      map[string]*wake    // the wake page's last start, by engine name
+	loads      map[loadKey]bool    // the models a load from the switchboard is under way for
 
 	adoptOnce sync.Once
 	stateMu   sync.Mutex
@@ -220,6 +221,7 @@ func (g *Gateway) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/berth/board", g.board)
 	mux.HandleFunc("POST /v1/berth/switch", g.apiSwitch)
 	mux.HandleFunc("POST /v1/berth/stop", g.apiStop)
+	mux.HandleFunc("POST /v1/berth/load", g.apiLoad)
 	for _, p := range []string{"/v1/chat/completions", "/v1/completions", "/v1/embeddings"} {
 		mux.HandleFunc("POST "+p, g.forward)
 		mux.HandleFunc("POST /cards/{card}"+p, g.onCard(g.forward))

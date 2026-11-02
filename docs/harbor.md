@@ -168,11 +168,20 @@ A paired device (see [Pair a device](#pair-a-device)) also gets the actions:
   for a request to that engine's model.
 - **STOP** asks the engine that holds the card to give it back at its next request boundary,
   as `berth stop` does.
+- **LOAD**, on a llama-swap model that is not loaded, asks llama-swap for that model. The model
+  shows *loading* until llama-swap reports it ready. llama-swap's model command runs under
+  `berth run`, so the card is leased and its holder drained as for any other start.
 - A pinned holder, such as a game or `berth hold`, shows **PINNED** and has no STOP.
 - **PAIR A PHONE** shows a QR code that pairs another phone.
 
-The board and both actions are the gateway's (`GET /v1/berth/board`, `POST /v1/berth/switch` and
-`POST /v1/berth/stop`, see [the gateway](gateway.md)). The harbor sends them with the node's API key,
+On a machine with several cards, an engine runs on the card its entry names (`gpu = "gpu1"`), or
+on the first card when it names none. SWITCH starts it there and drains only that card's holder;
+engines on the other cards keep running. To run one engine on either card, give it one entry per
+card, such as `comfyui-gpu0` and `comfyui-gpu1`, each with its own `gpu` and port. The picker then
+shows each under its card.
+
+The board and the actions are the gateway's (`GET /v1/berth/board`, `POST /v1/berth/switch`,
+`POST /v1/berth/stop` and `POST /v1/berth/load`, see [the gateway](gateway.md)). The harbor sends them with the node's API key,
 so `berth gateway` must be running. `berth harbor --gateway URL` names the gateway when it is not on
 `[gateway] listen`, and `--key-file` names the key when it is not in the default place. The harbor
 reads the key and never creates it. Without a key, the tab says so and offers no actions.

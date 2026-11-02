@@ -42,7 +42,7 @@ func (f *fakeGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/v1/berth/board":
 		_, _ = io.WriteString(w, `{"name":"aphotic","reachable":true}`)
-	case "/v1/berth/switch":
+	case "/v1/berth/switch", "/v1/berth/load":
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = io.WriteString(w, `{"state":"waiting"}`)
 	case "/v1/berth/stop":
@@ -144,6 +144,8 @@ func TestBoardActionGates(t *testing.T) {
 		{"not paired", "/v1/board/switch", `{"engine":"x"}`, with("Cookie", ""), 401, "not_paired"},
 		{"forged token", "/v1/board/stop", `{"engine":"x"}`, with("Cookie", cookieName+"=forged"), 401, "not_paired"},
 		{"bad body", "/v1/board/switch", `{"engine":""}`, ok, 400, "bad_body"},
+		{"load without a model", "/v1/board/load", `{"engine":"llama-swap"}`, ok, 400, "bad_body"},
+		{"load not paired", "/v1/board/load", `{"engine":"llama-swap","model":"qwen"}`, with("Cookie", ""), 401, "not_paired"},
 		{"pair code unpaired", "/v1/pair/code", ``, with("Cookie", ""), 401, "not_paired"},
 	}
 	for _, tc := range cases {
@@ -171,6 +173,15 @@ func TestBoardActionForwards(t *testing.T) {
 	}
 	if got := gw.last(); got != `POST /v1/berth/switch Bearer `+testKey+` {"engine":"strata"}` {
 		t.Fatalf("gateway saw %q", got)
+	}
+	// A load carries its model; a switch never passes one on.
+	code, _ = call(t, "POST", base+"/v1/board/load", `{"engine":"llama-swap","model":"org/qwen"}`, hdr)
+	if got := gw.last(); code != http.StatusAccepted || got != `POST /v1/berth/load Bearer `+testKey+` {"engine":"llama-swap","model":"org/qwen"}` {
+		t.Fatalf("load = %d, gateway saw %q", code, got)
+	}
+	_, _ = call(t, "POST", base+"/v1/board/switch", `{"engine":"strata","model":"x"}`, hdr)
+	if got := gw.last(); got != `POST /v1/berth/switch Bearer `+testKey+` {"engine":"strata"}` {
+		t.Fatalf("switch passed a model on: %q", got)
 	}
 	// A bearer token works for scripts as the cookie does for a browser.
 	gw.mu.Lock()
