@@ -163,3 +163,37 @@ func TestWindowWaiterOutlastsTheDefaultWait(t *testing.T) {
 		t.Fatal("a windowed request with its own deadline waited past it")
 	}
 }
+
+// A lease on several cards keeps the same rule: a night job split across two
+// cards, started in the evening, waits past the default wait for its hours and
+// gets both cards once the window opens.
+func TestWindowWaiterOnSeveralCardsOutlastsTheDefaultWait(t *testing.T) {
+	bs := node(t, "gpu0", "gpu1")
+	clk := newMinClock(at1948)
+	for _, b := range bs {
+		b.nowFn = clk.now
+		b.cfg.DefaultWait = 50 * time.Millisecond
+	}
+
+	ch := acquireAll(bs, Request{Engine: "nightly", Priority: Batch, Needs: 8 * GiB, Window: night})
+	select {
+	case r := <-ch:
+		t.Fatalf("a windowed lease on two cards returned before its window: %+v", r)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	clk.set(at2330)
+	tickAll(bs)
+	var r gangResult
+	select {
+	case r = <-ch:
+	case <-time.After(2 * time.Second):
+		t.Fatal("not granted once the window opened")
+	}
+	if r.err != nil || len(r.ls) != 2 {
+		t.Fatalf("grant = %+v, want a lease on both cards", r)
+	}
+	if !holds(bs[0], "nightly") || !holds(bs[1], "nightly") {
+		t.Fatal("nightly is not on both cards")
+	}
+}

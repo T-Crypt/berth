@@ -1759,6 +1759,22 @@ func IsNotFound(err error) bool {
 	return errors.As(err, &nf)
 }
 
+// waitFor is how long a request waits for its grant. A negative wait has no
+// deadline: the waiter stays queued until it gets the card, its context is
+// cancelled, or the daemon exits.
+func (b *Broker) waitFor(r Request) time.Duration {
+	switch {
+	case r.Wait != 0:
+		return r.Wait
+	case r.Window.Set():
+		// Its window is the wait the operator chose: a run started at noon
+		// for a night window waits for the night.
+		return -1
+	default:
+		return b.cfg.DefaultWait
+	}
+}
+
 // Acquire queues for a berth and blocks until it is granted, ctx ends, or
 // the wait runs out. onWait hears each new reason for waiting.
 func (b *Broker) Acquire(ctx context.Context, r Request, onWait func(string)) (*Lease, error) {
@@ -1775,17 +1791,7 @@ func (b *Broker) Acquire(ctx context.Context, r Request, onWait func(string)) (*
 	b.schedule(b.now())
 	b.mu.Unlock()
 
-	wait := r.Wait
-	switch {
-	case wait == 0 && r.Window.Set():
-		// Its window is the wait the operator chose: a run started at noon
-		// for a night window waits for the night.
-		wait = -1
-	case wait == 0:
-		wait = b.cfg.DefaultWait
-	}
-	// A negative wait has no deadline: the waiter stays queued until it
-	// gets the card, its context is cancelled, or the daemon exits.
+	wait := b.waitFor(r)
 	var timeout <-chan time.Time
 	if wait > 0 {
 		timer := time.NewTimer(wait)
