@@ -59,7 +59,11 @@ type Options struct {
 	MinTurn time.Duration
 	// ParkTTL is how long the lease may stay parked before the broker stops
 	// the engine, in place of the node's [park] ttl. 0 = the node's.
-	ParkTTL   time.Duration
+	ParkTTL time.Duration
+	// Window holds the lease to set hours: berthd grants it inside them and
+	// asks the card back when they close, at the drain's boundary. Zero = no
+	// window.
+	Window    proto.Window
 	Wait      time.Duration
 	DrainPost string // asked first on drain, e.g. llama-swap's unload URL
 	// DrainSlots is an engine base URL with a llama.cpp-style /slots: on
@@ -220,7 +224,7 @@ func Run(o Options) int {
 	}
 	defer raw.Close()
 
-	if err := conn.Send(proto.Msg{Op: proto.OpAcquire, Card: o.Card, Engine: o.Engine, Group: o.Group, Priority: o.Priority, Needs: o.Needs, Wait: o.Wait.Seconds(), Pinned: o.Pinned, Switched: o.Switched, Lend: o.Lend != nil, WholeMachine: o.WholeMachine, MinTurn: o.MinTurn.Seconds(), ParkTTL: o.ParkTTL.Seconds()}); err != nil {
+	if err := conn.Send(proto.Msg{Op: proto.OpAcquire, Card: o.Card, Engine: o.Engine, Group: o.Group, Priority: o.Priority, Needs: o.Needs, Wait: o.Wait.Seconds(), Pinned: o.Pinned, Switched: o.Switched, Lend: o.Lend != nil, WholeMachine: o.WholeMachine, MinTurn: o.MinTurn.Seconds(), ParkTTL: o.ParkTTL.Seconds(), Window: o.Window.String()}); err != nil {
 		say("acquire: %v", err)
 		return ExitRefused
 	}
@@ -463,7 +467,7 @@ func reattach(o Options, cmd *exec.Cmd, done <-chan struct{}, cid *containerRef,
 func reattachMsg(o Options, pid int, start uint64, cid *containerRef, parked bool, line *leaseLine) proto.Msg {
 	m := proto.Msg{Op: proto.OpReattach, Card: o.Card, Engine: o.Engine, Group: o.Group, Priority: o.Priority,
 		Needs: o.Needs, Pinned: o.Pinned, Lend: o.Lend != nil, WholeMachine: o.WholeMachine,
-		MinTurn: o.MinTurn.Seconds(), ParkTTL: o.ParkTTL.Seconds(),
+		MinTurn: o.MinTurn.Seconds(), ParkTTL: o.ParkTTL.Seconds(), Window: o.Window.String(),
 		PID: pid, PIDStart: start, Containers: cid.list(), Parked: parked}
 	if t, ok := line.openLend(); ok {
 		m.LendID, m.Lent = t.ID, t.MiB<<20

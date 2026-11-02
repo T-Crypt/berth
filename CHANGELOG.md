@@ -8,6 +8,12 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Added
 
+- `window = "23:00-07:00"` on an `[[engine]]` entry, and `berth run --window 23:00-07:00`: a lease window, for work that should only run
+  in cheap hours. berthd grants the lease inside them and drains its holder when they close, at the same boundary as any other drain. A
+  run that asks outside its window waits for it with no deadline unless `--wait` sets one, holds up no waiter behind it, and `berth
+  status` says when the window opens. A gateway background engine is not started outside its window at all. A window needs a lease that can be asked back, so it goes with neither `--pinned` nor
+  `--priority hold`.
+
 - `berth gateway --harbor URL` redirects the gateway's `/gui/` index and `/` to `URL/#switch`, so an old bookmark of the
   engine list lands on the harbor's SWITCH tab. The per-engine wake pages, their state endpoints and the wake POST keep
   answering, so a bookmark of one engine's web UI still opens its wake page. Without the flag, `/gui/` is the index

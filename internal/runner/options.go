@@ -62,7 +62,7 @@ func OptionsFor(e *config.Engine, o Over) Options {
 		Socket: o.Socket, Engine: e.Name, Card: e.GPU, Group: o.Group, Priority: prio,
 		Needs: e.NeedsMiB << 20, Pinned: o.Pinned, Switched: o.Switched, Wait: o.Wait,
 		DrainPost: e.DrainPost, DrainSlots: e.DrainSlots, DrainComfyUI: e.DrainComfyUI,
-		DrainMax: e.DrainMax.Duration, MinTurn: e.MinTurn.Duration, ParkTTL: e.ParkTTL.Duration, Container: e.Container, Compose: e.Compose,
+		DrainMax: e.DrainMax.Duration, MinTurn: e.MinTurn.Duration, ParkTTL: e.ParkTTL.Duration, Window: e.Window, Container: e.Container, Compose: e.Compose,
 		APIKeyEnv: e.APIKeyEnv, APIKeyFile: e.APIKeyFile,
 		ExitComfyUIIdle: e.ExitComfyUIIdle, ExitComfyUIIdleAfter: e.ExitComfyUIIdleAfter.Duration,
 		Grace: grace, FailClosed: o.FailClosed,

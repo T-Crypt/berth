@@ -211,6 +211,11 @@ func hold(ctx context.Context, conn *proto.Conn, req proto.Msg, n *node.Node, fi
 		reply(conn, log, proto.Msg{Op: proto.OpRefused, Reason: err.Error()})
 		return
 	}
+	win, err := proto.ParseWindow(req.Window)
+	if err != nil {
+		reply(conn, log, proto.Msg{Op: proto.OpRefused, Reason: err.Error()})
+		return
+	}
 	cards, err := n.Pick(req.Card)
 	if err != nil {
 		reply(conn, log, proto.Msg{Op: proto.OpRefused, Reason: err.Error()})
@@ -260,6 +265,7 @@ func hold(ctx context.Context, conn *proto.Conn, req proto.Msg, n *node.Node, fi
 		LentBytes:    req.Lent,
 		MinTurn:      time.Duration(req.MinTurn * float64(time.Second)),
 		ParkTTL:      time.Duration(req.ParkTTL * float64(time.Second)),
+		Window:       win,
 		Containers:   req.ContainerIDs(),
 	}
 	if len(cards) > 1 {

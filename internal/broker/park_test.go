@@ -35,15 +35,22 @@ func parkSetup(t *testing.T, tree procs.Tree, avail uint64, pressure float64) (*
 	return b, c, r
 }
 
-// parked takes a lease through acquire, its measured peak, a drain, and
-// admission into parking; the residual lands on the card and the lease
-// becomes parked. The foreground waiter that triggered the drain is granted
-// once the memory freed, and releases, so the queue ends empty.
+// warmLease is warmLeaseAs for a whole-card lease at the default priority.
 func warmLease(t *testing.T, b *Broker, c *card, engine string, peak uint64, root, eng int) *Lease {
 	t.Helper()
-	l := must(t, acquire(b, Request{Engine: engine, Needs: peak}))
+	return warmLeaseAs(t, b, c, Request{Engine: engine, Needs: peak}, root, eng)
+}
+
+// warmLeaseAs takes a lease through acquire, its measured peak, a drain, and
+// admission into parking; the residual lands on the card and the lease
+// becomes parked. The foreground waiter that triggered the drain is granted
+// once the memory freed, and releases, so the queue ends empty. The request
+// is the test's own: its priority, the hours its lease is held to.
+func warmLeaseAs(t *testing.T, b *Broker, c *card, r Request, root, eng int) *Lease {
+	t.Helper()
+	l := must(t, acquire(b, r))
 	l.Attach(root)
-	c.set(gpu.Proc{PID: eng, Name: engine + "-engine", Used: peak})
+	c.set(gpu.Proc{PID: eng, Name: r.Engine + "-engine", Used: r.Needs})
 	b.Tick(context.Background())
 
 	w := acquire(b, Request{Engine: "next", Priority: Foreground, Needs: 20 * GiB})
@@ -52,7 +59,7 @@ func warmLease(t *testing.T, b *Broker, c *card, engine string, peak uint64, roo
 	if ok, why := l.Park(); !ok {
 		t.Fatalf("park refused: %s", why)
 	}
-	c.set(gpu.Proc{PID: eng, Name: engine + "-engine", Used: 512 << 20})
+	c.set(gpu.Proc{PID: eng, Name: r.Engine + "-engine", Used: 512 << 20})
 	l.Parked()
 	b.Tick(context.Background())
 	lw := must(t, w)

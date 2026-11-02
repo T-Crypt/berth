@@ -311,15 +311,22 @@ func (b *Broker) evictParked(now time.Time) {
 		case avail < b.cfg.ParkFloor:
 			why = "available RAM is under the floor"
 		}
-		l.state = draining
-		msg := "evicted: " + why
-		select {
-		case l.drainCh <- msg:
-		default:
-		}
-		b.log.Warn("evicting a parked engine", "lease", name, "engine", l.engine, "why", why)
-		b.emit(proto.Event{Kind: proto.EvParkEvicted, Lease: name, Engine: l.engine, Bytes: b.ramOf(l), Detail: why})
+		b.evict(l, why)
 	}
+}
+
+// evict stops a parked engine rather than resuming it: its runner hears
+// OpDrain and stops it as any drain, with no park to keep. why names the
+// rule that says so: the RAM floor, the ttl, memory pressure, a window that
+// closed. Called with b.mu held.
+func (b *Broker) evict(l *lease, why string) {
+	l.state = draining
+	select {
+	case l.drainCh <- "evicted: " + why:
+	default:
+	}
+	b.log.Warn("evicting a parked engine", "lease", l.id, "engine", l.engine, "why", why)
+	b.emit(proto.Event{Kind: proto.EvParkEvicted, Lease: l.id, Engine: l.engine, Bytes: b.ramOf(l), Detail: why})
 }
 
 // Resume puts the engine's parked lease back in the queue at its own

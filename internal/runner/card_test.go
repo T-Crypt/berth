@@ -171,10 +171,12 @@ func TestDrainOnOneCardStopsALeaseOnSeveral(t *testing.T) {
 }
 
 // A run re-attaches to the card it was granted on, so a restarted berthd
-// puts a gpu1 engine back on gpu1, not on the first card.
+// puts a gpu1 engine back on gpu1, not on the first card. Its hours ride
+// along, so a daemon restart does not hand back a window.
 func TestReattachNamesTheCard(t *testing.T) {
-	m := reattachMsg(Options{Engine: "maya", Card: "gpu1"}, 101, 7, &containerRef{}, false, newLine(nil))
-	if m.Op != proto.OpReattach || m.Card != "gpu1" {
-		t.Fatalf("reattach msg = op %s card %q, want reattach on gpu1", m.Op, m.Card)
+	m := reattachMsg(Options{Engine: "maya", Card: "gpu1", Window: proto.Window{Start: 23 * 60, End: 7 * 60}},
+		101, 7, &containerRef{}, false, newLine(nil))
+	if m.Op != proto.OpReattach || m.Card != "gpu1" || m.Window != "23:00-07:00" {
+		t.Fatalf("reattach msg = op %s card %q window %q, want reattach on gpu1 with its window", m.Op, m.Card, m.Window)
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/T-Crypt/berth/internal/broker"
 	"github.com/T-Crypt/berth/internal/config"
 	"github.com/T-Crypt/berth/internal/gpu"
+	"github.com/T-Crypt/berth/internal/proto"
 	"github.com/T-Crypt/berth/internal/runner"
 	"github.com/T-Crypt/berth/internal/suite"
 	"github.com/T-Crypt/berth/internal/sysd"
@@ -36,6 +37,7 @@ func runRun(c *Context) int {
 	keepComfy := fs.Bool("keep-comfyui-up", false, "with --drain-comfyui: unload its models via POST /free and leave the server up instead of stopping it")
 	drainMax := fs.Duration("drain-max", 0, "how long a drain may wait at a boundary (a busy slot, a running ComfyUI job) before it stops the engine, or refuses with --fail-closed; 0 = unbounded except fail-closed safety checks")
 	minTurn := fs.Duration("min-turn", 0, "minimum turn: after the grant the card stays this run's for this long; no request drains it meanwhile, only a hold does (a game, a call, berth hold); 0 = off")
+	window := fs.String("window", "", "hours this run may hold the card in, HH:MM-HH:MM (24 h, may cross midnight, as in 23:00-07:00): outside them the run waits for them (no deadline unless --wait sets one) and berth status says when the window opens, and when it closes the lease drains at its boundary; over the entry's window")
 	keyFile := fs.String("api-key-file", "", "absolute owner-private Unix file holding the bearer token; exclusive with --api-key-env")
 	idle := fs.Bool("exit-comfyui-idle", false, "release a ComfyUI session after its first completed job; with it set, --drain-max no longer bounds the wait: a session with no completed job holds the card")
 	after := fs.Duration("exit-comfyui-idle-after", 0, "with --exit-comfyui-idle: release an unused session after this interval; 0 = no deadline")
@@ -56,6 +58,10 @@ func runRun(c *Context) int {
 		WithHint("usage: berth run --as NAME [flags] -- CMD [ARGS...], or give NAME's berth.toml entry a start")
 	if *engine == "" {
 		return c.fail(required)
+	}
+	win, err := proto.ParseWindow(*window)
+	if err != nil {
+		return c.fail(Systemf("%v", err))
 	}
 	// The engine's berth.toml entry is the default for every setting a flag
 	// does not set, so a run with no flags behaves like a gateway start. A
@@ -81,7 +87,7 @@ func runRun(c *Context) int {
 	applyEngineEntry(c, &e, engineFlags{
 		priority: prio, needsMiB: needs, drainPost: drainPost, drainSlots: drainSlots,
 		drainComfyUI: drainComfy, keepComfyUI: keepComfy, drainMax: drainMax, minTurn: minTurn,
-		container: container, compose: composeFile,
+		window: &win, container: container, compose: composeFile,
 	})
 	if c.Changed("api-key-env") {
 		e.APIKeyEnv = *keyEnv
@@ -138,6 +144,7 @@ func runRun(c *Context) int {
 	}
 	if err := checkRunFlags(runFlags{
 		keepComfyUI: e.KeepComfyUI, drainComfyUI: e.DrainComfyUI, container: e.Container, compose: e.Compose,
+		pinned: *pinned, priority: e.Priority, window: e.Window.Set(),
 	}); err != nil {
 		return c.fail(Systemf("%v", err))
 	}
@@ -203,6 +210,7 @@ type engineFlags struct {
 	keepComfyUI  *bool
 	drainMax     *time.Duration
 	minTurn      *time.Duration
+	window       *proto.Window
 	container    *string
 	compose      *string
 }
@@ -213,7 +221,7 @@ type engineFlags struct {
 func applyEngineEntry(c *Context, e *config.Engine, f engineFlags) {
 	prio, needs, drainPost := f.priority, f.needsMiB, f.drainPost
 	drainSlots, drainComfy, keepComfy := f.drainSlots, f.drainComfyUI, f.keepComfyUI
-	drainMax, minTurn := f.drainMax, f.minTurn
+	drainMax, minTurn, window := f.drainMax, f.minTurn, f.window
 	container, composeFile := f.container, f.compose
 	notice := func(flag, key, toml string) {
 		fmt.Fprintf(c.Err, "berth: --%s overrides berth.toml %s = %s for %s\n", flag, key, toml, e.Name)
@@ -274,6 +282,12 @@ func applyEngineEntry(c *Context, e *config.Engine, f engineFlags) {
 		}
 		e.MinTurn.Duration = *minTurn
 	}
+	if c.Changed("window") {
+		if e.Window.Set() && e.Window != *window {
+			notice("window", "window", e.Window.String())
+		}
+		e.Window = *window
+	}
 }
 
 // runFlags are the `berth run` settings that cannot stand on their own or
@@ -283,6 +297,9 @@ type runFlags struct {
 	drainComfyUI string
 	container    string
 	compose      string
+	pinned       bool
+	priority     string
+	window       bool
 }
 
 // checkRunFlags rejects flag combinations that can never work, mirroring
@@ -296,6 +313,14 @@ func checkRunFlags(f runFlags) error {
 	}
 	if f.compose != "" && !filepath.IsAbs(f.compose) {
 		return fmt.Errorf("--compose %s must be an absolute path: engines start from the daemon's working directory", f.compose)
+	}
+	// A window close asks the lease back, so it needs a lease that can be
+	// asked: never a pinned one, never a hold.
+	if f.window && f.pinned {
+		return fmt.Errorf("--window and --pinned cannot go together: a window close drains the lease, and a pinned lease is never drained")
+	}
+	if f.window && f.priority == "hold" {
+		return fmt.Errorf("--window and --priority hold cannot go together: a window close drains the lease, and a hold is never drained")
 	}
 	return nil
 }
