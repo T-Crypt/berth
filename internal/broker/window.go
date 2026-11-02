@@ -5,7 +5,7 @@ package broker
 
 // A lease's window is the hours its engine entry, or its berth run line,
 // holds it to. Inside them it is scheduled like any other lease. A waiter
-// outside them keeps its place in the queue and is told when they open, and
+// outside them steps out of line, holding up nobody, and is told when they open, and
 // a holder is asked back when they close: a window close is a drain, so it
 // waits for the boundary the drain names and never cuts a request off.
 

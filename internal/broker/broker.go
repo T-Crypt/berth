@@ -1095,6 +1095,20 @@ func (b *Broker) schedule(now time.Time) {
 		return
 	}
 	b.sortQueue()
+	// A waiter outside its window waits on its hours, not on the card, so it
+	// steps out of line until they open and holds up nobody behind it.
+	var later []*lease
+	b.queue = slices.DeleteFunc(b.queue, func(w *lease) bool {
+		if w.window.Contains(now) {
+			return false
+		}
+		later = append(later, w)
+		return true
+	})
+	defer func() { b.queue = append(b.queue, later...) }()
+	for _, w := range later {
+		b.setWait(w, fmt.Sprintf("outside its window %s; opens in %s", w.window, opensIn(w.window.Opens(now))))
+	}
 	for len(b.queue) > 0 {
 		w := b.queue[0]
 		// A fresh daemon does not yet know what engines that ran under the
@@ -1762,7 +1776,12 @@ func (b *Broker) Acquire(ctx context.Context, r Request, onWait func(string)) (*
 	b.mu.Unlock()
 
 	wait := r.Wait
-	if wait == 0 {
+	switch {
+	case wait == 0 && r.Window.Set():
+		// Its window is the wait the operator chose: a run started at noon
+		// for a night window waits for the night.
+		wait = -1
+	case wait == 0:
 		wait = b.cfg.DefaultWait
 	}
 	// A negative wait has no deadline: the waiter stays queued until it

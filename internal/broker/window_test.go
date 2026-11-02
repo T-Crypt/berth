@@ -27,7 +27,7 @@ var (
 	at0730 = time.Date(2026, 10, 21, 7, 30, 0, 0, time.Local)
 )
 
-// A waiter outside its window keeps its place in the queue and waits: it
+// A waiter outside its window waits for its hours: it
 // drains nothing, not even a holder of its own priority, and it reads when
 // the window opens. Once now is inside, that same waiter is granted.
 func TestWindowWaiterWaitsForItsHours(t *testing.T) {
@@ -42,7 +42,7 @@ func TestWindowWaiterWaitsForItsHours(t *testing.T) {
 		t.Fatalf("a waiter outside its window drained a holder of its own priority: %s", why)
 	default:
 	}
-	if got, want := firstReason(t, w), "next in line: outside its window 23:00-07:00; opens in 3h12m"; got != want {
+	if got, want := firstReason(t, w), "outside its window 23:00-07:00; opens in 3h12m"; got != want {
 		t.Errorf("reason = %q, want %q", got, want)
 	}
 
@@ -50,6 +50,28 @@ func TestWindowWaiterWaitsForItsHours(t *testing.T) {
 	clk.set(at2330)
 	b.Tick(context.Background())
 	granted(t, b, "job", w.ch)
+}
+
+// A waiter outside its window waits on its hours, not on the card, so it
+// holds up nobody: a later batch job with no window takes the card once it
+// frees, and the windowed waiter reads its own reason, with no place in line.
+func TestWindowWaiterHoldsUpNobody(t *testing.T) {
+	b, clk := startTurnBroker(t, procs.Map{})
+	clk.set(at1948)
+	holder := must(t, acquire(b, Request{Engine: "comfyui", Priority: Interactive, Needs: 20 * GiB}))
+
+	nightly := acquireW(b, Request{Engine: "nightly", Priority: Batch, Needs: 20 * GiB, Window: night})
+	pending(t, nightly.ch)
+	if got, want := firstReason(t, nightly), "outside its window 23:00-07:00; opens in 3h12m"; got != want {
+		t.Errorf("nightly reason = %q, want %q", got, want)
+	}
+	embed := acquireW(b, Request{Engine: "embed", Priority: Batch, Needs: 20 * GiB})
+	pending(t, embed.ch)
+
+	holder.Release()
+	b.Tick(context.Background())
+	granted(t, b, "embed", embed.ch)
+	pending(t, nightly.ch)
 }
 
 // A window close drains its holder at the boundary, as any drain does, and
@@ -115,5 +137,28 @@ func TestOpensIn(t *testing.T) {
 		if got := opensIn(tc.d); got != tc.want {
 			t.Errorf("opensIn(%v) = %q, want %q", tc.d, got, tc.want)
 		}
+	}
+}
+
+// A window is a wait the operator chose: a run started at noon for a night
+// window waits for the night, past berthd's default wait, unless the request
+// names a deadline of its own.
+func TestWindowWaiterOutlastsTheDefaultWait(t *testing.T) {
+	b, clk := startTurnBroker(t, procs.Map{})
+	clk.set(at1948)
+	b.cfg.DefaultWait = 50 * time.Millisecond
+
+	nightly := acquireW(b, Request{Engine: "nightly", Priority: Batch, Needs: 8 * GiB, Window: night})
+	time.Sleep(200 * time.Millisecond)
+	pending(t, nightly.ch)
+
+	bounded := acquireW(b, Request{Engine: "bounded", Priority: Batch, Needs: 8 * GiB, Window: night, Wait: 50 * time.Millisecond})
+	select {
+	case r := <-bounded.ch:
+		if r.err == nil {
+			t.Fatal("a windowed request with its own deadline was granted outside its window")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("a windowed request with its own deadline waited past it")
 	}
 }
