@@ -8,6 +8,11 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Added
 
+- `berth gateway --harbor URL` redirects the gateway's `/gui/` index and `/` to `URL/#switch`, so an old bookmark of the
+  engine list lands on the harbor's SWITCH tab. The per-engine wake pages, their state endpoints and the wake POST keep
+  answering, so a bookmark of one engine's web UI still opens its wake page. Without the flag, `/gui/` is the index
+  page.
+
 - The harbor's SWITCH tab loads one llama-swap model: a paired device taps LOAD on a model that is not loaded, and
   the model shows loading until llama-swap reports it ready. The gateway's new `POST /v1/berth/load
   {"engine","model"}` does it by asking llama-swap for the model's `/upstream/MODEL/health`, since llama-swap has

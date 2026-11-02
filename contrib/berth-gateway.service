@@ -15,6 +15,10 @@ Wants=berthd.service
 [Service]
 # The address is [gateway] listen in ~/.config/berth/berth.toml (default
 # 127.0.0.1:9799), so a port change is a config edit and a restart here.
+# Behind tailscale serve on this box: append  --gui-listen 127.0.0.1:9796 --allow-host <machine>.<tailnet>.ts.net
+# for the wake pages, and  --harbor https://<machine>.<tailnet>.ts.net:9798  to send the gateway's /gui/ index to the
+# harbor's SWITCH tab. --harbor must name the origin the browser reaches the harbor at, and a wake page opened by that
+# name is only reachable through a serve in front of --gui-listen.
 ExecStart=%h/.local/bin/berth gateway
 Restart=on-failure
 RestartSec=2

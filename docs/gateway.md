@@ -445,6 +445,14 @@ Point the bookmark (or a home-page tile) at `http://127.0.0.1:9796/gui/comfyui` 
 - On a node with several cards, each row in `/gui/` also names its card. With one engine per card for a model
   ([One URL per card](#one-url-per-card)), the row you launch is the card you pick.
 
+There is one switchboard: the harbor's SWITCH tab. `berth gateway --harbor URL` sends this index to it. `GET /gui/` and
+`GET /` then answer 302 to `URL/#switch`, so an old bookmark of the engine list lands on the tab. Name the origin the
+browser reaches the harbor at, the address `berth pair --url` takes (`https://box.tailnet.ts.net:9798` for a harbor
+behind `tailscale serve`). A redirect only hands the browser that address, so a URL it cannot reach is a page that
+never loads. `/gui/<engine>`, `/gui/<engine>/state`, `POST /gui/<engine>/wake` and `/gui/state` keep answering, so an
+engine's own bookmark still opens its wake page, and the Host rule below covers those URLs too. Without `--harbor`,
+`/gui/` is the index page and `/` redirects to it.
+
 <p align="center"><img src="https://raw.githubusercontent.com/T-Crypt/berth/main/assets/preview-wake.png" alt="The gateway's wake page for comfyui: comfyui is offline and the card is free, with a Launch comfyui button" width="560"></p>
 
 A start never runs two engines on the card at once. Berth drains the holder only at its boundary: llama-swap once its
@@ -453,9 +461,10 @@ once its `/slots` show idle (`drain_slots`, below). A pinned holder (a game, a r
 the page says so and the start waits until it ends.
 
 The wake page needs no API key: it can only start an engine you gave a `start` command. It listens on
-loopback, accepts loopback Host names plus the gateway's `--allow-host` names (for `tailscale serve` in
-front), and takes a start only as a POST from its own page, so another site cannot make a visitor's
-browser drain the card.
+loopback and accepts only a loopback Host or a name in the gateway's `--allow-host` list, so a wake page you
+open by name needs that name in `--allow-host` and its own forwarder to `--gui-listen` (one `tailscale serve`
+target per port). Any other Host gets 403. It takes a start only as a POST from its own page, so another
+site cannot make a visitor's browser drain the card.
 
 ## Run an engine under a resource-policy slice
 

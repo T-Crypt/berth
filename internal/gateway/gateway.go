@@ -83,6 +83,11 @@ type Gateway struct {
 	ConfigPath string
 	// LogMax caps an engine's log file before it starts over; 0 = 64 MiB.
 	LogMax int64
+	// Harbor is the harbor's base URL as a browser reaches it. The gui
+	// plane's index (/gui/ and /) then redirects to its SWITCH tab, which is
+	// the board; empty keeps the index page. The per-engine wake pages and
+	// /gui/state answer either way.
+	Harbor string
 
 	mu         sync.Mutex
 	deferred   *deferredBook       // loaded on first use from DeferredFile
