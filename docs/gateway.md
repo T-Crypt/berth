@@ -282,7 +282,8 @@ curl -s http://127.0.0.1:9799/v1/berth/load   -H "Authorization: Bearer $(berth 
 `GET /v1/berth/board` is the node in one read, for a board or a script: the card (who holds it, and whether it is
 free, held, draining, in a VM or failing its probe), then every engine in `berth.toml` with its state (up, offline,
 waiting, starting, failed), whether it can be switched to (`launch`) or stopped (`stoppable`), and its models with a
-`loaded` flag from the engine's own reader and a `loading` flag while a load is under way or the engine reports the
+`loaded` flag from the engine's own reader (for llama-swap, its `/running` read with the board, so a load never reads cold
+between llama-swap's answer and berthd's next read) and a `loading` flag while a load is under way or the engine reports the
 model starting. Each engine also carries its `type`. `cards` lists every card the node governs, each with its name
 on the node (`card`, such as `gpu1`), its base URL on this gateway (`base`, `/cards/gpu1/v1`), `cordoned` when
 `berth cordon` closed it, and the holders on that card alone. Each engine names the cards its entry runs on

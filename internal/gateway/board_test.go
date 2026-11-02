@@ -100,26 +100,31 @@ func TestBoardOf(t *testing.T) {
 		stoppable []bool
 		loaded    []boardModel
 		inFlight  map[loadKey]bool
+		live      map[string]map[string]string
 	}{
-		{"unreachable", nil, "", []bool{false, false}, []boardModel{{ID: "qwen"}, {ID: "gemma"}}, nil},
+		{"unreachable", nil, "", []bool{false, false}, []boardModel{{ID: "qwen"}, {ID: "gemma"}}, nil, nil},
 		{"held, one model ready", &proto.Status{GPUs: gpu,
 			Leases:  []proto.Lease{{Engine: "llama-swap", Group: "qwen", State: "active"}},
 			Engines: []proto.Engine{{Name: "llama-swap", Models: []proto.Model{{Name: "qwen", State: "ready"}, {Name: "gemma", State: "starting"}}}}},
-			"held", []bool{true, false}, []boardModel{{ID: "qwen", Loaded: true}, {ID: "gemma", Loading: true}}, nil},
+			"held", []bool{true, false}, []boardModel{{ID: "qwen", Loaded: true}, {ID: "gemma", Loading: true}}, nil, nil},
 		{"a switchboard load under way", &proto.Status{GPUs: gpu},
-			"free", []bool{false, false}, []boardModel{{ID: "qwen"}, {ID: "gemma", Loading: true}}, map[loadKey]bool{{"llama-swap", "gemma"}: true}},
+			"free", []bool{false, false}, []boardModel{{ID: "qwen"}, {ID: "gemma", Loading: true}}, map[loadKey]bool{{"llama-swap", "gemma"}: true}, nil},
 		{"a load under way for a model already ready", &proto.Status{GPUs: gpu,
 			Engines: []proto.Engine{{Name: "llama-swap", Models: []proto.Model{{Name: "qwen", State: "ready"}}}}},
-			"free", []bool{false, false}, []boardModel{{ID: "qwen", Loaded: true}, {ID: "gemma"}}, map[loadKey]bool{{"llama-swap", "qwen"}: true}},
+			"free", []bool{false, false}, []boardModel{{ID: "qwen", Loaded: true}, {ID: "gemma"}}, map[loadKey]bool{{"llama-swap", "qwen"}: true}, nil},
+		{"llama-swap's own read is newer than berthd's", &proto.Status{GPUs: gpu,
+			Engines: []proto.Engine{{Name: "llama-swap", Models: []proto.Model{{Name: "gemma", State: "starting"}}}}},
+			"free", []bool{false, false}, []boardModel{{ID: "qwen", Loading: true}, {ID: "gemma", Loaded: true}}, nil,
+			map[string]map[string]string{"llama-swap": {"gemma": "ready", "qwen": "starting"}}},
 		{"pinned game", &proto.Status{GPUs: gpu, Leases: []proto.Lease{{Engine: "game", State: "active", Pinned: true}}},
-			"held", []bool{false, false}, []boardModel{{ID: "qwen"}, {ID: "gemma"}}, nil},
+			"held", []bool{false, false}, []boardModel{{ID: "qwen"}, {ID: "gemma"}}, nil, nil},
 		{"draining", &proto.Status{GPUs: gpu, Leases: []proto.Lease{{Engine: "llama-swap", State: "draining"}}},
-			"draining", []bool{false, false}, []boardModel{{ID: "qwen"}, {ID: "gemma"}}, nil},
+			"draining", []bool{false, false}, []boardModel{{ID: "qwen"}, {ID: "gemma"}}, nil, nil},
 		{"in a VM", &proto.Status{GPUs: gpu, Passthrough: &proto.Passthrough{State: proto.CardPassthrough}},
-			"passthrough", []bool{false, false}, []boardModel{{ID: "qwen"}, {ID: "gemma"}}, nil},
+			"passthrough", []bool{false, false}, []boardModel{{ID: "qwen"}, {ID: "gemma"}}, nil, nil},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			n := boardOf("box", c.node, rows, listed, c.inFlight)
+			n := boardOf("box", c.node, rows, listed, c.live, c.inFlight)
 			if n.Reachable != (c.node != nil) {
 				t.Fatalf("reachable = %v", n.Reachable)
 			}

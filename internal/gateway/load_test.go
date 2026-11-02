@@ -26,17 +26,33 @@ type fakeSwap struct {
 	paths   []string // every /upstream request's escaped path
 	release chan struct{}
 	status  int
+	state   string // the loaded model's state in /running; "" = not running
 }
 
 func (f *fakeSwap) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/v1/models" {
+	switch r.URL.Path {
+	case "/v1/models":
 		_, _ = io.WriteString(w, `{"data":[{"id":"qwen"},{"id":"org/gemma 4"}]}`)
+		return
+	case "/running":
+		f.mu.Lock()
+		state := f.state
+		f.mu.Unlock()
+		if state == "" {
+			_, _ = io.WriteString(w, `{"running":[]}`)
+		} else {
+			_, _ = io.WriteString(w, `{"running":[{"model":"org/gemma 4","state":"`+state+`"}]}`)
+		}
 		return
 	}
 	f.mu.Lock()
 	f.paths = append(f.paths, r.URL.EscapedPath())
+	f.state = "starting"
 	f.mu.Unlock()
 	<-f.release
+	f.mu.Lock()
+	f.state = "ready"
+	f.mu.Unlock()
 	w.WriteHeader(f.status)
 }
 
@@ -71,6 +87,18 @@ func modelLoading(t *testing.T, url, model string) bool {
 		}
 	}
 	t.Fatalf("no model %q on the board", model)
+	return false
+}
+
+func modelLoaded(t *testing.T, url, model string) bool {
+	t.Helper()
+	for _, e := range readBoard(t, url).Engines {
+		for _, m := range e.Models {
+			if e.Name == "llama-swap" && m.ID == model {
+				return m.Loaded
+			}
+		}
+	}
 	return false
 }
 
@@ -126,7 +154,12 @@ func TestLoadThroughUpstream(t *testing.T) {
 		t.Fatal("the board does not show the load under way")
 	}
 	f.release <- struct{}{}
+	// Once llama-swap answers, the board reads the model loaded at once, not
+	// cold until berthd's reader catches up.
 	until(t, "the load to end", func() bool { return !modelLoading(t, srv.URL, "org/gemma 4") })
+	if !modelLoaded(t, srv.URL, "org/gemma 4") {
+		t.Fatal("the model read cold between llama-swap's answer and berthd's next read")
+	}
 	if got := f.seen(); len(got) != 1 {
 		t.Fatalf("two asks loaded twice: %q", got)
 	}
