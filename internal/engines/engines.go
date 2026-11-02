@@ -51,6 +51,7 @@ type Watcher struct {
 	mu       sync.Mutex
 	state    map[string]proto.Engine
 	latched  map[string]bool      // engine -> was up on a previous read and is failing again (State "latched")
+	stopped  map[string]string    // engine -> the story Berth told when it stopped it; the card's note while it is down
 	exited   map[string]time.Time // engine -> when its run last exited 0
 	reqs     []proto.Request      // the request log, oldest first
 	gen      []genSample          // counter deltas while exactly one model was loaded
@@ -134,13 +135,25 @@ func (w *Watcher) Poll(ctx context.Context) {
 		case cur.Up:
 			cur.State = "up"
 			delete(w.latched, e.Name)
+			if prev.State != "" && !prev.Up {
+				// It came back from being down: the story the stop told
+				// is over. A stop ordered while it still answers (a drain
+				// in flight) does not end it; the note waits for the
+				// silence it was told for.
+				delete(w.stopped, e.Name)
+			}
 		case w.latched[e.Name]:
 			cur.State = "latched" // was up; still not answering
+			delete(w.stopped, e.Name)
 		case prev.Up && prev.At.After(w.exited[e.Name]):
 			cur.State = "latched"
 			w.latched[e.Name] = true
+			delete(w.stopped, e.Name)
 		default:
 			cur.State = "down" // never confirmed up
+			if note, ok := w.stopped[e.Name]; ok {
+				cur.StoppedNote = note
+			}
 		}
 		rates(&cur, prev)
 		w.hold(&cur, prev)
@@ -171,6 +184,28 @@ func (w *Watcher) Finished(name string) {
 		}
 		w.exited[e.Name] = time.Now()
 		delete(w.latched, e.Name)
+	}
+}
+
+// Stopped records that Berth ordered the engine named name stopped, with the
+// story the stop carried: a reading while it is down carries the note on its
+// card. The first story stays; an up or latched reading clears it.
+func (w *Watcher) Stopped(name, note string) {
+	if w == nil || note == "" {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.stopped == nil {
+		w.stopped = map[string]string{}
+	}
+	for _, e := range w.all() {
+		if !strings.EqualFold(e.Name, name) {
+			continue
+		}
+		if _, ok := w.stopped[e.Name]; !ok {
+			w.stopped[e.Name] = note
+		}
 	}
 }
 

@@ -566,13 +566,20 @@ type Engine struct {
 	Up    bool   `json:"up"`
 	Error string `json:"error,omitempty"`
 	// State is the latched engine state: up = answers, latched = was up on a
-	// previous read and recent reads fail, down = never confirmed up. Up is
-	// the boolean form (Up = State == "up"); the node computes it.
-	State      string        `json:"state"`
-	Models     []Model       `json:"models"`
-	Metrics    EngineMetrics `json:"metrics"`
-	DecodeTPS  float64       `json:"decode_tps"`
-	PrefillTPS float64       `json:"prefill_tps"`
+	// previous read and recent reads fail, down = not answering without a
+	// latch: never confirmed up, or stopped on purpose (the watcher's
+	// Finished). Up is the boolean form (Up = State == "up"); the node
+	// computes it.
+	State string `json:"state"`
+	// StoppedNote is why a not-up engine is not up, when Berth knows:
+	// "Turned down for <model>", "Stopped for <hold>", "Stopped on command".
+	// The node computes it; empty when there is no story, and the UI falls
+	// back. An up or latched read clears it, so it never shows on one.
+	StoppedNote string        `json:"stopped_note,omitempty"`
+	Models      []Model       `json:"models"`
+	Metrics     EngineMetrics `json:"metrics"`
+	DecodeTPS   float64       `json:"decode_tps"`
+	PrefillTPS  float64       `json:"prefill_tps"`
 	// MetricsReported is true when this read got real counters from the
 	// engine. A zero rate beside it is an idle engine; without it the
 	// engine never answered its metrics endpoint and the rate is unknown.

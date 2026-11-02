@@ -39,8 +39,13 @@ func (b *Broker) Stop(engine string) ([]string, error) {
 		}
 		if l.state != draining {
 			// A parked or parking engine is stopped too: its run hears the
-			// drain once its park call ends and stops the engine.
+			// drain once its park call ends and stops the engine. A lease
+			// already draining keeps the story the drain that ordered it
+			// told; only this transition says "stopped on command".
 			l.state = draining
+			if b.cfg.OnStopOrdered != nil {
+				b.cfg.OnStopOrdered(l.engine, "Stopped on command")
+			}
 		}
 		ids = append(ids, l.id)
 		b.askDrain(l, stopReason)

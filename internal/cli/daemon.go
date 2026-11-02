@@ -167,6 +167,7 @@ func runDaemon(c *Context) int {
 			Order:          cfg.Priority.Order,
 			JuggleWindow:   cfg.Priority.JuggleWindow.Duration,
 			Busy:           watcher.Busy,
+			OnStopOrdered:  watcher.Stopped,
 			Comfy:          comfy,
 			ReattachWindow: *reattachWin,
 			// The park budget, from [park]: the floor adds the headroom floor

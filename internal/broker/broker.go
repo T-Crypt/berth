@@ -140,6 +140,15 @@ type Config struct {
 	// juggle; an idle one hands the card over at once. nil, or known=false,
 	// counts as busy.
 	Busy func(key string) (busy, known bool)
+	// OnStopOrdered is called the moment a drain is ordered, with the
+	// story it carries: "Turned down for <engine>" for an engine that
+	// took the card, "Stopped for <hold>" for a hold (a game, a call,
+	// berth hold), "Stopped on command" for an operator stop. A vfio
+	// handoff tells no story and does not call it. The node points it at
+	// the watcher's Stopped, so the stopped engine's card says why it is
+	// down. It runs with the broker locked, so it must be cheap and never
+	// call back in. nil = off.
+	OnStopOrdered func(engine string, note string)
 	// Comfy are the node's configured ComfyUI engines (run name, base URL).
 	// When an unprotected run of one squats the card, a waiter asks it to
 	// unload its models through its own /free and waits for the memory,
@@ -1117,6 +1126,7 @@ func (b *Broker) schedule(now time.Time) {
 			b.grant(w, now)
 			continue
 		}
+		note := b.stopNote(w)
 		for _, v := range victims {
 			v.state = draining
 			// Its memory goes with the drain: an open lend is dropped, and
@@ -1130,6 +1140,9 @@ func (b *Broker) schedule(now time.Time) {
 			b.log.Info("draining", "lease", v.id, "engine", v.engine, "for", w.engine)
 			b.counters.Drains++
 			b.emit(proto.Event{Kind: proto.EvDraining, Lease: v.id, Engine: v.engine, Detail: msg})
+			if note != "" && b.cfg.OnStopOrdered != nil {
+				b.cfg.OnStopOrdered(v.engine, note)
+			}
 		}
 		b.notifyWait(b.queue, reason)
 		return
@@ -1334,6 +1347,26 @@ type cardBudget struct {
 // avail is what is free for a new grant right now.
 func (c cardBudget) ceiling() uint64 { return sat(c.total, c.reserve+c.baseline+c.squat+c.claimed) }
 func (c cardBudget) avail() uint64   { return sat(c.ceiling(), c.held) }
+
+// stopNote is the story a drain tells the engine it takes the card from:
+// an engine says "turned down for" its name, a hold (a game, a call,
+// berth hold, a claim) says "stopped for" its name. A vfio handoff, which
+// waits for its VM to release the card on its own, tells none.
+func (b *Broker) stopNote(w *lease) string {
+	if w.prio == Hold {
+		switch {
+		case strings.HasPrefix(w.engine, "vfio:"):
+			return ""
+		case w.engine == "hold":
+			return "Stopped for a hold"
+		case strings.HasPrefix(w.engine, "hold:"):
+			return "Stopped for " + strings.TrimPrefix(w.engine, "hold:")
+		default:
+			return "Stopped for " + w.engine
+		}
+	}
+	return "Turned down for " + w.engine
+}
 
 // evaluate decides whether w fits now. If not, it returns why and which
 // holders to drain; no victims means draining would not help, so w waits.

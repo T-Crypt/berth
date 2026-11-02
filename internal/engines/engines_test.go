@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/T-Crypt/berth/internal/config"
 )
@@ -208,6 +209,67 @@ func TestEngineStateLatches(t *testing.T) {
 				t.Errorf("flip up = %v, want %v (Up stays the boolean form)", gotUp, c.flipUp)
 			}
 		})
+	}
+}
+
+// TestEngineStoppedNote: Stopped records the story a stop carried; a
+// reading while the engine is down carries it on its card, the first
+// story stays, and an up or latched reading clears it.
+func TestEngineStoppedNote(t *testing.T) {
+	var up atomic.Bool
+	up.Store(true)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/metrics" {
+			http.NotFound(w, r)
+			return
+		}
+		if !up.Load() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		fmt.Fprint(w, "llamacpp:tokens_predicted_total 10\n")
+	}))
+	defer srv.Close()
+	w := &Watcher{Engines: []config.Engine{{Name: "flip", Type: "llamacpp", URL: srv.URL}}}
+	snap := func() (state, note string) {
+		w.Poll(context.Background())
+		s := w.Snapshot()[0]
+		return s.State, s.StoppedNote
+	}
+	// A note that arrives while the engine is answering shows nothing
+	// until it is down.
+	w.Stopped("flip", "Turned down for ollama")
+	if state, note := snap(); state != "up" || note != "" {
+		t.Fatalf("answering engine shows note %q in state %q, want none", note, state)
+	}
+	// Berth takes the card: the silence reads down, carrying the story.
+	up.Store(false)
+	w.Finished("flip")
+	if state, note := snap(); state != "down" || note != "Turned down for ollama" {
+		t.Fatalf("ordered stop = %q with note %q, want down carrying the story", state, note)
+	}
+	// The first story stays: a later stop cannot overwrite it.
+	w.Stopped("flip", "Stopped on command")
+	if state, note := snap(); state != "down" || note != "Turned down for ollama" {
+		t.Fatalf("second story replaced the first: %q in state %q", note, state)
+	}
+	// Answering again clears the note. Wait past the clock tick so the
+	// recovery reading's stamp is strictly after the Finished mark, as in
+	// operation.
+	time.Sleep(20 * time.Millisecond)
+	up.Store(true)
+	if state, note := snap(); state != "up" || note != "" {
+		t.Fatalf("recovery = %q with note %q, want up with none", state, note)
+	}
+	// A failure no one ordered latches: the note clears with the latch,
+	// and the raw error is what the latched card carries.
+	w.Stopped("flip", "Stopped for games")
+	if state, note := snap(); state != "up" || note != "" {
+		t.Fatalf("answering engine shows note %q in state %q, want none", note, state)
+	}
+	up.Store(false)
+	if state, note := snap(); state != "latched" || note != "" {
+		t.Fatalf("latched read = %q with note %q, want none", state, note)
 	}
 }
 

@@ -156,7 +156,7 @@ export class EngineView {
       c.updown._si.className = "si si-" + (ENG_SI[st] || "offline");
       c.card.className = "engine-card" + (st === "up" ? "" : st === "latched" ? " latched" : " offline");
       c.card.title = st === "latched" ? "was up; readings stale" : "";
-      c.error.textContent = st === "up" ? "" : eng.error || "";
+      c.error.textContent = st === "up" ? "" : st === "latched" ? eng.error || "" : eng.stopped_note || "Stopped";
       c.error.hidden = st === "up";
       c.models.textContent = "";
       if (Array.isArray(eng.models) && eng.models.length > 0) {

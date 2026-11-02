@@ -160,6 +160,7 @@ func (w *Watcher) prune(now time.Time) {
 		if ok && !s.Up && now.Sub(w.lastUp[e.Name]) > DiscoveredTTL {
 			delete(w.state, e.Name)
 			delete(w.latched, e.Name)
+			delete(w.stopped, e.Name)
 			delete(w.lastUp, e.Name)
 			continue
 		}
