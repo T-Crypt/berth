@@ -37,7 +37,7 @@ func runRun(c *Context) int {
 	keepComfy := fs.Bool("keep-comfyui-up", false, "with --drain-comfyui: unload its models via POST /free and leave the server up instead of stopping it")
 	drainMax := fs.Duration("drain-max", 0, "how long a drain may wait at a boundary (a busy slot, a running ComfyUI job) before it stops the engine, or refuses with --fail-closed; 0 = unbounded except fail-closed safety checks")
 	minTurn := fs.Duration("min-turn", 0, "minimum turn: after the grant the card stays this run's for this long; no request drains it meanwhile, only a hold does (a game, a call, berth hold); 0 = off")
-	window := fs.String("window", "", "hours this run may hold the card in, HH:MM-HH:MM (24 h, may cross midnight, as in 23:00-07:00): outside them the run waits and berth status says when the window opens, and when it closes the lease drains at its boundary; over the entry's window")
+	window := fs.String("window", "", "hours this run may hold the card in, HH:MM-HH:MM (24 h, may cross midnight, as in 23:00-07:00): outside them the run waits for them (no deadline unless --wait sets one) and berth status says when the window opens, and when it closes the lease drains at its boundary; over the entry's window")
 	keyFile := fs.String("api-key-file", "", "absolute owner-private Unix file holding the bearer token; exclusive with --api-key-env")
 	idle := fs.Bool("exit-comfyui-idle", false, "release a ComfyUI session after its first completed job; with it set, --drain-max no longer bounds the wait: a session with no completed job holds the card")
 	after := fs.Duration("exit-comfyui-idle-after", 0, "with --exit-comfyui-idle: release an unused session after this interval; 0 = no deadline")

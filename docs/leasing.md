@@ -149,9 +149,9 @@ maintenance or before a VM takes it. Name the card by its name or its PCI addres
   once the card has been free for `idle_after`. Read
   [Run an engine whenever the card is free](gateway.md#run-an-engine-whenever-the-card-is-free).
 - **A window puts either on the clock.** `window = "23:00-07:00"` on the entry, or `berth run --window 23:00-07:00`,
-  holds the lease to those hours on the node's wall clock. It may cross midnight. Outside them a waiting lease keeps
-  its place in the queue and `berth status` says when the window opens, and a background engine is not started at
-  all. When the window closes its holder drains at its usual boundary, so a slot or a job boundary comes first and a
+  holds the lease to those hours on the node's wall clock. It may cross midnight. A lease that asks outside them
+  waits for them with no deadline (unless `--wait` sets one) and holds up nobody behind it. `berth status` says when
+  the window opens, and a background engine is not started at all. When the window closes its holder drains at its usual boundary, so a slot or a job boundary comes first and a
   request in flight finishes.
 
   ```toml
@@ -164,7 +164,7 @@ maintenance or before a VM takes it. Name the card by its name or its PCI addres
   berth run --as nightly --priority batch --window 23:00-07:00 -- ./finetune.sh
   ```
 
-  A waiter reads its hours in its reason ("next in line: outside its window 23:00-07:00; opens in 3h12m"), and
+  A waiter reads its hours in its reason ("outside its window 23:00-07:00; opens in 3h12m"), and
   `berth events` shows the close as the drain it is. A window needs a lease that can be asked back, so it goes with
   neither `--pinned` nor `--priority hold`.
 
