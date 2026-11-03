@@ -337,6 +337,43 @@ Two cards of the same rank go to the entry that comes first in `berth.toml`.
 - An engine berthd finds that has no entry in `berth.toml` belongs to no card here, so only the plain `/v1` URL
   reaches it.
 
+## Models on another machine
+
+A gateway can send a request for a model that no engine on its own node serves to another node on your
+tailnet. That node's gateway runs the request, and its berthd leases its own card. A lease never crosses a
+machine, so each node still decides alone what runs on its cards.
+
+On the other node (`galaxy`), publish its gateway to the tailnet and let it answer to that name:
+
+```bash
+tailscale serve --bg --https=9799 http://127.0.0.1:9799
+berth gateway --allow-host galaxy.tail2a8bb.ts.net
+berth key                     # prints galaxy's node key
+```
+
+On this node, save galaxy's key in an owner-private file (`chmod 600`) and name the peer in `berth.toml`:
+
+```toml
+[[peer]]
+name     = "galaxy"
+url      = "https://galaxy.tail2a8bb.ts.net:9799"
+key_file = "/home/you/.config/berth/peers/galaxy.key"
+```
+
+Restart the gateway. A plain `GET /v1/models` now also lists galaxy's models, with `owned_by` set to `galaxy`.
+A chat, completion or embedding request for one of them goes to galaxy under galaxy's key. The client's key
+is a credential for this node only and is not sent on.
+
+- This node answers first. A request goes to a peer only when no engine here serves the model, and then to the
+  first peer in `berth.toml` that lists it.
+- `/cards/CARD/v1` URLs stay on this node.
+- A peer's list is cached for 30 s. A peer that does not answer lists nothing, and this node's own models and
+  `404`s are unchanged.
+- A peer answers a list request with its own models only, never its peers' models. Two nodes that name each
+  other therefore cannot send a request back and forth.
+- The peer URL must be a `*.ts.net` name, a tailnet address (`100.64.0.0/10` or `fd7a:115c:a1e0::/48`) or
+  loopback. `berth config check` refuses any other host, because the peer's key goes with every request.
+
 ## Run an engine whenever the card is free
 
 Some work has no request to start it: a photo tagger on a schedule, an indexer, a transcription queue. Mark its

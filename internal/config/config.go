@@ -236,6 +236,7 @@ type Config struct {
 		Ports    []int    `toml:"discover_ports,omitempty" json:"discover_ports,omitempty" yaml:"discover_ports,omitempty"`
 	} `toml:"engines" json:"engines" yaml:"engines"`
 	Engine    []Engine        `toml:"engine,omitempty" json:"engine,omitempty" yaml:"engine,omitempty"`
+	Peer      []Peer          `toml:"peer,omitempty" json:"peer,omitempty" yaml:"peer,omitempty"`
 	Alerts    AlertsConfig    `toml:"alerts" json:"alerts" yaml:"alerts"`
 	Priority  PriorityConfig  `toml:"priority,omitempty" json:"priority" yaml:"priority"`
 	Claims    ClaimsConfig    `toml:"claims,omitempty" json:"claims" yaml:"claims"`
@@ -855,6 +856,16 @@ func (c *Config) Validate() error {
 	}
 	if c.Park.TTL.Duration < 0 {
 		errs = append(errs, errors.New("park.ttl must not be negative"))
+	}
+	peers := map[string]bool{}
+	for i, p := range c.Peer {
+		if err := validPeer(p); err != nil {
+			errs = append(errs, fmt.Errorf("peer[%d] %s: %w", i, p.Name, err))
+		}
+		if peers[p.Name] {
+			errs = append(errs, fmt.Errorf("peer[%d]: the name %s is already a peer", i, p.Name))
+		}
+		peers[p.Name] = true
 	}
 	return errors.Join(errs...)
 }

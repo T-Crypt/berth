@@ -8,6 +8,11 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Added
 
+- `[[peer]]` in `berth.toml`: another node's gateway on the tailnet, with its key in an owner-private file. A
+  request for a model no engine on this node serves goes to the first peer that lists it, and `GET /v1/models`
+  lists the peers' models under their names. Each node's berthd still leases only its own cards. The peer URL must
+  be a `*.ts.net` name, a tailnet address or loopback. docs/gateway.md has the section "Models on another machine".
+
 - Park admission keeps room for the RAM the card's holder and its waiters will take back. Berth reads each running
   engine's peak RAM from its scope and remembers the most any run of that engine held, so a ComfyUI render between
   stages, or a render waiting for the card, no longer lets a 30 GiB engine park into RAM the render needs a minute

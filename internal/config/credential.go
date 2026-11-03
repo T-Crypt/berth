@@ -26,10 +26,15 @@ func (e Engine) APIKey() (string, error) {
 	if e.APIKeyFile == "" {
 		return "", nil
 	}
-	if !filepath.IsAbs(e.APIKeyFile) {
+	return credentialFile(e.APIKeyFile)
+}
+
+// credentialFile reads the one token in an absolute, owner-private file.
+func credentialFile(path string) (string, error) {
+	if !filepath.IsAbs(path) {
 		return "", fmt.Errorf("credential file must use an absolute path")
 	}
-	f, err := openCredential(e.APIKeyFile)
+	f, err := openCredential(path)
 	if err != nil {
 		return "", fmt.Errorf("credential file: %w", err)
 	}

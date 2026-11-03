@@ -53,6 +53,7 @@ do not assume any engine is protected.
 | Apply a systemd slice's CPU/memory/swap policy to the engine itself | `berth run --as NAME --slice NAME.slice -- CMD`, or `slice = "NAME.slice"` in its engine entry (Linux user manager) |
 | Name an engine that discovery does not find | an `[[engine]]` entry in `berth.toml` with `type`, `url` and, for the gateway, `start` and `serves`. A Strata entry needs `type = "strata"` (and `whole_machine = true`), or its requests never reach the ledger |
 | Call a model on one card of several | the card's base URL: `http://127.0.0.1:9799/cards/gpu1/v1` (same key and model names) |
+| Reach models on another machine through this node's gateway | a `[[peer]]` entry (`name`, `url` = its `*.ts.net` gateway, `key_file` = its node key, mode 600); then plain `/v1` here lists and serves them |
 | Warm an engine before its first request | `GET /v1/berth/wait?model=M` on the gateway (blocks until it answers) |
 | Close a card to new work while the others serve | `berth cordon gpu1` (holders keep running; `berth uncordon gpu1` reopens it) |
 | Stop an engine Berth started | `berth stop ENGINE [--wait]` (normal drain, parked engines included; engines outlive a gateway restart) |

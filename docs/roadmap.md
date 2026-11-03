@@ -113,9 +113,14 @@ v0.4.1 lets a client choose the card on a node with several. Testers ran it firs
 - **The harbor.** A CLAIMS panel on the card tab, a rewritten About tab, and a header that no longer clips.
 - **Status after a stop.** An engine Berth stopped shows as offline, not unresponsive.
 
-## Next: v0.5, choosing the card from the harbor
+## Next: v0.5, the switchboard and models across machines
 
-- **A SWITCH tab in the harbor** with a card picker, as the gateway's `/gui/` page has.
+- **A SWITCH tab in the harbor** with a card picker, as the gateway's `/gui/` page has. On `next`.
+- **Peers.** A `[[peer]]` entry names another node's gateway on the tailnet. A model no engine here serves goes
+  to the first peer that lists it, and leases stay on each node. On `next`.
+- **The soonest node.** When several nodes serve a model, send the request to the one where it is warm or the
+  card is free, by the same reach order a node uses for its own cards.
+- **One board.** The harbor's SWITCH tab shows each peer's cards and engines beside this node's.
 
 Still to decide, with data from multi-card users:
 
