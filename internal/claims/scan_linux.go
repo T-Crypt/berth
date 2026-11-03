@@ -56,5 +56,11 @@ func readProc(pid int, buf []byte) (Proc, []byte, bool) {
 		p.Argv0 = filepath.Base(strings.ReplaceAll(args[0], `\`, "/")) // wine argv0 can be a Windows path
 		p.Cmdline = strings.Join(args, " ")
 	}
+	// The image path, for plain-path claim rules: /proc/pid/exe is a symlink
+	// to the binary. A process that exits mid-read, or whose binary was
+	// replaced, has none.
+	if target, err := os.Readlink("/proc/" + strconv.Itoa(pid) + "/exe"); err == nil {
+		p.Exe = target
+	}
 	return p, raw, true
 }

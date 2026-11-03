@@ -113,8 +113,10 @@
   builtin = false            # turn the built-in pack off
   ```
 
-  A rule can also match `exe` names (globs, `.exe` optional), a launcher `parent` (with
-  `parent_cmdline`, a regex that launcher's own command line must match too), and exclude with
+  A rule can also match `paths` (a list of plain executable paths, one per
+  line, no regex, compared exactly against the process's image path), `exe`
+  names (globs, `.exe` optional), a launcher `parent` (with `parent_cmdline`,
+  a regex that launcher's own command line must match too), and exclude with
   `not_cmdline`. The built-in Steam rule matches Steam's `reaper` only when it runs as
   `reaper SteamLaunch AppId=...`, so the REAPER DAW, also named `reaper`, holds nothing.
 - **`berth hold [--for 2h] [--reason game]`** takes the card for you. It is a pinned lease at

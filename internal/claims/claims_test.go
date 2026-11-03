@@ -80,6 +80,7 @@ func TestCompileRejects(t *testing.T) {
 		{Name: "x", Parent: []string{"reaper"}, ParentCmdline: "("},
 		{Name: "x", Exe: []string{"a"}, GPU: "card 1"},
 		{Name: "x", Exe: []string{"a"}, GPU: "gpu1", Action: ActionTrack},
+		{Name: "x", Paths: []string{"  "}},
 	} {
 		if err := r.Compile(); err == nil {
 			t.Errorf("%+v compiled", r)
@@ -236,6 +237,42 @@ func TestWatcherHoldsTheCardsItNames(t *testing.T) {
 			t.Errorf("gpu%d reports %+v, want trainer active", i, trainer)
 		}
 		cards[i].mu.Unlock()
+	}
+}
+
+// A plain-path rule names the game by its executable, no regex: the process
+// whose image path it names matches, case-insensitively, and nothing else —
+// not a sibling path, not the same name elsewhere, not an unreadable path.
+func TestPathsRuleMatchesTheNamedImage(t *testing.T) {
+	rs := compiled(t, Rule{Name: "pbz",
+		Paths:  []string{`D:\Games\!Offline Activation\Pub\PBZ\platform\steam\PBZ.exe`},
+		Action: ActionHold})
+	ps := []Proc{
+		{PID: 10, Name: "PBZ.exe", Cmdline: `D:\Games\!Offline Activation\Pub\PBZ\platform\steam\PBZ.exe`,
+			Exe: `D:\GAMES\!Offline Activation\Pub\PBZ\platform\steam\PBZ.exe`},
+		{PID: 20, Name: "PBZ.exe", Cmdline: `C:\temp\PBZ.exe`, Exe: `C:\temp\PBZ.exe`},
+		{PID: 30, Name: "PBZ.exe", Exe: `D:\Games\!Offline Activation\Pub\PBZ\platform\steam\PBZ.exe.old`},
+		{PID: 40, Name: "nopath.exe"},
+	}
+	m := Match(rs, ps)
+	if got := pids(m["pbz"]); len(got) != 1 || got[0] != 10 {
+		t.Fatalf("paths rule = %v, want [10]", got)
+	}
+	if len(m) != 1 {
+		t.Fatalf("unexpected matches: %v", m)
+	}
+}
+
+// Every matcher a rule gives must agree: a process whose image path the rule
+// names still loses to a cmdline the process does not have.
+func TestPathsAndsOtherMatchers(t *testing.T) {
+	rs := compiled(t, Rule{Name: "x", Paths: []string{`D:\Games\a.exe`}, Cmdline: `b\.exe`, Action: ActionHold})
+	m := Match(rs, []Proc{
+		{PID: 10, Exe: `D:\Games\a.exe`, Cmdline: `D:\Games\a.exe`},
+		{PID: 20, Exe: `D:\Games\a.exe`, Cmdline: `C:\tools\b.exe`},
+	})
+	if got := pids(m["x"]); len(got) != 1 || got[0] != 20 {
+		t.Fatalf("paths and cmdline must both agree: got %v, want [20]", got)
 	}
 }
 

@@ -41,8 +41,11 @@ const (
 
 // Rule is one [[claim]] entry, or a built-in.
 type Rule struct {
-	Name    string   // shown on the lease: "claim:<name>"
-	Exe     []string // globs on the process name (comm) or argv[0]'s base name; case-insensitive
+	Name string   // shown on the lease: "claim:<name>"
+	Exe  []string // globs on the process name (comm) or argv[0]'s base name; case-insensitive
+	// Paths are plain executable paths, one per line, no regex: a process
+	// whose image path equals one of them (case-insensitively) matches.
+	Paths   []string
 	Cmdline string   // regex on the full command line (on Windows: the executable's full path)
 	Not     string   // regex on the same; a match here excludes the process (a launcher beside its games)
 	Parent  []string // globs on any ancestor's name: the launcher (Steam's reaper, lutris-wrapper)
@@ -71,7 +74,8 @@ type Proc struct {
 	Start   uint64
 	Name    string // comm
 	Argv0   string // base name of argv[0]
-	Cmdline string // argv joined with spaces
+	Cmdline string // argv joined with spaces (on Windows: the executable's full path)
+	Exe     string // the executable's full image path, "" where it cannot be read
 	Parent  int
 }
 
@@ -125,8 +129,14 @@ func (r *Rule) Compile() error {
 			return fmt.Errorf("claim %q: %v", r.Name, err)
 		}
 	}
-	if len(r.Exe) == 0 && r.Cmdline == "" && len(r.Parent) == 0 {
-		return fmt.Errorf("claim %q: give exe, cmdline or parent to match on", r.Name)
+	if len(r.Exe) == 0 && len(r.Paths) == 0 && r.Cmdline == "" && len(r.Parent) == 0 {
+		return fmt.Errorf("claim %q: give exe, paths, cmdline or parent to match on", r.Name)
+	}
+	for i, p := range r.Paths {
+		r.Paths[i] = strings.TrimSpace(p)
+		if r.Paths[i] == "" {
+			return fmt.Errorf("claim %q: empty paths entry", r.Name)
+		}
 	}
 	for _, g := range append(append([]string{}, r.Exe...), r.Parent...) {
 		if _, err := path.Match(strings.ToLower(g), ""); err != nil {
@@ -169,6 +179,9 @@ func (r *Rule) Matches(p Proc, table map[int]Proc) bool {
 	if len(r.Exe) > 0 && !globAny(r.Exe, p.Name) && !globAny(r.Exe, p.Argv0) {
 		return false
 	}
+	if len(r.Paths) > 0 && !pathAny(r.Paths, p.Exe) {
+		return false
+	}
 	if r.cmdline != nil && !r.cmdline.MatchString(p.Cmdline) {
 		return false
 	}
@@ -196,6 +209,21 @@ func (r *Rule) Matches(p Proc, table map[int]Proc) bool {
 		}
 	}
 	return true
+}
+
+// pathAny reports whether the process's image path is one of the rule's
+// plain paths, case-insensitively (a Windows path's case is cosmetic). A
+// process whose image path is unknown matches no path.
+func pathAny(paths []string, exe string) bool {
+	if exe == "" {
+		return false
+	}
+	for _, p := range paths {
+		if strings.EqualFold(p, exe) {
+			return true
+		}
+	}
+	return false
 }
 
 func globAny(globs []string, name string) bool {

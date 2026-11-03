@@ -63,6 +63,37 @@ output_tokens = "my_generated_total"
 	}
 }
 
+// A claim names its games with plain paths, one per line, no regex: they
+// load and reach the compiled rule.
+func TestClaimPathsLoadAndCompile(t *testing.T) {
+	const pbz = `D:\Games\!Offline Activation\Pub\PBZ\platform\steam\PBZ.exe`
+	c, err := Load(write(t, fmt.Sprintf(`
+[[claim]]
+name  = "games"
+paths = ['%s']
+linger = "30s"
+`, pbz)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Claim) != 1 || c.Claim[0].Paths[0] != pbz {
+		t.Fatalf("claim = %+v", c.Claim)
+	}
+	rules, err := c.ClaimRules()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, r := range rules {
+		if r.Name == "games" && len(r.Paths) == 1 && r.Paths[0] == pbz {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("paths did not reach the compiled rule: %+v", rules)
+	}
+}
+
 func TestEveryProblemReportedAtOnce(t *testing.T) {
 	_, err := Load(write(t, `
 [metrics]

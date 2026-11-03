@@ -28,6 +28,7 @@ func Scan() ([]Proc, error) {
 		p := Proc{PID: pid, Parent: int(e.ParentProcessID), Name: windows.UTF16ToString(e.ExeFile[:])}
 		p.Argv0 = p.Name
 		p.Cmdline = imagePath(pid)
+		p.Exe = p.Cmdline // on Windows the command line read is the image path
 		p.Start = sys.StartTime(pid)
 		out = append(out, p)
 	})
