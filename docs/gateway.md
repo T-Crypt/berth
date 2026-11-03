@@ -676,6 +676,26 @@ pressure  = 10         # PSI "some avg10" that stops one parked copy (default 10
   `berth stop` or an eviction therefore kills it at once, so a parked engine
   never stays alive holding its weights in RAM after llama-swap unloads it.
 
+### Unpark now, or switch parking off
+
+Parking is automatic, but you decide when RAM matters more than a warm switch:
+
+```bash
+berth unpark ninfer      # drop one parked engine from RAM now (by name or family)
+berth unpark --all       # drop every parked engine
+berth park off           # stop parking: evicts what is parked, every later drain stops its engine
+berth park on            # parking back on
+berth park               # the switch, as now (--format json for scripts)
+```
+
+`berth unpark` only touches parked engines: one that is running on the card is
+`berth stop`'s. Each evicted engine stops through its own wrapper, as a ttl
+eviction stops it, and the next request starts it cold. Nothing parked is no
+error, so a long job that needs the machine's RAM (a two-hour ComfyUI video,
+say) can run `berth unpark --all` before it starts. The switch lives in the
+daemon: a restart of berthd starts with parking on. `berth status --format json`
+carries `park_off` while it is off.
+
 ## Engines that need the whole machine
 
 Some engines use more than the card. Strata fills the card and pins 40 GiB of RAM for its experts, and it

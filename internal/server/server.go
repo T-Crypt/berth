@@ -192,6 +192,10 @@ func handle(ctx context.Context, c net.Conn, n *node.Node, x Extras, log *slog.L
 		pairing(conn, log, first, x.Pair)
 	case proto.OpResume:
 		resume(conn, log, first, n)
+	case proto.OpUnpark:
+		reply(conn, log, proto.Msg{Op: proto.OpUnpark, Engine: first.Engine, Leases: n.Unpark(first.Engine)})
+	case proto.OpParkMode:
+		parkMode(conn, log, first, n)
 	case proto.OpSwitch:
 		switched(conn, log, first, n)
 	case proto.OpEvents:

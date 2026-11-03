@@ -486,6 +486,7 @@ type Broker struct {
 
 	verdicts map[string]verdict // loser engine key -> the juggle it lost
 	cordoned bool               // berth cordon: grant only holds
+	parkOff  bool               // berth park off: drains stop their engine, nothing parks
 	// tracked is the claim watcher's last scan: a process (and every child)
 	// a track claim names. Its card memory is the claim's, never a stowaway.
 	tracked    map[int]string

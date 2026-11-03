@@ -27,6 +27,17 @@ func resume(conn *proto.Conn, log *slog.Logger, req proto.Msg, n *node.Node) {
 	}
 }
 
+// parkMode answers OpParkMode: with ParkOff set it flips the switch (off
+// evicts what is parked), without it it only reports.
+func parkMode(conn *proto.Conn, log *slog.Logger, req proto.Msg, n *node.Node) {
+	ids := []string{}
+	if req.ParkOff != nil {
+		ids = n.SetParkOff(*req.ParkOff)
+	}
+	off := n.ParkOff()
+	reply(conn, log, proto.Msg{Op: proto.OpParkMode, ParkOff: &off, Leases: ids})
+}
+
 // switched answers OpSwitch: the engine's queued lease is now a person's
 // switch.
 func switched(conn *proto.Conn, log *slog.Logger, req proto.Msg, n *node.Node) {
