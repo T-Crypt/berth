@@ -294,7 +294,8 @@ type lease struct {
 	desc               map[ident]struct{} // descendants recorded while the lease ran
 	contested          uint64             // squatter bytes on the card when granted
 	peak               uint64             // most memory its processes were measured holding
-	ram                uint64             // parking or parked: its scope's anon + shmem at the last read; 0 = no reading
+	ram                uint64             // active, parking or parked: its scope's anon + shmem at the last read; 0 = no reading
+	ramPeak            uint64             // the most ram read while active this run
 	ramLearned         bool               // this park's reading is recorded as the engine's park cost
 	ramHot             uint64             // its scope's anon + shmem when the park was admitted, before any of it moved
 	releaseBaseline    uint64             // guarded probes: unattributed driver baseline before this lease loaded
@@ -902,6 +903,7 @@ func (b *Broker) Tick(ctx context.Context) {
 				b.log.Info("lease freed", "lease", key, "engine", l.engine)
 				b.counters.VRAMHandedOff += l.peak
 				b.foldFootprint(l, now)
+				b.foldRAMPeak(l)
 				b.emit(proto.Event{Kind: proto.EvFreed, Lease: key, Engine: l.engine, Bytes: l.peak})
 				b.lendFreed(l) // a holder lending to this lease takes its memory back now
 				delete(b.leases, key)
@@ -930,7 +932,7 @@ func (b *Broker) Tick(ctx context.Context) {
 		// card read that confirms the memory free, and the grace after which
 		// the waiter falls back to park or drain.
 		b.lendTick(key, l, now, read)
-		b.measureParkedRAM(l)
+		b.measureRAM(l)
 	}
 	b.claimed = claimed
 	b.closeWindows(now)

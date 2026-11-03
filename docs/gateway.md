@@ -602,6 +602,15 @@ pressure  = 10         # PSI "some avg10" that stops one parked copy (default 10
   VRAM footprint instead. Admission charges a park what the engine's last
   park added, the RAM it grew by while parking, because the RAM it held
   while it served was already out of the kernel's available figure.
+- **RAM the card's holder will take back.** A ComfyUI video render can hold
+  40 GiB of RAM, drop to a few GiB between stages, and climb again. Berth
+  reads each running engine's scope every tick and keeps its peak, and
+  remembers the most RAM any run of that engine held. Admission subtracts
+  what the holder, and every engine waiting for the card, is expected to
+  climb back to: its peak less what it holds now. A park that would only
+  fit while the render is between stages is refused, and the refusal names
+  the engine it kept the RAM for. An engine Berth has never measured books
+  nothing, so the first long render after an update is not covered.
 - **Adapters.** ComfyUI needs nothing: its unload keeps the models in RAM
   until memory pressure. vLLM needs `--enable-sleep-mode` and
   `VLLM_SERVER_DEV_MODE=1` in the start command. SGLang needs
