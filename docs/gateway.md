@@ -648,6 +648,10 @@ pressure  = 10         # PSI "some avg10" that stops one parked copy (default 10
   fit while the render is between stages is refused, and the refusal names
   the engine it kept the RAM for. An engine Berth has never measured books
   nothing, so the first long render after an update is not covered.
+- **First for the OOM killer.** On Linux, a parked engine's processes get `oom_score_adj` 1000 while they are
+  parked. If RAM still runs out, the kernel or earlyoom kills the parked copy, which only saves a reload, and not
+  the job on the card. A resume, or a client that wakes the engine directly, gives each process its own score back.
+  An evicted engine keeps 1000 while it stops.
 - **Adapters.** ComfyUI needs nothing: its unload keeps the models in RAM
   until memory pressure. vLLM needs `--enable-sleep-mode` and
   `VLLM_SERVER_DEV_MODE=1` in the start command. SGLang needs

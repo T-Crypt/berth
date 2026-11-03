@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/T-Crypt/berth/internal/park"
+	"github.com/T-Crypt/berth/internal/procs"
 	"github.com/T-Crypt/berth/internal/proto"
 )
 
@@ -173,6 +174,48 @@ func (b *Broker) measureRAM(l *lease) {
 	b.footprintDirty = true
 }
 
+// parkedOOMScoreAdj is the oom_score_adj a parked engine's processes get:
+// the highest, so when RAM runs out the kernel or earlyoom stops the copy
+// that only saves a reload, never the job running on the card.
+const parkedOOMScoreAdj = 1000
+
+// setOOMScoreAdj is Config.OOMScoreAdj's default. The package's tests,
+// whose process trees name made-up PIDs, swap it for a fake.
+var setOOMScoreAdj = procs.SetOOMScoreAdj
+
+// oomFirst raises every live process of a lease that just parked to
+// parkedOOMScoreAdj and keeps what each had, for oomRestore. A process
+// that will not take it (gone, another user's) keeps its own. b.mu must be
+// held.
+func (b *Broker) oomFirst(l *lease) {
+	l.oomWas = map[ident]int{}
+	ids := []ident{{pid: l.pid, start: l.pidStart}}
+	for id := range l.desc {
+		ids = append(ids, id)
+	}
+	for _, id := range ids {
+		// Without a start time the PID could be anyone's by now.
+		if id.pid <= 0 || id.start == 0 || b.tree.StartTime(id.pid) != id.start {
+			continue
+		}
+		if old, err := b.cfg.OOMScoreAdj(id.pid, parkedOOMScoreAdj); err == nil {
+			l.oomWas[id] = old
+		}
+	}
+}
+
+// oomRestore gives each raised process of a lease leaving parked its own
+// oom_score_adj back. An evicted lease keeps the raise: it is stopping.
+// b.mu must be held.
+func (b *Broker) oomRestore(l *lease) {
+	for id, old := range l.oomWas {
+		if b.tree.StartTime(id.pid) == id.start {
+			_, _ = b.cfg.OOMScoreAdj(id.pid, old)
+		}
+	}
+	l.oomWas = nil
+}
+
 // foldRAMPeak records a freed run's RAM peak under its engine name when it
 // is the most any run of that engine held. The most, not the last: a quick
 // image after a long video must not shrink what the next video is booked
@@ -298,6 +341,7 @@ func (b *Broker) parkingTick(key string, l *lease, now time.Time, read uint64) {
 		l.state = parked
 		l.parkedAt = now
 		l.parkedN = b.order()
+		b.oomFirst(l)
 		foot := b.footprintOf(l)
 		b.log.Info("parked", "lease", key, "engine", l.engine, "footprint", sizeHuman(foot), "residual", sizeHuman(l.used()))
 		b.emit(proto.Event{Kind: proto.EvParked, Lease: key, Engine: l.engine, Bytes: foot,
@@ -329,6 +373,7 @@ func (b *Broker) parkedTick(key string, l *lease, now time.Time) {
 	l.state = active
 	l.granted = now
 	l.grantedN = b.order()
+	b.oomRestore(l)
 	select {
 	case l.resumeCh <- struct{}{}:
 	default:
@@ -404,6 +449,7 @@ func (b *Broker) Resume(engine string, switched bool) error {
 		l.state = waiting
 		l.resumed = true
 		l.switched = switched
+		b.oomRestore(l)
 		l.lostTo, l.lostWhy = "", ""
 		l.arrived = b.now()
 		l.arrivedN = b.order()

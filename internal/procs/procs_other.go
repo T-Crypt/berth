@@ -5,6 +5,8 @@
 
 package procs
 
+import "errors"
+
 // System has no parent lookup on this platform, so only a
 // wrapper's direct child PID is attributed to its lease.
 type System struct{}
@@ -26,3 +28,6 @@ func Scope(int) (string, bool) { return "", false }
 
 // ScopeMem has no cgroups on this platform, so no scope is ever measured.
 func ScopeMem(string) (Mem, bool) { return Mem{}, false }
+
+// SetOOMScoreAdj has no OOM score on this platform.
+func SetOOMScoreAdj(int, int) (int, error) { return 0, errors.ErrUnsupported }

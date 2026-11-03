@@ -8,6 +8,10 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Added
 
+- On Linux, a parked engine is first in line for the OOM killer: its processes get `oom_score_adj` 1000 while
+  parked, and their own scores back on resume. When RAM runs out anyway, the kernel or earlyoom kills the parked
+  copy and not the render on the card.
+
 - `[[peer]]` in `berth.toml`: another node's gateway on the tailnet, with its key in an owner-private file. A
   request for a model no engine on this node serves goes to the first peer that lists it, and `GET /v1/models`
   lists the peers' models under their names. Each node's berthd still leases only its own cards. The peer URL must

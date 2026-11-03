@@ -6,6 +6,7 @@
 package procs
 
 import (
+	"errors"
 	"sync"
 	"time"
 	"unsafe"
@@ -100,3 +101,6 @@ func Scope(int) (string, bool) { return "", false }
 
 // ScopeMem has no cgroups on Windows, so no scope is ever measured.
 func ScopeMem(string) (Mem, bool) { return Mem{}, false }
+
+// SetOOMScoreAdj has no OOM score on Windows.
+func SetOOMScoreAdj(int, int) (int, error) { return 0, errors.ErrUnsupported }

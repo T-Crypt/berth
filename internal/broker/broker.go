@@ -188,6 +188,11 @@ type Config struct {
 	// far less than its VRAM footprint when its weights sit in page
 	// cache. nil = procs.ScopeMem; tests fake it.
 	ScopeMem func(scope string) (procs.Mem, bool)
+	// OOMScoreAdj sets a process's oom_score_adj and returns its old
+	// value (procs.SetOOMScoreAdj). A parked engine is raised to the top,
+	// so the kernel or earlyoom kills it before a running job. nil =
+	// procs.SetOOMScoreAdj; tests fake it.
+	OOMScoreAdj func(pid, adj int) (int, error)
 	// ContainerName resolves a container id to its runtime name (docker,
 	// then podman, inspect), or a Proxmox LXC id to its hostname; "" when
 	// none answers. Used to name a stowaway's container in the report;
@@ -296,6 +301,7 @@ type lease struct {
 	peak               uint64             // most memory its processes were measured holding
 	ram                uint64             // active, parking or parked: its scope's anon + shmem at the last read; 0 = no reading
 	ramPeak            uint64             // the most ram read while active this run
+	oomWas             map[ident]int      // parked: each process's oom_score_adj before the park raised it
 	ramLearned         bool               // this park's reading is recorded as the engine's park cost
 	ramHot             uint64             // its scope's anon + shmem when the park was admitted, before any of it moved
 	releaseBaseline    uint64             // guarded probes: unattributed driver baseline before this lease loaded
@@ -612,6 +618,9 @@ func New(cfg Config, probe gpu.Probe, tree procs.Tree) *Broker {
 	}
 	if cfg.MemAvailable == nil {
 		cfg.MemAvailable = func() uint64 { return host.MemAvailable("") }
+	}
+	if cfg.OOMScoreAdj == nil {
+		cfg.OOMScoreAdj = setOOMScoreAdj
 	}
 	if cfg.ScopeMem == nil {
 		cfg.ScopeMem = procs.ScopeMem
