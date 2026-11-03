@@ -40,6 +40,9 @@ func TestParkSwitchRoundTrip(t *testing.T) {
 	if code != ExitOK || !strings.Contains(out, "parking is off") || !b.ParkOff() {
 		t.Fatalf("park off: exit %d out %q err %q", code, out, errOut)
 	}
+	if _, out, _ = runCLI(t, "status", "--socket", sock); !strings.Contains(out, "park    off") {
+		t.Fatalf("status while parking is off: %q", out)
+	}
 	code, out, _ = runCLI(t, "park", "--socket", sock, "--format", "json")
 	var v struct {
 		Parking string   `json:"parking"`

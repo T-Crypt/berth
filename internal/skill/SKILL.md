@@ -57,6 +57,7 @@ do not assume any engine is protected.
 | Close a card to new work while the others serve | `berth cordon gpu1` (holders keep running; `berth uncordon gpu1` reopens it) |
 | Stop an engine Berth started | `berth stop ENGINE [--wait]` (normal drain, parked engines included; engines outlive a gateway restart) |
 | Bring a parked engine back | `berth resume ENGINE` (or just call its model through the gateway) |
+| Free the RAM a parked engine holds, before a RAM-heavy job | `berth unpark ENGINE` or `berth unpark --all` (nothing parked is no error); `berth park off` stops parking until `berth park on` |
 | Read a model's file ahead into RAM | `berth prefetch MODEL` (page cache only; nothing is reserved) |
 | Run the node and gateway at login | `berth service install [--gateway] [--harbor]` (`--dry-run` first) |
 
