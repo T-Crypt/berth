@@ -119,6 +119,14 @@
   a regex that launcher's own command line must match too), and exclude with
   `not_cmdline`. The built-in Steam rule matches Steam's `reaper` only when it runs as
   `reaper SteamLaunch AppId=...`, so the REAPER DAW, also named `reaper`, holds nothing.
+- **A changed file applies without a restart.** berthd stats berth.toml once a
+  second: a changed file is re-validated, and its claim rules, the brokers'
+  scheduling fields (priority order, juggle window, squat allow list, the
+  park budget) and the engine list apply at once. A file that fails to
+  validate keeps the applied config and says so on the event stream
+  (`config.rejected`); a good one notes `config.reloaded`. Start-up facts
+  need a restart: the scan and poll intervals, the metrics listener, the
+  suite's model roots, and the gateway's own copy of the config.
 - **`berth hold [--for 2h] [--reason game]`** takes the card for you. It is a pinned lease at
   the top priority, so nothing drains it, and it ends on Ctrl-C, after `--for`, or when the
   process dies. On a node with several cards it takes the first one. `--gpu gpu1` holds another

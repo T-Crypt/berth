@@ -314,3 +314,46 @@ func TestBuiltinWindows(t *testing.T) {
 		t.Errorf("unexpected matches: %v", m)
 	}
 }
+
+// A reload that removes a rule ends that rule's hold at once, and a rule the
+// reload adds arms on the next scan.
+func TestSetRulesCancelsGoneRulesAndArmsNewOnes(t *testing.T) {
+	fb := &fakeBroker{held: make(chan struct{}, 4)}
+	w := &Watcher{Cards: []Broker{fb}, Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Scan: func() ([]Proc, error) { return steam, nil }, holds: map[string]*hold{}}
+	w.Rules = compiled(t, Builtin()[0]) // steam-game
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	t0 := time.Now()
+
+	w.Tick(ctx, t0)
+	select {
+	case <-fb.held:
+	case <-time.After(time.Second):
+		t.Fatal("no hold requested")
+	}
+
+	// Reload: steam-game goes, a plain-path rule for a running game arrives.
+	procs := []Proc{{PID: 900, Name: "RyGT7.exe", Exe: `D:\SteamLibrary\Gran Turismo\GT 7\RyGT7\RyGT7.exe`}}
+	w.Scan = func() ([]Proc, error) { return procs, nil }
+	w.SetRules(compiled(t, Rule{Name: "gt7",
+		Paths:  []string{`D:\SteamLibrary\Gran Turismo\GT 7\RyGT7\RyGT7.exe`},
+		Action: ActionHold}))
+	if w.holds["steam-game"] != nil {
+		t.Fatal("a hold outlived its removed rule")
+	}
+	if len(fb.events) != 2 || fb.events[1] != proto.EvClaimEnded {
+		t.Fatalf("events = %v, want started then ended", fb.events)
+	}
+
+	// The new rule arms on the next scan.
+	w.Tick(ctx, t0.Add(time.Second))
+	select {
+	case <-fb.held:
+	case <-time.After(time.Second):
+		t.Fatal("no hold requested for the new rule")
+	}
+	if r := fb.asked[1]; r.Engine != "claim:gt7" {
+		t.Fatalf("second request = %+v", r)
+	}
+}

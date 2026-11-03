@@ -64,6 +64,15 @@ type Watcher struct {
 	held     map[string]heldRates // engine -> the rates its counters last measured
 }
 
+// SetEngines swaps in a reloaded engine list. The state of surviving engines
+// (health, the request log) is keyed by name and moves with them; a removed
+// engine's state ages out of the window on its own.
+func (w *Watcher) SetEngines(e []config.Engine) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.Engines = e
+}
+
 // all is the configured engines then the discovered ones. Called with w.mu held.
 func (w *Watcher) all() []config.Engine {
 	out := make([]config.Engine, 0, len(w.Engines)+len(w.found))

@@ -262,6 +262,11 @@ const (
 	// host driver. Each fires once per transition.
 	EvCardPassthrough = "card.passthrough"
 	EvCardReturned    = "card.returned"
+	// EvConfigReloaded: berth.toml changed and the daemon applied it; the
+	// detail says what moved. EvConfigRejected: the new file failed to
+	// validate; the applied config kept, the detail says why.
+	EvConfigReloaded = "config.reloaded"
+	EvConfigRejected = "config.rejected"
 )
 
 // Card states, the values Status.Passthrough.State takes. Normal is the

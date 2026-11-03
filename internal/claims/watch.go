@@ -147,6 +147,34 @@ func (w *Watcher) onCard(states []proto.Claim, i int) []proto.Claim {
 	return out
 }
 
+// SetRules swaps in a reloaded rule set: a hold whose rule is gone ends at
+// once (a hold without a rule is a hold outliving its reason), a surviving
+// rule keeps its hold, and a rule the reload adds arms on the next scan.
+func (w *Watcher) SetRules(rules []Rule) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for name, h := range w.holds {
+		if !ruleIn(rules, name) {
+			h.cancel()
+			delete(w.holds, name)
+			if len(w.Cards) > 0 {
+				w.Cards[0].Note(proto.Event{Kind: proto.EvClaimEnded, Engine: "claim:" + name,
+					Detail: "rule removed by a config reload"})
+			}
+		}
+	}
+	w.Rules = rules
+}
+
+func ruleIn(rules []Rule, name string) bool {
+	for i := range rules {
+		if rules[i].Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 // granted is the lease IDs the hold has been granted so far, comma
 // separated. Called with w.mu held.
 func (h *hold) granted() string {

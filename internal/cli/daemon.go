@@ -236,9 +236,10 @@ func runDaemon(c *Context) int {
 	}
 	// Claims: games and apps Berth does not run hold the card or have their
 	// memory named, from the process table. Validate already compiled them.
+	var cw *claims.Watcher
 	if rules, err := cfg.ClaimRules(); err == nil && len(rules) > 0 {
 		claimCards(rules, n, log)
-		cw := &claims.Watcher{Rules: rules, Every: cfg.Claims.Every.Duration, Cards: brokers, Log: log}
+		cw = &claims.Watcher{Rules: rules, Every: cfg.Claims.Every.Duration, Cards: brokers, Log: log}
 		go cw.Run(ctx)
 		hold, track := 0, 0
 		for _, r := range rules {
@@ -258,6 +259,61 @@ func runDaemon(c *Context) int {
 		if *cfg.Engines.Discover {
 			log.Info("discovering engines", "every", engines.DiscoveryEvery, "hosts", cfg.Engines.Hosts, "extra_ports", cfg.Engines.Ports)
 		}
+	}
+	// berth.toml applies without a restart: a changed file re-arms the claim
+	// rules, the brokers' scheduling fields and the engine list. A file that
+	// fails to validate keeps the applied config and says so on the event
+	// stream. Start-up facts stay put: the scan and poll intervals, the
+	// metrics listener, the suite's model roots, and the gateway's own copy.
+	if *cfgPath != "" {
+		squatterAllow := func(cfg config.Config) []string {
+			l := cfg.Squatters.Allow
+			if *allow != "" {
+				l = splitList(*allow)
+			}
+			return l
+		}
+		rel := &configReloader{
+			path:   *cfgPath,
+			merged: suite.Merged,
+			apply: func(cfg config.Config) string {
+				nrules := 0
+				if rules, err := cfg.ClaimRules(); err == nil {
+					nrules = len(rules)
+					claimCards(rules, n, log) // a reloaded rule's gpu resolves like at start-up
+					if cw == nil {            // a file that names claims for the first time arms them
+						if nrules > 0 {
+							cw = &claims.Watcher{Rules: rules, Every: cfg.Claims.Every.Duration, Cards: brokers, Log: log}
+							go cw.Run(ctx)
+						}
+					} else {
+						cw.SetRules(rules) // a reload that removes every rule ends every hold
+					}
+				}
+				live := broker.LiveConfig{
+					Order:           cfg.Priority.Order,
+					JuggleWindow:    cfg.Priority.JuggleWindow.Duration,
+					Allow:           squatterAllow(cfg),
+					Comfy:           comfyEngines(cfg),
+					ParkFloor:       parkFloorBytes(cfg, *headroomMib),
+					ParkMax:         parkMaxBytes(cfg),
+					ParkTTL:         cfg.ParkTTL(),
+					ParkResidualMax: cfg.ParkResidualMax(),
+					ParkPressure:    cfg.ParkPressure(),
+				}
+				for _, cd := range cards {
+					cd.B.SetLiveConfig(live)
+				}
+				if watcher != nil {
+					watcher.SetEngines(cfg.Engine)
+				}
+				return fmt.Sprintf("engines %d, claim rules %d", len(cfg.Engine), nrules)
+			},
+			kind:  func(k, d string) { first.Note(proto.Event{Kind: k, Detail: d}) },
+			log:   log,
+			every: reloadEvery,
+		}
+		go rel.Run(ctx)
 	}
 	logComfyArmed(log, comfy)
 	if cfg.Metrics.Listen != "" {
