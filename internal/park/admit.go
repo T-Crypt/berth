@@ -112,6 +112,7 @@ type Ledger struct {
 type Totals struct {
 	Parking uint64 // admitted parks that have not landed yet
 	Parked  uint64 // what parked engines hold
+	ToCome  uint64 // what running and waiting engines are expected to climb back to
 }
 
 // Set records card's figures; the card's broker calls it every tick.
@@ -143,15 +144,16 @@ func (l *Ledger) others(card string) Totals {
 		if c != card {
 			t.Parking += ct.Parking
 			t.Parked += ct.Parked
+			t.ToCome += ct.ToCome
 		}
 	}
 	return t
 }
 
 // Admit decides a park of cost on card, whose own figures are mine, against
-// b with the other cards added: their parking RAM comes off Available and
-// their parked RAM goes onto Parked. An admitted park counts as parking on
-// card at once.
+// b with the other cards added: their parking RAM and the RAM their engines
+// climb back to come off Available, and their parked RAM goes onto Parked.
+// An admitted park counts as parking on card at once.
 func (l *Ledger) Admit(card string, mine Totals, b Budget, cost uint64) (bool, string) {
 	if l == nil {
 		return Admit(b, cost)
@@ -159,14 +161,15 @@ func (l *Ledger) Admit(card string, mine Totals, b Budget, cost uint64) (bool, s
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	o := l.others(card)
-	b.Available -= min(b.Available, o.Parking)
+	b.Available -= min(b.Available, o.Parking+o.ToCome)
 	b.Parked += o.Parked
 	ok, why := Admit(b, cost)
 	if ok {
 		if l.cards == nil {
 			l.cards = map[string]Totals{}
 		}
-		l.cards[card] = Totals{Parking: mine.Parking + cost, Parked: mine.Parked}
+		mine.Parking += cost
+		l.cards[card] = mine
 	}
 	return ok, why
 }

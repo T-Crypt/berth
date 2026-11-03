@@ -14,6 +14,8 @@ package broker
 import (
 	"cmp"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -112,10 +114,12 @@ func (b *Broker) parkCost(l *lease) uint64 {
 }
 
 // parkTotals is this card's parking RAM for the machine's ledger: the
-// expected cost of every park in flight and what parked engines hold.
-// b.mu must be held.
+// expected cost of every park in flight, what parked engines hold, and the
+// RAM its holders and waiters are expected to climb back to. b.mu must be
+// held.
 func (b *Broker) parkTotals() park.Totals {
 	t := park.Totals{Parked: b.parkedRAM()}
+	t.ToCome, _, _ = b.ramToCome()
 	for _, l := range b.leases {
 		if l.state == parking {
 			t.Parking += b.parkCost(l)
@@ -136,14 +140,15 @@ func (b *Broker) parkedRAM() uint64 {
 	return n
 }
 
-// measureParkedRAM reads a parking or parked lease's scope, and records
-// the first parked reading as its engine's next park cost: the reading
-// moves a little every tick, and the footprint file is written once per
-// park, not every poll. File pages are left out: the kernel counts page
-// cache as available and reclaims it itself. Called with b.mu held, from
-// Tick.
-func (b *Broker) measureParkedRAM(l *lease) {
-	if (l.state != parking && l.state != parked) || l.scope == "" {
+// measureRAM reads an active, parking or parked lease's scope. An active
+// run keeps its peak, which a park beside it must leave room for. A parked
+// run records its first reading as its engine's next park cost: the
+// reading moves a little every tick, and the footprint file is written
+// once per park, not every poll. File pages are left out: the kernel
+// counts page cache as available and reclaims it itself. Called with b.mu
+// held, from Tick.
+func (b *Broker) measureRAM(l *lease) {
+	if (l.state != active && l.state != parking && l.state != parked) || l.scope == "" {
 		return
 	}
 	m, ok := b.cfg.ScopeMem(l.scope)
@@ -151,6 +156,10 @@ func (b *Broker) measureParkedRAM(l *lease) {
 		return
 	}
 	l.ram = m.Anon + m.Shmem
+	if l.state == active {
+		l.ramPeak = max(l.ramPeak, l.ram)
+		return
+	}
 	if l.state != parked || l.ram == 0 || l.ramLearned {
 		return
 	}
@@ -162,6 +171,48 @@ func (b *Broker) measureParkedRAM(l *lease) {
 	}
 	f.ParkedRAM, f.ParkBase = l.ram, l.ramHot
 	b.footprintDirty = true
+}
+
+// foldRAMPeak records a freed run's RAM peak under its engine name when it
+// is the most any run of that engine held. The most, not the last: a quick
+// image after a long video must not shrink what the next video is booked
+// at. b.mu must be held.
+func (b *Broker) foldRAMPeak(l *lease) {
+	f := b.footprints[l.engine]
+	if l.ramPeak == 0 || (f != nil && f.RAMPeak >= l.ramPeak) {
+		return
+	}
+	if f == nil {
+		f = &engineFootprint{}
+		b.footprints[l.engine] = f
+	}
+	f.RAMPeak = l.ramPeak
+	b.footprintDirty = true
+}
+
+// ramToCome is the RAM this card's holders and waiters are expected to
+// take beyond what they hold now: each one's peak (this run's, or the most
+// any run of its engine held) less its last reading. A render between
+// stages, or one waiting for the card a park is about to free, holds
+// little now and climbs back. top names the largest share, for the
+// refusal line. b.mu must be held.
+func (b *Broker) ramToCome() (total uint64, top string, topPeak uint64) {
+	var topBytes uint64
+	holders := slices.DeleteFunc(slices.Collect(maps.Values(b.leases)), func(l *lease) bool { return l.state != active })
+	for _, l := range append(holders, b.queue...) {
+		peak := l.ramPeak
+		if f := b.footprints[l.engine]; f != nil {
+			peak = max(peak, f.RAMPeak)
+		}
+		if peak <= l.ram {
+			continue
+		}
+		total += peak - l.ram
+		if peak-l.ram > topBytes {
+			topBytes, top, topPeak = peak-l.ram, l.engine, peak
+		}
+	}
+	return total, top, topPeak
 }
 
 // Park admits a draining lease's engine into RAM parking: park.Admit runs
@@ -202,9 +253,11 @@ func (b *Broker) Park(id string) (bool, string) {
 	// A park still in flight has not landed in MemAvailable yet: two
 	// parks at once, on this card or another, must not both claim the
 	// same free RAM. The ledger adds the other cards.
+	// The RAM a holder or waiter climbs back to is booked the same way.
 	mine := b.parkTotals()
+	_, top, topPeak := b.ramToCome()
 	avail := b.cfg.MemAvailable()
-	avail -= min(avail, mine.Parking)
+	avail -= min(avail, mine.Parking+mine.ToCome)
 	cost := b.parkCost(l)
 	ok, why := b.cfg.Ledger.Admit(b.cfg.Card, mine, park.Budget{
 		Available: avail,
@@ -212,6 +265,9 @@ func (b *Broker) Park(id string) (bool, string) {
 		Parked:    mine.Parked,
 		Max:       b.cfg.ParkMax,
 	}, cost)
+	if !ok && mine.ToCome > 0 {
+		why += fmt.Sprintf("; %s more is kept for %s, which has held %s", sizeHuman(mine.ToCome), top, sizeHuman(topPeak))
+	}
 	if !ok {
 		b.emit(proto.Event{Kind: proto.EvParkRefused, Lease: id, Engine: l.engine, Bytes: cost, Detail: why})
 		return false, why

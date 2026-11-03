@@ -8,6 +8,11 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Added
 
+- Park admission keeps room for the RAM the card's holder and its waiters will take back. Berth reads each running
+  engine's peak RAM from its scope and remembers the most any run of that engine held, so a ComfyUI render between
+  stages, or a render waiting for the card, no longer lets a 30 GiB engine park into RAM the render needs a minute
+  later. The refusal names the engine the RAM is kept for.
+
 - `berth unpark ENGINE` and `berth unpark --all`: drop a parked engine from RAM now instead of at its ttl, for a job
   that needs the machine's RAM. Only parked engines are touched; nothing parked is no error. `berth park off|on|status`
   switches RAM parking off for every card (evicting what is parked) and back on; `berth status` carries `park_off`
