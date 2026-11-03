@@ -90,8 +90,17 @@ func runGateway(c *Context) int {
 	if err != nil {
 		return c.fail(Systemf("api key: %v", err))
 	}
+	var peers []gateway.Peer
+	for _, p := range cfg.Peer {
+		k, err := p.Key()
+		if err != nil {
+			return c.fail(Failf("peer %s: key_file %s: %v", p.Name, p.KeyFile, err))
+		}
+		peers = append(peers, gateway.Peer{Name: p.Name, URL: p.URL, Key: k})
+		log.Info("peer", "name", p.Name, "url", p.URL)
+	}
 	g := &gateway.Gateway{Socket: *sock, Engines: cfg.Engine, Ready: *ready, Key: key, Log: log, HeadroomFloor: *headroomMiB << 20,
-		AllowHosts: allow, StateFile: defaultStateFile("gateway-engines.json"), Harbor: harborURL,
+		AllowHosts: allow, StateFile: defaultStateFile("gateway-engines.json"), Harbor: harborURL, Peers: peers,
 		CostFile: defaultStateFile("swapcost.json"), DeferredFile: defaultStateFile("comfyui-queue.json"), ConfigPath: *cfgPath}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
