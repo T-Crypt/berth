@@ -92,6 +92,22 @@ func ScopeMem(scope string) (Mem, bool) {
 	return scopeMem(bytes.NewReader(b))
 }
 
+// SetOOMScoreAdj sets a process's oom_score_adj and returns the value it
+// had. A process may raise its own user's processes and lower them back to
+// where they were without privilege.
+func SetOOMScoreAdj(pid, adj int) (int, error) {
+	path := "/proc/" + strconv.Itoa(pid) + "/oom_score_adj"
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	old, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	if err != nil {
+		return 0, err
+	}
+	return old, os.WriteFile(path, []byte(strconv.Itoa(adj)), 0)
+}
+
 // statFields reads /proc/<pid>/stat once: the command name inside the
 // parenthesis, and the fields after it, so index 0 is field 3 (state). The
 // name is "(comm)" and may contain spaces or parens, so the split starts
