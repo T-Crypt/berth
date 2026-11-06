@@ -63,6 +63,11 @@ has a matching GitHub release whose body comes from its section below.
   Berth or its supervisor stopped already does. One killed by SIGKILL or any other signal still shows as
   unresponsive, as a crash does.
 
+- berthd logs a refused re-attach with the engine, the PID and the reason. Before, the reason went only to the
+  wrapper's stderr, so an engine that lost berthd and never came back left no trace in the daemon's log. A request
+  that cannot fit because an unleased run of the same engine holds the card now says so in its refusal, with the
+  run's PID, so a client that retries can stop the orphan instead of asking again forever (#300).
+
 ## [v0.4.1] - 2026-11-01
 
 Each card on a machine with several now has its own gateway URL, `/cards/CARD/v1`, and one model can be served
