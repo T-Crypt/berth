@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1322,6 +1323,28 @@ func (b *Broker) squatBytes() uint64 {
 	return b.boundSquat(n)
 }
 
+// ownSquat names the squatters that are an unleased run of engine itself,
+// the one wait that cannot end by waiting (#300), or "" when there are none.
+func (b *Broker) ownSquat(engine string) string {
+	var n uint64
+	var pids []int
+	for _, s := range b.squatters {
+		if s.run == engine {
+			n += s.proc.Used
+			pids = append(pids, s.proc.PID)
+		}
+	}
+	if len(pids) == 0 {
+		return ""
+	}
+	slices.Sort(pids)
+	ids := make([]string, len(pids))
+	for i, p := range pids {
+		ids[i] = strconv.Itoa(p)
+	}
+	return fmt.Sprintf(", %d MiB of that is an unleased %s (pid %s)", n/gpu.MiB, engine, strings.Join(ids, ", "))
+}
+
 // boundSquat caps the squatter sum at the card's used figure. Per-process
 // readings can overcount: on Windows the counter reports a process's
 // committed reservation, which the driver can list far above what the card
@@ -1415,7 +1438,7 @@ func (b *Broker) evaluate(w *lease, now time.Time) (bool, string, []*lease) {
 			reason := fmt.Sprintf("needs %d MiB; at most %d MiB can be freed",
 				w.needs/gpu.MiB, budget.avail()/gpu.MiB)
 			if budget.squat > 0 {
-				reason += fmt.Sprintf("; squatters hold %d MiB", budget.squat/gpu.MiB)
+				reason += fmt.Sprintf("; squatters hold %d MiB", budget.squat/gpu.MiB) + b.ownSquat(w.engine)
 			}
 			if budget.claimed > 0 {
 				reason += fmt.Sprintf("; claims hold %d MiB", budget.claimed/gpu.MiB)
@@ -1560,7 +1583,7 @@ func (b *Broker) evaluate(w *lease, now time.Time) (bool, string, []*lease) {
 		reason += "; " + keptWhy
 	}
 	if squat > 0 {
-		reason += fmt.Sprintf("; squatters hold %d MiB", squat/gpu.MiB)
+		reason += fmt.Sprintf("; squatters hold %d MiB", squat/gpu.MiB) + b.ownSquat(w.engine)
 	}
 	if budget.claimed > 0 {
 		reason += fmt.Sprintf("; claims hold %d MiB", budget.claimed/gpu.MiB)
@@ -1700,7 +1723,12 @@ func (b *Broker) Reattach(r Request, pid int, start uint64) (*Lease, error) {
 }
 
 // reattach is Reattach under a lease ID the caller picked.
-func (b *Broker) reattach(id string, r Request, pid int, start uint64) (*Lease, error) {
+func (b *Broker) reattach(id string, r Request, pid int, start uint64) (_ *Lease, err error) {
+	defer func() {
+		if err != nil {
+			b.log.Warn("re-attach refused", "engine", r.Engine, "pid", pid, "reason", err)
+		}
+	}()
 	if pid <= 0 || start == 0 || b.tree.StartTime(pid) != start {
 		return nil, fmt.Errorf("%w: pid %d is not the process that started as %s", ErrRefused, pid, r.Engine)
 	}
