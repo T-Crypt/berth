@@ -266,18 +266,31 @@ name the engine:
 ```sh
 curl -s http://127.0.0.1:9799/v1/berth/switch -H "Authorization: Bearer $(berth key)" -d '{"engine":"strata"}'
 curl -s http://127.0.0.1:9799/v1/berth/stop   -H "Authorization: Bearer $(berth key)" -d '{"engine":"strata"}'
+curl -s http://127.0.0.1:9799/v1/berth/load   -H "Authorization: Bearer $(berth key)" -d '{"engine":"llama-swap","model":"qwen3.6-35b-a3b"}'
+curl -s http://127.0.0.1:9799/v1/berth/batch  -H "Authorization: Bearer $(berth key)" -d '{"engine":"comfyui","grace":30}'
 ```
+
+- **Batch** is `berth batch` on the network (see [leasing](leasing.md), "A batch"): `202` once berthd has the batch,
+  and an engine with a `start` command is switched to as **Switch** does, so one call comes before the jobs.
+  `"grace"` and `"max"` are seconds (absent: 30 and 14400). `{"engine":"comfyui","end":true}` ends it, and a `409`
+  says there was none. An engine not in `berth.toml` is a `404`.
 
 - **Switch** answers `202` once the start is under way, and starts the engine under a lease the same way a request
   would: the holder drains at its boundary first. It takes any engine with a `start` command; another is a `404`.
 - **Stop** answers `202` with the leases berthd asked to give the card back, the same drain as `berth stop`. A
   pinned holder (a game, a render, `berth hold`) is a `409`: Berth never stops it from the network. An engine that is
   not running under a lease is a `409` too, and berthd not answering is a `503`.
+- **Load** answers `202` once llama-swap is asked for the model, by a `GET` of `/upstream/MODEL/health` on it:
+  llama-swap has no load call, and any request there starts the model. It takes an engine of `type = "llama-swap"`
+  and a model that engine lists; another engine is a `409` and an unlisted model a `404`. A second load of the same
+  model while one is under way joins it.
 
 `GET /v1/berth/board` is the node in one read, for a board or a script: the card (who holds it, and whether it is
 free, held, draining, in a VM or failing its probe), then every engine in `berth.toml` with its state (up, offline,
 waiting, starting, failed), whether it can be switched to (`launch`) or stopped (`stoppable`), and its models with a
-`loaded` flag from the engine's own reader. `cards` lists every card the node governs, each with its name
+`loaded` flag from the engine's own reader (for llama-swap, its `/running` read with the board, so a load never reads cold
+between llama-swap's answer and berthd's next read) and a `loading` flag while a load is under way or the engine reports the
+model starting. Each engine also carries its `type`. `cards` lists every card the node governs, each with its name
 on the node (`card`, such as `gpu1`), its base URL on this gateway (`base`, `/cards/gpu1/v1`), `cordoned` when
 `berth cordon` closed it, and the holders on that card alone. Each engine names the cards its entry runs on
 (`cards`), so a board for several cards can put each engine under its card.
@@ -330,6 +343,43 @@ Two cards of the same rank go to the entry that comes first in `berth.toml`.
 - An engine berthd finds that has no entry in `berth.toml` belongs to no card here, so only the plain `/v1` URL
   reaches it.
 
+## Models on another machine
+
+A gateway can send a request for a model that no engine on its own node serves to another node on your
+tailnet. That node's gateway runs the request, and its berthd leases its own card. A lease never crosses a
+machine, so each node still decides alone what runs on its cards.
+
+On the other node (`galaxy`), publish its gateway to the tailnet and let it answer to that name:
+
+```bash
+tailscale serve --bg --https=9799 http://127.0.0.1:9799
+berth gateway --allow-host galaxy.tail2a8bb.ts.net
+berth key                     # prints galaxy's node key
+```
+
+On this node, save galaxy's key in an owner-private file (`chmod 600`) and name the peer in `berth.toml`:
+
+```toml
+[[peer]]
+name     = "galaxy"
+url      = "https://galaxy.tail2a8bb.ts.net:9799"
+key_file = "/home/you/.config/berth/peers/galaxy.key"
+```
+
+Restart the gateway. A plain `GET /v1/models` now also lists galaxy's models, with `owned_by` set to `galaxy`.
+A chat, completion or embedding request for one of them goes to galaxy under galaxy's key. The client's key
+is a credential for this node only and is not sent on.
+
+- This node answers first. A request goes to a peer only when no engine here serves the model, and then to the
+  first peer in `berth.toml` that lists it.
+- `/cards/CARD/v1` URLs stay on this node.
+- A peer's list is cached for 30 s. A peer that does not answer lists nothing, and this node's own models and
+  `404`s are unchanged.
+- A peer answers a list request with its own models only, never its peers' models. Two nodes that name each
+  other therefore cannot send a request back and forth.
+- The peer URL must be a `*.ts.net` name, a tailnet address (`100.64.0.0/10` or `fd7a:115c:a1e0::/48`) or
+  loopback. `berth config check` refuses any other host, because the peer's key goes with every request.
+
 ## Run an engine whenever the card is free
 
 Some work has no request to start it: a photo tagger on a schedule, an indexer, a transcription queue. Mark its
@@ -346,12 +396,16 @@ container  = "immich-pet-tagger"   # the drain runs docker stop
 needs_mib  = 2560
 background = true
 idle_after = "60s"                 # how long the card must stay free first (default 60 s)
+window     = "23:00-07:00"         # optional: hold the engine to these hours
 ```
 
 - **Free** means the card serves this machine (not in a VM, its probe answering), and no lease, waiter, stowaway or
   running claimed app is on it. A parked engine counts as holding it, so a background start never evicts what you
   parked in RAM.
 - Once the card has been free for `idle_after`, the gateway starts the first background engine in `berth.toml`.
+- `window = "23:00-07:00"` holds the engine to set hours, so the gateway never starts it outside them and a window
+  close drains one that is already running at its boundary. Read:
+  [Run work when you're away or power is cheap](leasing.md#run-work-when-youre-away-or-power-is-cheap).
 - Any other request drains it, as it drains any `batch` lease. It stays out until the card has been free for
   `idle_after` again, so a game, a `berth hold` or an engine that stays loaded keeps it out for as long as they last.
 - A desktop app with some card memory (a browser, a terminal) is a stowaway, so on a desktop the card is seldom
@@ -438,6 +492,14 @@ Point the bookmark (or a home-page tile) at `http://127.0.0.1:9796/gui/comfyui` 
 - On a node with several cards, each row in `/gui/` also names its card. With one engine per card for a model
   ([One URL per card](#one-url-per-card)), the row you launch is the card you pick.
 
+There is one switchboard: the harbor's SWITCH tab. `berth gateway --harbor URL` sends this index to it. `GET /gui/` and
+`GET /` then answer 302 to `URL/#switch`, so an old bookmark of the engine list lands on the tab. Name the origin the
+browser reaches the harbor at, the address `berth pair --url` takes (`https://box.tailnet.ts.net:9798` for a harbor
+behind `tailscale serve`). A redirect only hands the browser that address, so a URL it cannot reach is a page that
+never loads. `/gui/<engine>`, `/gui/<engine>/state`, `POST /gui/<engine>/wake` and `/gui/state` keep answering, so an
+engine's own bookmark still opens its wake page, and the Host rule below covers those URLs too. Without `--harbor`,
+`/gui/` is the index page and `/` redirects to it.
+
 <p align="center"><img src="https://raw.githubusercontent.com/T-Crypt/berth/main/assets/preview-wake.png" alt="The gateway's wake page for comfyui: comfyui is offline and the card is free, with a Launch comfyui button" width="560"></p>
 
 A start never runs two engines on the card at once. Berth drains the holder only at its boundary: llama-swap once its
@@ -446,9 +508,10 @@ once its `/slots` show idle (`drain_slots`, below). A pinned holder (a game, a r
 the page says so and the start waits until it ends.
 
 The wake page needs no API key: it can only start an engine you gave a `start` command. It listens on
-loopback, accepts loopback Host names plus the gateway's `--allow-host` names (for `tailscale serve` in
-front), and takes a start only as a POST from its own page, so another site cannot make a visitor's
-browser drain the card.
+loopback and accepts only a loopback Host or a name in the gateway's `--allow-host` list, so a wake page you
+open by name needs that name in `--allow-host` and its own forwarder to `--gui-listen` (one `tailscale serve`
+target per port). Any other Host gets 403. It takes a start only as a POST from its own page, so another
+site cannot make a visitor's browser drain the card.
 
 ## Run an engine under a resource-policy slice
 
@@ -582,6 +645,19 @@ pressure  = 10         # PSI "some avg10" that stops one parked copy (default 10
   VRAM footprint instead. Admission charges a park what the engine's last
   park added, the RAM it grew by while parking, because the RAM it held
   while it served was already out of the kernel's available figure.
+- **RAM the card's holder will take back.** A ComfyUI video render can hold
+  40 GiB of RAM, drop to a few GiB between stages, and climb again. Berth
+  reads each running engine's scope every tick and keeps its peak, and
+  remembers the most RAM any run of that engine held. Admission subtracts
+  what the holder, and every engine waiting for the card, is expected to
+  climb back to: its peak less what it holds now. A park that would only
+  fit while the render is between stages is refused, and the refusal names
+  the engine it kept the RAM for. An engine Berth has never measured books
+  nothing, so the first long render after an update is not covered.
+- **First for the OOM killer.** On Linux, a parked engine's processes get `oom_score_adj` 1000 while they are
+  parked. If RAM still runs out, the kernel or earlyoom kills the parked copy, which only saves a reload, and not
+  the job on the card. A resume, or a client that wakes the engine directly, gives each process its own score back.
+  An evicted engine keeps 1000 while it stops.
 - **Adapters.** ComfyUI needs nothing: its unload keeps the models in RAM
   until memory pressure. vLLM needs `--enable-sleep-mode` and
   `VLLM_SERVER_DEV_MODE=1` in the start command. SGLang needs
@@ -655,6 +731,26 @@ pressure  = 10         # PSI "some avg10" that stops one parked copy (default 10
   engine cannot act on SIGTERM, because its CUDA calls block. A stop signal,
   `berth stop` or an eviction therefore kills it at once, so a parked engine
   never stays alive holding its weights in RAM after llama-swap unloads it.
+
+### Unpark now, or switch parking off
+
+Parking is automatic, but you decide when RAM matters more than a warm switch:
+
+```bash
+berth unpark ninfer      # drop one parked engine from RAM now (by name or family)
+berth unpark --all       # drop every parked engine
+berth park off           # stop parking: evicts what is parked, every later drain stops its engine
+berth park on            # parking back on
+berth park               # the switch, as now (--format json for scripts)
+```
+
+`berth unpark` only touches parked engines: one that is running on the card is
+`berth stop`'s. Each evicted engine stops through its own wrapper, as a ttl
+eviction stops it, and the next request starts it cold. Nothing parked is no
+error, so a long job that needs the machine's RAM (a two-hour ComfyUI video,
+say) can run `berth unpark --all` before it starts. The switch lives in the
+daemon: a restart of berthd starts with parking on. `berth status --format json`
+carries `park_off` while it is off.
 
 ## Engines that need the whole machine
 

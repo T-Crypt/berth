@@ -28,6 +28,7 @@
     </div>
     <nav class="tabs" aria-label="sections">
       <button class="tab" id="tab-harbor" type="button" aria-current="page"><span class="si tab-si" aria-hidden="true"></span><span class="tab-label">CARD</span></button>
+      <button class="tab" id="tab-switch" type="button"><span class="si tab-si" aria-hidden="true"></span><span class="tab-label">SWITCH</span></button>
       <button class="tab" id="tab-engines" type="button"><span class="si tab-si" aria-hidden="true"></span><span class="tab-label">ENGINES <span class="tab-long">&amp; REQUESTS</span></span></button>
       <button class="tab" id="tab-about" type="button"><span class="si tab-si" aria-hidden="true"></span><span class="tab-label">ABOUT</span></button>
     </nav>
@@ -192,6 +193,26 @@
       </div>
     </section>
 
+    <section id="panel-switch" class="panel-group" hidden aria-label="switch the card">
+      <nav class="subnav" id="subnav-switch" aria-label="switch sections"></nav>
+      <section class="panel" id="sec-switch-cards" aria-label="the cards">
+        <div class="panel-head">
+          <h2 class="panel-title">CARDS</h2>
+          <span class="panel-meta" id="sw-meta">not read yet</span>
+        </div>
+        <div class="squatter-list" id="sw-cards"></div>
+      </section>
+      <section class="panel" id="sec-switch-engines" aria-label="switch the card to an engine">
+        <div class="panel-head">
+          <h2 class="panel-title">ENGINES</h2>
+          <span class="panel-meta">switch or stop</span>
+        </div>
+        <div id="sw-picker"></div>
+        <div id="sw-note"></div>
+        <div class="squatter-list" id="sw-engines"></div>
+      </section>
+    </section>
+
     <section id="panel-engines" class="panel-group" hidden aria-label="engines and requests">
       <nav class="subnav" id="subnav-engines" aria-label="engines sections"></nav>
       <div class="engines-intro">Engines are what the engines report about themselves, not driver measurements. The ledger, leaderboard and request log are computed by the node from the requests it has seen.</div>
@@ -294,7 +315,7 @@
         <p>Engines ask the berthd node for a lease on a card. The node queues the request, asks the current holder to drain, waits until the driver shows the memory free, and only then grants the berth. Nothing is granted on a process exit alone, and nothing is called reserved unless the driver measured it. Every number on this page comes from the node: the driver, the host and the engines' own endpoints.</p>
         <dl class="about-facts">
           <dt>this node</dt><dd id="about-version">not read yet</dd>
-          <dt>this page</dt><dd>read only: it shows the node and changes nothing</dd>
+          <dt>this page</dt><dd>reads the node; only a paired device can switch or stop an engine, on the SWITCH tab</dd>
         </dl>
         <ul class="about-links">
           <li><a href="https://t-crypt.github.io/berth/" target="_blank" rel="noopener noreferrer">Documentation</a></li>
@@ -321,6 +342,7 @@
         <section class="about-sec" id="about-nav" aria-labelledby="about-nav-h">
           <h2 class="section-title" id="about-nav-h">GETTING AROUND</h2>
           <p>The rail under the header jumps to any section of the tab and marks the one in view. A section link opens the right tab when you share or reload it. Every panel folds from the chevron in its head and stays folded between visits. The tab counts say how many voyages and engines each tab holds.</p>
+          <p>The SWITCH tab shows who holds each card and every engine in berth.toml. A device paired with berth pair can switch the card to an engine or stop the engine that holds it. Berth drains the holder first, as it does for a request. A pinned holder, such as a game or berth hold, shows PINNED and has no stop. With several cards, the picker narrows the engines to one card. A paired device can pair another phone from a QR code.</p>
           <p>On a phone the tabs sit along the bottom edge, and the menu button opens the node's versions, the last successful read, the detail level and the retry. Times read relative, with the exact clock in the title. When a read goes stale, a retry on the connection pill reads the node at once.</p>
           <p>The log's filter matches the kind, the engine and the detail, and the chips carry live counts. LATEST jumps back to the newest row. The board sorts by vessel, hold, status and age. An alert card stays dismissed until it clears or changes level. A ticket copies its JSON or a link to that voyage.</p>
         </section>
@@ -480,7 +502,7 @@ berth config check</pre>
   <dialog id="shortcuts" aria-label="keyboard shortcuts">
     <div class="sc-head">KEYBOARD SHORTCUTS<button class="ticket-close sc-close" type="button" data-autofocus aria-label="close shortcuts">close</button></div>
     <div class="sc-list">
-      <div class="sc-row"><span><span class="kbd">1</span> <span class="kbd">2</span> <span class="kbd">3</span></span><span>Card, engines, about</span></div>
+      <div class="sc-row"><span><span class="kbd">1</span> <span class="kbd">2</span> <span class="kbd">3</span> <span class="kbd">4</span></span><span>Card, switch, engines, about</span></div>
       <div class="sc-row"><span><span class="kbd">B</span> <span class="kbd">A</span></span><span>Basic, advanced mode</span></div>
       <div class="sc-row"><span><span class="kbd">P</span></span><span>Pause or resume the log</span></div>
       <div class="sc-row"><span><span class="kbd">/</span></span><span>Filter the log</span></div>
@@ -490,8 +512,13 @@ berth config check</pre>
     </div>
   </dialog>
 
+  <dialog id="pair-dlg" aria-label="pair a phone">
+    <div class="sc-head">PAIR A PHONE<button class="ticket-close sc-close" type="button" data-autofocus aria-label="close pairing">close</button></div>
+    <div class="pair-body"></div>
+  </dialog>
+
   <footer class="app-footer" role="contentinfo">
-    <span>berth harbor, read only in this release</span>
+    <span>berth harbor, read only until a device is paired</span>
     <span>lease. hand off. never collide.</span>
   </footer>
 </body>

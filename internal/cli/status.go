@@ -70,6 +70,9 @@ func (v statusView) Human(c *Context, ok bool) error {
 	if st.ParkedBytes > 0 {
 		c.Printf("warm    parked engines hold %s of RAM\n", server.MiB(st.ParkedBytes))
 	}
+	if st.ParkOff {
+		c.Printf("park    off: a drain stops its engine (berth park on turns parking back on)\n")
+	}
 	if c.Verbose {
 		hostLine(c, st.Host)
 		alertsLine(c, st.Alerts)

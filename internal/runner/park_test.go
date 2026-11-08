@@ -222,7 +222,7 @@ func runPark(t *testing.T, sock, engine, stubURL string, hook bool) (chan int, *
 	})
 	exited := make(chan int, 1)
 	go func() {
-		exited <- Run(Options{Socket: sock, Engine: engine, Priority: "interactive", Needs: 8 << 30,
+		exited <- Run(Options{Socket: sock, Engine: engine, Priority: "interactive", Needs: []uint64{8 << 30},
 			Park: &adapter, ParkBase: stubURL, ParkProbe: "/v1/models", Hook: hook,
 			Grace: 200 * time.Millisecond, Argv: []string{"sleep", "30"}, Stderr: log})
 	}()
@@ -426,7 +426,7 @@ func TestRunParksThroughBerthProtocol(t *testing.T) {
 	})
 	exited := make(chan int, 1)
 	go func() {
-		exited <- Run(Options{Socket: sock, Engine: "custom", Priority: "interactive", Needs: 8 << 30,
+		exited <- Run(Options{Socket: sock, Engine: "custom", Priority: "interactive", Needs: []uint64{8 << 30},
 			Hook: true, ParkBase: srv.URL, ParkProbe: "/v1/models",
 			Grace: 200 * time.Millisecond, Argv: []string{"sleep", "30"}, Stderr: log})
 	}()
@@ -473,7 +473,7 @@ func TestRunParksComfyUIKeepUp(t *testing.T) {
 	})
 	exited := make(chan int, 1)
 	go func() {
-		exited <- Run(Options{Socket: sock, Engine: "comfyui", Priority: "interactive", Needs: 8 << 30,
+		exited <- Run(Options{Socket: sock, Engine: "comfyui", Priority: "interactive", Needs: []uint64{8 << 30},
 			DrainComfyUI: srv.URL, Park: &adapter, ParkBase: srv.URL, ParkProbe: "/system_stats",
 			Grace: 200 * time.Millisecond, Argv: []string{"sleep", "30"}, Stderr: log})
 	}()
@@ -549,7 +549,7 @@ func TestRunHookProbeNegative(t *testing.T) {
 	})
 	exited := make(chan int, 1)
 	go func() {
-		exited <- Run(Options{Socket: sock, Engine: "custom", Priority: "interactive", Needs: 8 << 30,
+		exited <- Run(Options{Socket: sock, Engine: "custom", Priority: "interactive", Needs: []uint64{8 << 30},
 			Hook: true, ParkBase: srv.URL, ParkProbe: "/v1/models",
 			Grace: 200 * time.Millisecond, Argv: []string{"sleep", "30"}, Stderr: log})
 	}()

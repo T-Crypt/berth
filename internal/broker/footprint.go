@@ -28,6 +28,7 @@ type engineFootprint struct {
 	At        time.Time // when Last was recorded
 	ParkedRAM uint64    // the RAM a parked run last held (its scope's anon + shmem); 0 = never measured
 	ParkBase  uint64    // what that run held hot, just before it parked
+	RAMPeak   uint64    // the most RAM any run held while active (its scope's anon + shmem); 0 = never measured
 }
 
 // footprints is the table keyed by engine key: the lease's group, else its

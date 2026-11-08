@@ -6,6 +6,89 @@ has a matching GitHub release whose body comes from its section below.
 
 ## [Unreleased]
 
+## [v0.5.0] - 2026-11-08
+
+v0.5.0 puts the switchboard on a phone and lets one node send a request to another. The harbor's SWITCH tab
+switches a card to an engine, stops its holder and loads one llama-swap model from a paired device. A `[[peer]]`
+entry names another node's gateway on the tailnet, and a model no engine here serves goes to the first peer that
+lists it. `berth batch` keeps the card on one engine for a run of jobs, a lease window keeps work to the hours you
+set, a model split unevenly over two cards reserves a size per card, and park admission keeps room for the RAM a
+render will take back.
+
+### Added
+
+- `berth batch ENGINE` and `POST /v1/berth/batch`: keep the card on one engine for a run of jobs. While the batch
+  lasts, no waiter but a hold drains the engine, and the engine takes the card the way a switch does when it is the
+  one waiting. The batch ends by itself once the engine has had no job running or queued for `--grace` (30 s), or
+  after `--max` (4 h). An agent that queues forty images on ComfyUI no longer gives the card to its own chat model
+  between images, and one image still goes back and forth as before. The ComfyUI skill tells agents when to use it.
+
+- On Linux, a parked engine is first in line for the OOM killer: its processes get `oom_score_adj` 1000 while
+  parked, and their own scores back on resume. When RAM runs out anyway, the kernel or earlyoom kills the parked
+  copy and not the render on the card.
+
+- `[[peer]]` in `berth.toml`: another node's gateway on the tailnet, with its key in an owner-private file. A
+  request for a model no engine on this node serves goes to the first peer that lists it, and `GET /v1/models`
+  lists the peers' models under their names. Each node's berthd still leases only its own cards. The peer URL must
+  be a `*.ts.net` name, a tailnet address or loopback. docs/gateway.md has the section "Models on another machine".
+
+- Park admission keeps room for the RAM the card's holder and its waiters will take back. Berth reads each running
+  engine's peak RAM from its scope and remembers the most any run of that engine held, so a ComfyUI render between
+  stages, or a render waiting for the card, no longer lets a 30 GiB engine park into RAM the render needs a minute
+  later. The refusal names the engine the RAM is kept for.
+
+- `berth unpark ENGINE` and `berth unpark --all`: drop a parked engine from RAM now instead of at its ttl, for a job
+  that needs the machine's RAM. Only parked engines are touched; nothing parked is no error. `berth park off|on|status`
+  switches RAM parking off for every card (evicting what is parked) and back on; `berth status` carries `park_off`
+  while it is off. The switch lives in the daemon, so a restart starts with parking on. docs/gateway.md has the section.
+
+- `needs_mib = [18000, 6000]` on an `[[engine]]` entry with `gpu = "gpu0,gpu1"`, and `berth run --needs-mib 18000,6000`:
+  a size per card, in the order the cards are named, for a model split unevenly across cards (llama.cpp
+  `--tensor-split`). Each card's share of the lease reserves its own size, so the room left on the lighter card can
+  serve another engine. One value still sizes every card. A berthd from before this release reads only the largest
+  size and reserves it on every card. docs/leasing.md has a new section on splitting one model across cards.
+
+- `window = "23:00-07:00"` on an `[[engine]]` entry, and `berth run --window 23:00-07:00`: a lease window, for
+  work that should only run in cheap hours. berthd grants the lease inside them and drains its holder when they
+  close, at the same boundary as any other drain. A run that asks outside its window, on one card or several,
+  waits for it with no deadline unless `--wait` sets one, holds up no waiter behind it, and `berth status` says
+  when the window opens. A gateway background engine is not started outside its window at all. A window needs a
+  lease that can be asked back, so it goes with neither `--pinned` nor `--priority hold`.
+
+- `berth gateway --harbor URL` redirects the gateway's `/gui/` index and `/` to `URL/#switch`, so an old bookmark of the
+  engine list lands on the harbor's SWITCH tab. The per-engine wake pages, their state endpoints and the wake POST keep
+  answering, so a bookmark of one engine's web UI still opens its wake page. Without the flag, `/gui/` is the index
+  page.
+
+- The harbor's SWITCH tab loads one llama-swap model: a paired device taps LOAD on a model that is not loaded, and
+  the model shows loading until llama-swap reports it ready. The gateway's new `POST /v1/berth/load
+  {"engine","model"}` does it by asking llama-swap for the model's `/upstream/MODEL/health`, since llama-swap has
+  no load call of its own. The board's models carry `loading`, and its engines their `type`.
+
+- The harbor has a SWITCH tab: each card with its state, holders and cordon, and every engine with its state
+  and models. A device paired with `berth pair` can switch the card to an engine or stop the engine that holds
+  it, from a phone. A pinned holder shows PINNED and has no stop. On a machine with several cards a picker
+  narrows the engines to one card. A paired device can pair another phone from a QR code. The harbor sends the
+  gateway's own board, switch and stop with the node's API key, so `berth gateway` must run; `berth harbor
+  --gateway` and `--key-file` name them when they are not in the default place.
+
+### Fixed
+
+- An engine that `berth run` started while berthd was not up yet, as a service that starts beside berthd at boot
+  can be, is now leased once berthd answers. Before, it stayed unprotected until it exited, and berthd counted it
+  as a squatter. The run keeps dialling as it does after a daemon restart, and the new daemon holds new grants for
+  it in the same 15 s window.
+
+- An engine stopped by a SIGTERM or SIGINT sent to it directly, as `kill PID`, a stop script or Ctrl+C sends,
+  no longer shows as unresponsive (LATCHED) in `berth status` and the harbor. It shows as offline, as an engine
+  Berth or its supervisor stopped already does. One killed by SIGKILL or any other signal still shows as
+  unresponsive, as a crash does.
+
+- berthd logs a refused re-attach with the engine, the PID and the reason. Before, the reason went only to the
+  wrapper's stderr, so an engine that lost berthd and never came back left no trace in the daemon's log. A request
+  that cannot fit because an unleased run of the same engine holds the card now says so in its refusal, with the
+  run's PID, so a client that retries can stop the orphan instead of asking again forever (#300).
+
 ## [v0.4.1] - 2026-11-01
 
 Each card on a machine with several now has its own gateway URL, `/cards/CARD/v1`, and one model can be served

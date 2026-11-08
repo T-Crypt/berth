@@ -10,23 +10,25 @@ import (
 
 	"github.com/T-Crypt/berth/internal/config"
 	"github.com/T-Crypt/berth/internal/park"
+	"github.com/T-Crypt/berth/internal/proto"
 )
 
 // OptionsFor carries the engine entry's settings, fills the defaults it
 // leaves open, and defers every zero override to the entry.
 func TestOptionsFor(t *testing.T) {
-	e := &config.Engine{Name: "strata", Type: "strata", Priority: "foreground", NeedsMiB: 8192,
+	e := &config.Engine{Name: "strata", Type: "strata", Priority: "foreground", NeedsMiB: config.MiBs{8192},
 		Start: []string{"python", "serve.py"}, DrainPost: "http://127.0.0.1:1/unload",
 		DrainSlots: "http://127.0.0.1:2", DrainComfyUI: "http://127.0.0.1:3",
 		DrainMax: config.Duration{Duration: time.Minute}, MinTurn: config.Duration{Duration: 5 * time.Minute},
-		ParkTTL: config.Duration{Duration: 10 * time.Minute}, WholeMachine: true}
+		ParkTTL: config.Duration{Duration: 10 * time.Minute}, Window: proto.Window{Start: 23 * 60, End: 7 * 60},
+		WholeMachine: true}
 
 	o := OptionsFor(e, Over{Socket: "s", Group: "strata", Wait: 10 * time.Second, Argv: []string{"true"}})
 	want := Options{
-		Socket: "s", Engine: "strata", Group: "strata", Priority: "foreground", Needs: 8192 << 20,
+		Socket: "s", Engine: "strata", Group: "strata", Priority: "foreground", Needs: []uint64{8192 << 20},
 		Wait: 10 * time.Second, Grace: 30 * time.Second, DrainPost: e.DrainPost, DrainSlots: e.DrainSlots,
 		DrainComfyUI: e.DrainComfyUI, DrainMax: e.DrainMax.Duration, MinTurn: 5 * time.Minute, ParkTTL: 10 * time.Minute, Argv: []string{"true"},
-		WholeMachine: true,
+		WholeMachine: true, Window: e.Window,
 	}
 	if !reflect.DeepEqual(o, want) {
 		t.Errorf("entry settings = %+v, want %+v", o, want)

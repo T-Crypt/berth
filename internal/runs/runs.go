@@ -33,6 +33,11 @@ type Record struct {
 // window to re-attach before granting anything new.
 const ReasonLost = "berthd went away mid-run"
 
+// ReasonStart is the reason berth run records when no daemon answered as
+// it started the engine (a service that starts beside berthd at boot can
+// dial first). The run keeps dialling, so it re-attaches like a lost one.
+const ReasonStart = "berthd unreachable at start"
+
 // ReasonKeepUp is the reason berth run records when a keep-up drain leaves
 // the engine running with its models unloaded: the process stays on its
 // port, but it no longer holds the card, so the released lease must not

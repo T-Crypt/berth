@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -188,6 +189,11 @@ type Config struct {
 	// far less than its VRAM footprint when its weights sit in page
 	// cache. nil = procs.ScopeMem; tests fake it.
 	ScopeMem func(scope string) (procs.Mem, bool)
+	// OOMScoreAdj sets a process's oom_score_adj and returns its old
+	// value (procs.SetOOMScoreAdj). A parked engine is raised to the top,
+	// so the kernel or earlyoom kills it before a running job. nil =
+	// procs.SetOOMScoreAdj; tests fake it.
+	OOMScoreAdj func(pid, adj int) (int, error)
 	// ContainerName resolves a container id to its runtime name (docker,
 	// then podman, inspect), or a Proxmox LXC id to its hostname; "" when
 	// none answers. Used to name a stowaway's container in the report;
@@ -240,6 +246,10 @@ type Request struct {
 	// ParkTTL is how long the lease may stay parked before the broker
 	// stops its engine, in place of the node's ParkTTL. 0 = the node's.
 	ParkTTL time.Duration
+	// Window holds the lease to set hours: it is not granted outside them,
+	// and its holder is drained when they close. The zero value is no
+	// window.
+	Window proto.Window
 	// Containers are the containers the engine runs in: Acquire takes the
 	// names the operator gave (--container), the attach resolves the full
 	// IDs, a Compose engine's whole project arriving as one set. A GPU
@@ -268,6 +278,7 @@ type lease struct {
 	switched bool // a person's switch (Request.Switched)
 	minTurn  time.Duration
 	parkTTL  time.Duration // 0 = the node's
+	window   proto.Window  // zero = no window
 	prio     Priority
 	needs    uint64
 	state    state
@@ -289,7 +300,9 @@ type lease struct {
 	desc               map[ident]struct{} // descendants recorded while the lease ran
 	contested          uint64             // squatter bytes on the card when granted
 	peak               uint64             // most memory its processes were measured holding
-	ram                uint64             // parking or parked: its scope's anon + shmem at the last read; 0 = no reading
+	ram                uint64             // active, parking or parked: its scope's anon + shmem at the last read; 0 = no reading
+	ramPeak            uint64             // the most ram read while active this run
+	oomWas             map[ident]int      // parked: each process's oom_score_adj before the park raised it
 	ramLearned         bool               // this park's reading is recorded as the engine's park cost
 	ramHot             uint64             // its scope's anon + shmem when the park was admitted, before any of it moved
 	releaseBaseline    uint64             // guarded probes: unattributed driver baseline before this lease loaded
@@ -407,6 +420,7 @@ func newLease(id string, r Request, now time.Time) *lease {
 		switched:     r.Switched,
 		minTurn:      r.MinTurn,
 		parkTTL:      r.ParkTTL,
+		window:       r.Window,
 		lendCap:      r.Lend,
 		wholeMachine: r.WholeMachine,
 		gpu:          map[ident]gpu.Proc{},
@@ -479,7 +493,9 @@ type Broker struct {
 	saveFailed bool
 
 	verdicts map[string]verdict // loser engine key -> the juggle it lost
+	batches  map[string]*batch  // berth batch: engine or group -> its batch
 	cordoned bool               // berth cordon: grant only holds
+	parkOff  bool               // berth park off: drains stop their engine, nothing parks
 	// tracked is the claim watcher's last scan: a process (and every child)
 	// a track claim names. Its card memory is the claim's, never a stowaway.
 	tracked    map[int]string
@@ -605,6 +621,9 @@ func New(cfg Config, probe gpu.Probe, tree procs.Tree) *Broker {
 	if cfg.MemAvailable == nil {
 		cfg.MemAvailable = func() uint64 { return host.MemAvailable("") }
 	}
+	if cfg.OOMScoreAdj == nil {
+		cfg.OOMScoreAdj = setOOMScoreAdj
+	}
 	if cfg.ScopeMem == nil {
 		cfg.ScopeMem = procs.ScopeMem
 	}
@@ -685,6 +704,7 @@ func New(cfg Config, probe gpu.Probe, tree procs.Tree) *Broker {
 		counters:       counters,
 		saved:          counters,
 		verdicts:       map[string]verdict{},
+		batches:        map[string]*batch{},
 		usage:          use,
 		footprints:     foots,
 		started:        time.Now(),
@@ -749,6 +769,7 @@ func (b *Broker) Tick(ctx context.Context) {
 	b.runs = rs
 	b.accountUsage(now)
 	b.pruneVerdicts(now)
+	b.pruneBatches(now)
 	if held != nil {
 		// The switch is berthd's to watch, not to touch: read the driver
 		// from sysfs, grant nothing, keep the hold HOT.
@@ -895,6 +916,7 @@ func (b *Broker) Tick(ctx context.Context) {
 				b.log.Info("lease freed", "lease", key, "engine", l.engine)
 				b.counters.VRAMHandedOff += l.peak
 				b.foldFootprint(l, now)
+				b.foldRAMPeak(l)
 				b.emit(proto.Event{Kind: proto.EvFreed, Lease: key, Engine: l.engine, Bytes: l.peak})
 				b.lendFreed(l) // a holder lending to this lease takes its memory back now
 				delete(b.leases, key)
@@ -923,9 +945,10 @@ func (b *Broker) Tick(ctx context.Context) {
 		// card read that confirms the memory free, and the grace after which
 		// the waiter falls back to park or drain.
 		b.lendTick(key, l, now, read)
-		b.measureParkedRAM(l)
+		b.measureRAM(l)
 	}
 	b.claimed = claimed
+	b.closeWindows(now)
 	b.evictParked(now)
 	b.schedule(now)
 }
@@ -1024,11 +1047,11 @@ func (b *Broker) runFor(pid int) *runs.Record {
 	return nil
 }
 
-// dueToReattach is true for a run that lost the previous daemon mid-run,
-// while this daemon is young enough that its berth run is still dialling
-// back, and it has not re-attached yet.
+// dueToReattach is true for a run that lost the previous daemon mid-run, or
+// found none at its start, while this daemon is young enough that its berth
+// run is still dialling, and it has not re-attached yet.
 func (b *Broker) dueToReattach(r runs.Record, now time.Time) bool {
-	if r.Reason != runs.ReasonLost || now.Sub(b.started) >= b.cfg.ReattachWindow {
+	if (r.Reason != runs.ReasonLost && r.Reason != runs.ReasonStart) || now.Sub(b.started) >= b.cfg.ReattachWindow {
 		return false
 	}
 	for _, l := range b.leases {
@@ -1088,6 +1111,20 @@ func (b *Broker) schedule(now time.Time) {
 		return
 	}
 	b.sortQueue()
+	// A waiter outside its window waits on its hours, not on the card, so it
+	// steps out of line until they open and holds up nobody behind it.
+	var later []*lease
+	b.queue = slices.DeleteFunc(b.queue, func(w *lease) bool {
+		if w.window.Contains(now) {
+			return false
+		}
+		later = append(later, w)
+		return true
+	})
+	defer func() { b.queue = append(b.queue, later...) }()
+	for _, w := range later {
+		b.setWait(w, fmt.Sprintf("outside its window %s; opens in %s", w.window, opensIn(w.window.Opens(now))))
+	}
 	for len(b.queue) > 0 {
 		w := b.queue[0]
 		// A fresh daemon does not yet know what engines that ran under the
@@ -1118,22 +1155,30 @@ func (b *Broker) schedule(now time.Time) {
 			continue
 		}
 		for _, v := range victims {
-			v.state = draining
-			// Its memory goes with the drain: an open lend is dropped, and
-			// never asked back, since the borrower still holds it (rule 2).
-			b.clearLend(v, "it is draining")
-			msg := fmt.Sprintf("%s (%s) needs the card", w.engine, w.prio)
-			select {
-			case v.drainCh <- msg:
-			default:
-			}
-			b.log.Info("draining", "lease", v.id, "engine", v.engine, "for", w.engine)
-			b.counters.Drains++
-			b.emit(proto.Event{Kind: proto.EvDraining, Lease: v.id, Engine: v.engine, Detail: msg})
+			b.drain(v, fmt.Sprintf("%s (%s) needs the card", w.engine, w.prio))
 		}
 		b.notifyWait(b.queue, reason)
 		return
 	}
+}
+
+// drain asks a holder to give the card back: its runner hears OpDrain with
+// why and stops the engine at the boundary it names (a slot, a job), never
+// mid-request. why is what the holder and the event stream read, so it names
+// what asked: the waiter that needs the card, or the window that closed.
+// Called with b.mu held.
+func (b *Broker) drain(l *lease, why string) {
+	l.state = draining
+	// Its memory goes with the drain: an open lend is dropped, and
+	// never asked back, since the borrower still holds it (rule 2).
+	b.clearLend(l, "it is draining")
+	select {
+	case l.drainCh <- why:
+	default:
+	}
+	b.log.Info("draining", "lease", l.id, "engine", l.engine, "why", why)
+	b.counters.Drains++
+	b.emit(proto.Event{Kind: proto.EvDraining, Lease: l.id, Engine: l.engine, Detail: why})
 }
 
 // grant gives the card to w, a waiter at the head of the queue. b.mu must be
@@ -1281,6 +1326,28 @@ func (b *Broker) squatBytes() uint64 {
 	return b.boundSquat(n)
 }
 
+// ownSquat names the squatters that are an unleased run of engine itself,
+// the one wait that cannot end by waiting (#300), or "" when there are none.
+func (b *Broker) ownSquat(engine string) string {
+	var n uint64
+	var pids []int
+	for _, s := range b.squatters {
+		if s.run == engine {
+			n += s.proc.Used
+			pids = append(pids, s.proc.PID)
+		}
+	}
+	if len(pids) == 0 {
+		return ""
+	}
+	slices.Sort(pids)
+	ids := make([]string, len(pids))
+	for i, p := range pids {
+		ids[i] = strconv.Itoa(p)
+	}
+	return fmt.Sprintf(", %d MiB of that is an unleased %s (pid %s)", n/gpu.MiB, engine, strings.Join(ids, ", "))
+}
+
 // boundSquat caps the squatter sum at the card's used figure. Per-process
 // readings can overcount: on Windows the counter reports a process's
 // committed reservation, which the driver can list far above what the card
@@ -1341,6 +1408,11 @@ func (b *Broker) evaluate(w *lease, now time.Time) (bool, string, []*lease) {
 	if b.cordoned && w.prio != Hold {
 		return false, "the card is cordoned; berth uncordon lets new work in", nil
 	}
+	if !w.window.Contains(now) {
+		// Its own hours decide this waiter alone: no holder is a victim,
+		// because nothing it drains would put it inside its window.
+		return false, fmt.Sprintf("outside its window %s; opens in %s", w.window, opensIn(w.window.Opens(now))), nil
+	}
 	// A resumed lease is still in b.leases while it waits: its own
 	// residual is the copy it comes back to, never a holder it waits on.
 	hs := slices.DeleteFunc(b.holders(), func(h *lease) bool { return h == w })
@@ -1369,7 +1441,7 @@ func (b *Broker) evaluate(w *lease, now time.Time) (bool, string, []*lease) {
 			reason := fmt.Sprintf("needs %d MiB; at most %d MiB can be freed",
 				w.needs/gpu.MiB, budget.avail()/gpu.MiB)
 			if budget.squat > 0 {
-				reason += fmt.Sprintf("; squatters hold %d MiB", budget.squat/gpu.MiB)
+				reason += fmt.Sprintf("; squatters hold %d MiB", budget.squat/gpu.MiB) + b.ownSquat(w.engine)
 			}
 			if budget.claimed > 0 {
 				reason += fmt.Sprintf("; claims hold %d MiB", budget.claimed/gpu.MiB)
@@ -1412,6 +1484,11 @@ func (b *Broker) evaluate(w *lease, now time.Time) (bool, string, []*lease) {
 			// a call, the operator's own berth hold) takes it out before.
 			kept = append(kept, h)
 			keptWhy = h.turnWhy(now)
+			continue
+		case w.prio != Hold && b.inBatch(h, w):
+			k, bt := b.batchOf(h)
+			kept = append(kept, h)
+			keptWhy = batchWhy(k, bt)
 			continue
 		case h.prio == w.prio:
 			if keep, why := b.keeps(h, w, now); keep {
@@ -1514,7 +1591,7 @@ func (b *Broker) evaluate(w *lease, now time.Time) (bool, string, []*lease) {
 		reason += "; " + keptWhy
 	}
 	if squat > 0 {
-		reason += fmt.Sprintf("; squatters hold %d MiB", squat/gpu.MiB)
+		reason += fmt.Sprintf("; squatters hold %d MiB", squat/gpu.MiB) + b.ownSquat(w.engine)
 	}
 	if budget.claimed > 0 {
 		reason += fmt.Sprintf("; claims hold %d MiB", budget.claimed/gpu.MiB)
@@ -1654,7 +1731,12 @@ func (b *Broker) Reattach(r Request, pid int, start uint64) (*Lease, error) {
 }
 
 // reattach is Reattach under a lease ID the caller picked.
-func (b *Broker) reattach(id string, r Request, pid int, start uint64) (*Lease, error) {
+func (b *Broker) reattach(id string, r Request, pid int, start uint64) (_ *Lease, err error) {
+	defer func() {
+		if err != nil {
+			b.log.Warn("re-attach refused", "engine", r.Engine, "pid", pid, "reason", err)
+		}
+	}()
 	if pid <= 0 || start == 0 || b.tree.StartTime(pid) != start {
 		return nil, fmt.Errorf("%w: pid %d is not the process that started as %s", ErrRefused, pid, r.Engine)
 	}
@@ -1725,6 +1807,22 @@ func IsNotFound(err error) bool {
 	return errors.As(err, &nf)
 }
 
+// waitFor is how long a request waits for its grant. A negative wait has no
+// deadline: the waiter stays queued until it gets the card, its context is
+// cancelled, or the daemon exits.
+func (b *Broker) waitFor(r Request) time.Duration {
+	switch {
+	case r.Wait != 0:
+		return r.Wait
+	case r.Window.Set():
+		// Its window is the wait the operator chose: a run started at noon
+		// for a night window waits for the night.
+		return -1
+	default:
+		return b.cfg.DefaultWait
+	}
+}
+
 // Acquire queues for a berth and blocks until it is granted, ctx ends, or
 // the wait runs out. onWait hears each new reason for waiting.
 func (b *Broker) Acquire(ctx context.Context, r Request, onWait func(string)) (*Lease, error) {
@@ -1741,12 +1839,7 @@ func (b *Broker) Acquire(ctx context.Context, r Request, onWait func(string)) (*
 	b.schedule(b.now())
 	b.mu.Unlock()
 
-	wait := r.Wait
-	if wait == 0 {
-		wait = b.cfg.DefaultWait
-	}
-	// A negative wait has no deadline: the waiter stays queued until it
-	// gets the card, its context is cancelled, or the daemon exits.
+	wait := b.waitFor(r)
 	var timeout <-chan time.Time
 	if wait > 0 {
 		timer := time.NewTimer(wait)

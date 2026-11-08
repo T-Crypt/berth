@@ -229,7 +229,7 @@ func TestStopNamesALeaseOnSeveralCardsOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ls, err := broker.AcquireAll(ctx, []*broker.Broker{cs[0].B, cs[1].B}, broker.Request{Engine: "maya", Priority: broker.Foreground}, nil)
+	ls, err := broker.AcquireAll(ctx, []*broker.Broker{cs[0].B, cs[1].B}, nil, broker.Request{Engine: "maya", Priority: broker.Foreground}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

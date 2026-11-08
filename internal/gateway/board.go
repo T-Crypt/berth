@@ -4,9 +4,12 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/T-Crypt/berth/internal/node"
 	"github.com/T-Crypt/berth/internal/proto"
@@ -50,32 +53,77 @@ type boardEngine struct {
 type boardModel struct {
 	ID     string `json:"id"`
 	Loaded bool   `json:"loaded,omitempty"` // the engine's reader reports it loaded
+	// Loading: a switchboard load is under way, or the engine reports the
+	// model starting.
+	Loading bool `json:"loading,omitempty"`
 }
 
 func (g *Gateway) board(w http.ResponseWriter, r *http.Request) {
 	status := g.nodeStatus()
 	rows := g.guiRows(r.Context(), status)
 	listed := map[string][]string{}
+	live := map[string]map[string]string{}
 	for i := range g.Engines {
 		e := &g.Engines[i]
 		if rows[i].State == "up" {
 			listed[e.Name] = g.listed(r.Context(), e.URL)
+			if e.Type == "llama-swap" {
+				if states := g.swapRunning(r.Context(), e.URL); states != nil {
+					live[e.Name] = states
+				}
+			}
 		}
 		if len(listed[e.Name]) == 0 {
 			listed[e.Name] = e.Serves
 		}
 	}
 	host, _ := os.Hostname()
+	g.mu.Lock()
+	inFlight := maps.Clone(g.loads)
+	g.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
-	_ = json.NewEncoder(w).Encode(boardOf(host, status, rows, listed))
+	_ = json.NewEncoder(w).Encode(boardOf(host, status, rows, listed, live, inFlight))
+}
+
+// swapRunning is llama-swap's own /running, model -> state, read at once:
+// berthd's reader reads it every few seconds, and a load the board shows
+// must not read cold again in the gap between llama-swap's answer and that
+// read. nil when llama-swap does not answer.
+func (g *Gateway) swapRunning(ctx context.Context, base string) map[string]string {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+"/running", nil)
+	if err != nil {
+		return nil
+	}
+	resp, err := g.client().Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	var r struct {
+		Running []struct {
+			Model string `json:"model"`
+			State string `json:"state"`
+		} `json:"running"`
+	}
+	if resp.StatusCode != http.StatusOK || json.NewDecoder(resp.Body).Decode(&r) != nil {
+		return nil
+	}
+	states := map[string]string{}
+	for _, m := range r.Running {
+		states[m.Model] = m.State
+	}
+	return states
 }
 
 // boardOf assembles the board from berthd's status (nil = not answering),
-// the engines' rows in config order and each engine's model list.
-func boardOf(host string, status *proto.Status, rows []guiRow, listed map[string][]string) boardNode {
+// the engines' rows in config order, each engine's model list, the model
+// states llama-swap reported just now (over berthd's older read) and the
+// switchboard loads under way.
+func boardOf(host string, status *proto.Status, rows []guiRow, listed map[string][]string, live map[string]map[string]string, inFlight map[loadKey]bool) boardNode {
 	n := boardNode{Name: host, Reachable: status != nil, Cards: []boardCard{}, Engines: make([]boardEngine, 0, len(rows))}
 	loaded := map[string]map[string]bool{}
+	starting := map[string]map[string]bool{}
 	if status != nil {
 		for _, gp := range status.GPUs {
 			if !gp.Scheduled {
@@ -105,9 +153,18 @@ func boardOf(host string, status *proto.Status, rows []guiRow, listed map[string
 		}
 		for _, e := range status.Engines {
 			loaded[e.Name] = map[string]bool{}
+			starting[e.Name] = map[string]bool{}
 			for _, m := range e.Models {
 				loaded[e.Name][m.Name] = m.State == "loaded" || m.State == "ready"
+				starting[e.Name][m.Name] = m.State == "starting"
 			}
+		}
+	}
+	for name, states := range live {
+		loaded[name], starting[name] = map[string]bool{}, map[string]bool{}
+		for m, s := range states {
+			loaded[name][m] = s == "ready"
+			starting[name][m] = s == "starting"
 		}
 	}
 	for _, row := range rows {
@@ -120,7 +177,9 @@ func boardOf(host string, status *proto.Status, rows []guiRow, listed map[string
 			}
 		}
 		for _, id := range listed[row.Name] {
-			be.Models = append(be.Models, boardModel{ID: id, Loaded: loaded[row.Name][id]})
+			l := loaded[row.Name][id]
+			be.Models = append(be.Models, boardModel{ID: id, Loaded: l,
+				Loading: !l && (starting[row.Name][id] || inFlight[loadKey{row.Name, id}])})
 		}
 		n.Engines = append(n.Engines, be)
 	}

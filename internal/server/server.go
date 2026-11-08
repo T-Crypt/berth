@@ -188,10 +188,16 @@ func handle(ctx context.Context, c net.Conn, n *node.Node, x Extras, log *slog.L
 		stop(conn, log, first, n)
 	case proto.OpCordon, proto.OpUncordon:
 		cordon(conn, log, first, n)
+	case proto.OpBatch:
+		batch(conn, log, first, n)
 	case proto.OpPairCode, proto.OpPairRedeem, proto.OpPairCheck, proto.OpPairList, proto.OpPairRevoke:
 		pairing(conn, log, first, x.Pair)
 	case proto.OpResume:
 		resume(conn, log, first, n)
+	case proto.OpUnpark:
+		reply(conn, log, proto.Msg{Op: proto.OpUnpark, Engine: first.Engine, Leases: n.Unpark(first.Engine)})
+	case proto.OpParkMode:
+		parkMode(conn, log, first, n)
 	case proto.OpSwitch:
 		switched(conn, log, first, n)
 	case proto.OpEvents:
@@ -208,6 +214,11 @@ func hold(ctx context.Context, conn *proto.Conn, req proto.Msg, n *node.Node, fi
 		if err == nil {
 			err = errors.New("engine name is required")
 		}
+		reply(conn, log, proto.Msg{Op: proto.OpRefused, Reason: err.Error()})
+		return
+	}
+	win, err := proto.ParseWindow(req.Window)
+	if err != nil {
 		reply(conn, log, proto.Msg{Op: proto.OpRefused, Reason: err.Error()})
 		return
 	}
@@ -260,7 +271,15 @@ func hold(ctx context.Context, conn *proto.Conn, req proto.Msg, n *node.Node, fi
 		LentBytes:    req.Lent,
 		MinTurn:      time.Duration(req.MinTurn * float64(time.Second)),
 		ParkTTL:      time.Duration(req.ParkTTL * float64(time.Second)),
+		Window:       win,
 		Containers:   req.ContainerIDs(),
+	}
+	if len(req.NeedsEach) > 0 && len(req.NeedsEach) != len(cards) {
+		reply(conn, log, proto.Msg{Op: proto.OpRefused, Reason: fmt.Sprintf("%d sizes for %d card(s) in %q: give one size, or one per card", len(req.NeedsEach), len(cards), req.Card)})
+		return
+	}
+	if len(req.NeedsEach) == 1 {
+		r.Needs = req.NeedsEach[0]
 	}
 	if len(cards) > 1 {
 		holdAll(ctx, u, req, r, cards, incoming, cancel, log)
@@ -380,9 +399,9 @@ func holdAll(ctx context.Context, u *consumer, req proto.Msg, r broker.Request, 
 	var leases []*broker.Lease
 	var err error
 	if req.Op == proto.OpReattach {
-		leases, err = broker.ReattachAll(bs, r, req.PID, req.PIDStart)
+		leases, err = broker.ReattachAll(bs, req.NeedsEach, r, req.PID, req.PIDStart)
 	} else {
-		leases, err = broker.AcquireAll(ctx, bs, r, func(reason string) {
+		leases, err = broker.AcquireAll(ctx, bs, req.NeedsEach, r, func(reason string) {
 			if !u.send(proto.Msg{Op: proto.OpWaiting, Reason: reason}) {
 				cancel()
 			}

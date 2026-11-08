@@ -50,8 +50,9 @@
   (`127.0.0.1:9798`); passing a non-loopback `--listen` address (e.g. `0.0.0.0:9798`;
   a specific interface IP works too) is the explicit opt-in to expose it on your
   network: the startup logs a warning and the page shows a banner on every screen while
-  exposed. There is no authentication in this release: expose it only on a network you
-  trust; phones on that network get the full read-only dashboard. To reach it from elsewhere
+  exposed. Reading needs no login: expose it only on a network you trust, where phones get
+  the full dashboard. Switching or stopping an engine on the SWITCH tab needs a device paired
+  with `berth pair`. To reach it from elsewhere
   without exposing it, keep the loopback listener and put a same-machine reverse proxy in
   front (`tailscale serve`, caddy), passing the proxy's hostname with `--allow-host`. A systemd user unit is
   in `contrib/berth-harbor.service`.

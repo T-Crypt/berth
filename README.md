@@ -42,7 +42,7 @@ claim. When another engine holds it, Berth:
 The numbered markers on the timeline are those four steps. A process that holds VRAM without a lease
 shows up as a stowaway: Berth reports its PID and memory and leaves it running.
 
-> **Status: alpha, v0.4.1.** Runs daily on an RTX 4090 workstation beside llama-swap, NInfer,
+> **Status: alpha, v0.5.0.** Runs daily on an RTX 4090 workstation beside llama-swap, NInfer,
 > Strata, ComfyUI and games, and testers run it on Windows. The [docs](docs/README.md) cover what works and has tests; the
 > [roadmap](docs/roadmap.md) lists the phases and what is still missing.
 
@@ -216,7 +216,7 @@ berth run --as maya --gpu gpu1 -- llama-server -m maya.gguf --port 8091
 ```
 
 An engine that spans several cards names them all: `berth run --gpu gpu0,gpu1`, or `gpu = "gpu0,gpu1"`. It holds
-one lease across those cards, with `--needs-mib` on each. The lease is granted on every card at once, and only when each one fits, so no card
+one lease across those cards, with `--needs-mib` on each (one size for all, or one per card: `--needs-mib 18000,6000`). The lease is granted on every card at once, and only when each one fits, so no card
 sits reserved while another is awaited. `CUDA_VISIBLE_DEVICES` lists each card's UUID in the order named. A drain
 on any of the cards stops the engine, and its exit frees every card. A lease on several cards cannot park or lend
 yet: a drain stops it the usual way.

@@ -38,7 +38,9 @@
   card it will use. A `[[claim]]` with `gpu = "gpu1"` holds only the cards it names. A lease on several cards
   cannot park or lend yet.
 - **Fail-open, never silent.** If the daemon is down, `berth run` still starts the engine
-  but records it as an *unprotected run* that status shows (`--fail-closed` refuses).
+  but records it as an *unprotected run* that status shows (`--fail-closed` refuses). It
+  keeps dialling, and re-attaches when a daemon answers, so a service that starts before
+  berthd at boot ends up leased.
 - **Survives a daemon restart.** A running engine stays up when berthd restarts or is
   upgraded; `berth run` dials the new daemon and re-attaches by PID plus start time. For
   15 s after a start the daemon grants nothing new while such engines are still due back,
@@ -87,6 +89,20 @@
     TURN column. When the turn ends the normal rules apply: a drain still starts at the slot
     or job boundary, and a minimum turn never cuts a request off. After a daemon restart, a
     re-attach starts a fresh turn.
+
+  - **A batch.** A minimum turn is a fixed time; a batch lasts as long as the work. Before an
+    agent or a script queues many jobs on one engine, `berth batch comfyui` (or
+    `POST /v1/berth/batch`) keeps the card on it until it has had no job running or queued for
+    the grace (`--grace 30s`), or until `--max` (4h) runs out. While it lasts, no waiter but a
+    hold drains the engine, so a chat turn between two images waits for the batch instead of
+    costing both engines a reload. If the engine is the one waiting, it takes the card as a
+    switch does. Waiters read "next in line: comfyui runs a batch; it keeps the card until it
+    has been idle 30s", and the event log has `batch.started` and `batch.ended`. A single job
+    with no batch hands the card back and forth as before. `berth batch comfyui --end` ends it
+    now; a berthd restart ends it too.
+
+    A batch is not the `batch` priority. That one makes an engine wait behind everything
+    else; this one keeps an engine on the card while its queue has work.
 
 ## Games, apps and holds
 - **Claims cover work Berth does not start.** berthd scans the process table every 2 s.
@@ -139,6 +155,72 @@ maintenance or before a VM takes it. Name the card by its name or its PCI addres
 - `berth status` marks the card `CORDONED`, and `berth events` records `card.cordoned` and `card.uncordoned`.
 - `berth uncordon gpu1` lets new work in, and the card's waiters are scheduled at once. A berthd restart also
   clears the cordon.
+
+## Run work when you're away or power is cheap
+
+- **A batch lease yields.** `berth run --priority batch` waits for the card and hands it back to any request that
+  asks, at the drain boundary. A batch job makes progress while you are not asking for the card, and never cuts you
+  off.
+- **A background engine waits for a free card.** `background = true` on an engine entry has the gateway start it
+  once the card has been free for `idle_after`. Read
+  [Run an engine whenever the card is free](gateway.md#run-an-engine-whenever-the-card-is-free).
+- **A window puts either on the clock.** `window = "23:00-07:00"` on the entry, or `berth run --window 23:00-07:00`,
+  holds the lease to those hours on the node's wall clock. It may cross midnight. A lease that asks outside them
+  waits for them with no deadline (unless `--wait` sets one) and holds up nobody behind it. `berth status` says when
+  the window opens, and a background engine is not started at all. When the window closes its holder drains at its usual boundary, so a slot or a job boundary comes first and a
+  request in flight finishes.
+
+  ```toml
+  [[engine]]
+  name   = "nightly"
+  window = "23:00-07:00"   # 24 h, two digits per field, the node's clock
+  ```
+
+  ```sh
+  berth run --as nightly --priority batch --window 23:00-07:00 -- ./finetune.sh
+  ```
+
+  A waiter reads its hours in its reason ("outside its window 23:00-07:00; opens in 3h12m"), and
+  `berth events` shows the close as the drain it is. A window needs a lease that can be asked back, so it goes with
+  neither `--pinned` nor `--priority hold`.
+
+Work that is not a server has no slot or job boundary to stop at, so a window close stops its process. A script that
+runs for hours saves checkpoints, and the next night's start picks up from the last one.
+
+A timer can start a one-off batch job at the window's open instead: a systemd user timer with
+`OnCalendar=*-*-* 23:00:00` running `berth run --priority batch -- ./finetune.sh`, or the same command line in a
+Task Scheduler task triggered daily at 23:00. The window is what keeps the job out of the expensive hours when it
+overruns or the machine wakes late.
+
+## Split one model across cards
+
+llama.cpp splits a model that is too big for one card across several with `--tensor-split` (`-ts`). Run it under one
+lease on those cards:
+
+```sh
+berth run --as llama-70b --priority foreground --gpu gpu0,gpu1 \
+  -- llama-server -m llama-70b-q4.gguf -ngl 99 --tensor-split 3,1 --port 8080
+```
+
+- berthd grants both cards at once, or neither, so the model never loads onto one card while it waits for the other.
+- The engine starts with `CUDA_VISIBLE_DEVICES` set to the cards' UUIDs in the order `--gpu` names them. The first
+  `--tensor-split` value goes to the first card named, the second to the second.
+- A request that drains either card stops the engine, and its exit frees both. A lease on several cards cannot park
+  yet, so the next start loads the model from disk again.
+- Without `--needs-mib` the lease takes the whole of each card. That is the safe choice when nothing else runs there.
+- To leave room beside an uneven split, give one size per card, in the same order:
+  `--needs-mib 18000,6000`, or on the engine entry:
+
+  ```toml
+  [[engine]]
+  name      = "llama-70b"
+  gpu       = "gpu0,gpu1"
+  needs_mib = [18000, 6000]   # MiB on gpu0, then gpu1
+  ```
+
+  A size is what the engine holds on that card at its peak, KV cache and compute buffers included, not the share of
+  the weights. Start it once with the whole cards, read each card's HOLDS in `berth status`, and add some headroom.
+  One value, as before, is the size on every card.
 
 ## Training runs
 

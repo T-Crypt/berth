@@ -83,6 +83,15 @@ type Gateway struct {
 	ConfigPath string
 	// LogMax caps an engine's log file before it starts over; 0 = 64 MiB.
 	LogMax int64
+	// Harbor is the harbor's base URL as a browser reaches it. The gui
+	// plane's index (/gui/ and /) then redirects to its SWITCH tab, which is
+	// the board; empty keeps the index page. The per-engine wake pages and
+	// /gui/state answer either way.
+	Harbor string
+	// Peers are other nodes' gateways on the tailnet. A model no engine
+	// here serves goes to the first peer that lists it; none = this node
+	// alone.
+	Peers []Peer
 
 	mu         sync.Mutex
 	deferred   *deferredBook       // loaded on first use from DeferredFile
@@ -91,6 +100,7 @@ type Gateway struct {
 	failed     map[string]*failure // engines whose last start died before answering
 	lists      map[string]cached   // engine URL -> its /v1/models, briefly cached
 	wakes      map[string]*wake    // the wake page's last start, by engine name
+	loads      map[loadKey]bool    // the models a load from the switchboard is under way for
 
 	adoptOnce sync.Once
 	stateMu   sync.Mutex
@@ -220,6 +230,8 @@ func (g *Gateway) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/berth/board", g.board)
 	mux.HandleFunc("POST /v1/berth/switch", g.apiSwitch)
 	mux.HandleFunc("POST /v1/berth/stop", g.apiStop)
+	mux.HandleFunc("POST /v1/berth/batch", g.apiBatch)
+	mux.HandleFunc("POST /v1/berth/load", g.apiLoad)
 	for _, p := range []string{"/v1/chat/completions", "/v1/completions", "/v1/embeddings"} {
 		mux.HandleFunc("POST "+p, g.forward)
 		mux.HandleFunc("POST /cards/{card}"+p, g.onCard(g.forward))
@@ -517,8 +529,25 @@ func (g *Gateway) models(w http.ResponseWriter, r *http.Request) {
 		Object string  `json:"object"`
 		Data   []model `json:"data"`
 	}{Object: "list", Data: []model{}}
-	for _, m := range g.catalog(r.Context(), r.PathValue("card")) {
+	local := g.catalog(r.Context(), r.PathValue("card"))
+	for _, m := range local {
 		out.Data = append(out.Data, model{ID: m, Object: "model", OwnedBy: "berth"})
+	}
+	// A plain /v1 list adds what the peers serve and this node does not,
+	// owned by the peer; a card's list and a peer's own ask stay local.
+	if r.PathValue("card") == "" && r.Header.Get(hopHeader) == "" {
+		seen := map[string]bool{}
+		for _, m := range local {
+			seen[m] = true
+		}
+		for _, p := range g.Peers {
+			for _, m := range g.peerList(r.Context(), p) {
+				if !seen[m] {
+					seen[m] = true
+					out.Data = append(out.Data, model{ID: m, Object: "model", OwnedBy: p.Name})
+				}
+			}
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
@@ -635,6 +664,12 @@ func (g *Gateway) forward(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t, ok := g.resolve(r.Context(), req.Model, r.PathValue("card"))
+	if !ok && r.PathValue("card") == "" {
+		if p, ok := g.peerFor(r.Context(), req.Model); ok {
+			g.toPeer(w, r, p, body)
+			return
+		}
+	}
 	if !ok {
 		notServed(w, req.Model, r.PathValue("card"))
 		return

@@ -39,7 +39,7 @@ func DefaultPath() string {
 // folder, whose ACL already keeps other users out, so the bits say nothing
 // and are not consulted.
 func LoadOrCreate(path string) (string, error) {
-	key, err := load(path)
+	key, err := Load(path)
 	if err == nil || !errors.Is(err, fs.ErrNotExist) {
 		return key, err
 	}
@@ -53,7 +53,7 @@ func LoadOrCreate(path string) (string, error) {
 	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if errors.Is(err, fs.ErrExist) {
-		return load(path) // another process made it first
+		return Load(path) // another process made it first
 	}
 	if err != nil {
 		return "", err
@@ -65,7 +65,9 @@ func LoadOrCreate(path string) (string, error) {
 	return key, f.Close()
 }
 
-func load(path string) (string, error) {
+// Load reads the key at path and never creates one: for a process that
+// uses the node's key but does not own it, such as the harbor.
+func Load(path string) (string, error) {
 	st, err := os.Stat(path)
 	if err != nil {
 		return "", err

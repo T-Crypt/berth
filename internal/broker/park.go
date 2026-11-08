@@ -14,11 +14,14 @@ package broker
 import (
 	"cmp"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/T-Crypt/berth/internal/park"
+	"github.com/T-Crypt/berth/internal/procs"
 	"github.com/T-Crypt/berth/internal/proto"
 )
 
@@ -112,10 +115,12 @@ func (b *Broker) parkCost(l *lease) uint64 {
 }
 
 // parkTotals is this card's parking RAM for the machine's ledger: the
-// expected cost of every park in flight and what parked engines hold.
-// b.mu must be held.
+// expected cost of every park in flight, what parked engines hold, and the
+// RAM its holders and waiters are expected to climb back to. b.mu must be
+// held.
 func (b *Broker) parkTotals() park.Totals {
 	t := park.Totals{Parked: b.parkedRAM()}
+	t.ToCome, _, _ = b.ramToCome()
 	for _, l := range b.leases {
 		if l.state == parking {
 			t.Parking += b.parkCost(l)
@@ -136,14 +141,15 @@ func (b *Broker) parkedRAM() uint64 {
 	return n
 }
 
-// measureParkedRAM reads a parking or parked lease's scope, and records
-// the first parked reading as its engine's next park cost: the reading
-// moves a little every tick, and the footprint file is written once per
-// park, not every poll. File pages are left out: the kernel counts page
-// cache as available and reclaims it itself. Called with b.mu held, from
-// Tick.
-func (b *Broker) measureParkedRAM(l *lease) {
-	if (l.state != parking && l.state != parked) || l.scope == "" {
+// measureRAM reads an active, parking or parked lease's scope. An active
+// run keeps its peak, which a park beside it must leave room for. A parked
+// run records its first reading as its engine's next park cost: the
+// reading moves a little every tick, and the footprint file is written
+// once per park, not every poll. File pages are left out: the kernel
+// counts page cache as available and reclaims it itself. Called with b.mu
+// held, from Tick.
+func (b *Broker) measureRAM(l *lease) {
+	if (l.state != active && l.state != parking && l.state != parked) || l.scope == "" {
 		return
 	}
 	m, ok := b.cfg.ScopeMem(l.scope)
@@ -151,6 +157,10 @@ func (b *Broker) measureParkedRAM(l *lease) {
 		return
 	}
 	l.ram = m.Anon + m.Shmem
+	if l.state == active {
+		l.ramPeak = max(l.ramPeak, l.ram)
+		return
+	}
 	if l.state != parked || l.ram == 0 || l.ramLearned {
 		return
 	}
@@ -164,6 +174,90 @@ func (b *Broker) measureParkedRAM(l *lease) {
 	b.footprintDirty = true
 }
 
+// parkedOOMScoreAdj is the oom_score_adj a parked engine's processes get:
+// the highest, so when RAM runs out the kernel or earlyoom stops the copy
+// that only saves a reload, never the job running on the card.
+const parkedOOMScoreAdj = 1000
+
+// setOOMScoreAdj is Config.OOMScoreAdj's default. The package's tests,
+// whose process trees name made-up PIDs, swap it for a fake.
+var setOOMScoreAdj = procs.SetOOMScoreAdj
+
+// oomFirst raises every live process of a lease that just parked to
+// parkedOOMScoreAdj and keeps what each had, for oomRestore. A process
+// that will not take it (gone, another user's) keeps its own. b.mu must be
+// held.
+func (b *Broker) oomFirst(l *lease) {
+	l.oomWas = map[ident]int{}
+	ids := []ident{{pid: l.pid, start: l.pidStart}}
+	for id := range l.desc {
+		ids = append(ids, id)
+	}
+	for _, id := range ids {
+		// Without a start time the PID could be anyone's by now.
+		if id.pid <= 0 || id.start == 0 || b.tree.StartTime(id.pid) != id.start {
+			continue
+		}
+		if old, err := b.cfg.OOMScoreAdj(id.pid, parkedOOMScoreAdj); err == nil {
+			l.oomWas[id] = old
+		}
+	}
+}
+
+// oomRestore gives each raised process of a lease leaving parked its own
+// oom_score_adj back. An evicted lease keeps the raise: it is stopping.
+// b.mu must be held.
+func (b *Broker) oomRestore(l *lease) {
+	for id, old := range l.oomWas {
+		if b.tree.StartTime(id.pid) == id.start {
+			_, _ = b.cfg.OOMScoreAdj(id.pid, old)
+		}
+	}
+	l.oomWas = nil
+}
+
+// foldRAMPeak records a freed run's RAM peak under its engine name when it
+// is the most any run of that engine held. The most, not the last: a quick
+// image after a long video must not shrink what the next video is booked
+// at. b.mu must be held.
+func (b *Broker) foldRAMPeak(l *lease) {
+	f := b.footprints[l.engine]
+	if l.ramPeak == 0 || (f != nil && f.RAMPeak >= l.ramPeak) {
+		return
+	}
+	if f == nil {
+		f = &engineFootprint{}
+		b.footprints[l.engine] = f
+	}
+	f.RAMPeak = l.ramPeak
+	b.footprintDirty = true
+}
+
+// ramToCome is the RAM this card's holders and waiters are expected to
+// take beyond what they hold now: each one's peak (this run's, or the most
+// any run of its engine held) less its last reading. A render between
+// stages, or one waiting for the card a park is about to free, holds
+// little now and climbs back. top names the largest share, for the
+// refusal line. b.mu must be held.
+func (b *Broker) ramToCome() (total uint64, top string, topPeak uint64) {
+	var topBytes uint64
+	holders := slices.DeleteFunc(slices.Collect(maps.Values(b.leases)), func(l *lease) bool { return l.state != active })
+	for _, l := range append(holders, b.queue...) {
+		peak := l.ramPeak
+		if f := b.footprints[l.engine]; f != nil {
+			peak = max(peak, f.RAMPeak)
+		}
+		if peak <= l.ram {
+			continue
+		}
+		total += peak - l.ram
+		if peak-l.ram > topBytes {
+			topBytes, top, topPeak = peak-l.ram, l.engine, peak
+		}
+	}
+	return total, top, topPeak
+}
+
 // Park admits a draining lease's engine into RAM parking: park.Admit runs
 // on the machine's readings, because only the broker sees every parked
 // engine. The returned why line is the runner's refusal, and the drain runs
@@ -174,6 +268,11 @@ func (b *Broker) Park(id string) (bool, string) {
 	l, ok := b.leases[id]
 	if !ok || l.state != draining {
 		return false, fmt.Sprintf("lease %s is not draining", id)
+	}
+	if b.parkOff {
+		why := "park refused: parking is switched off (berth park on turns it back on)"
+		b.emit(proto.Event{Kind: proto.EvParkRefused, Lease: id, Engine: l.engine, Detail: why})
+		return false, why
 	}
 	if b.snap.APU {
 		why := "park refused: APU VRAM/GTT offload accounting is not yet supported; using normal drain"
@@ -197,9 +296,11 @@ func (b *Broker) Park(id string) (bool, string) {
 	// A park still in flight has not landed in MemAvailable yet: two
 	// parks at once, on this card or another, must not both claim the
 	// same free RAM. The ledger adds the other cards.
+	// The RAM a holder or waiter climbs back to is booked the same way.
 	mine := b.parkTotals()
+	_, top, topPeak := b.ramToCome()
 	avail := b.cfg.MemAvailable()
-	avail -= min(avail, mine.Parking)
+	avail -= min(avail, mine.Parking+mine.ToCome)
 	cost := b.parkCost(l)
 	ok, why := b.cfg.Ledger.Admit(b.cfg.Card, mine, park.Budget{
 		Available: avail,
@@ -207,6 +308,9 @@ func (b *Broker) Park(id string) (bool, string) {
 		Parked:    mine.Parked,
 		Max:       b.cfg.ParkMax,
 	}, cost)
+	if !ok && mine.ToCome > 0 {
+		why += fmt.Sprintf("; %s more is kept for %s, which has held %s", sizeHuman(mine.ToCome), top, sizeHuman(topPeak))
+	}
 	if !ok {
 		b.emit(proto.Event{Kind: proto.EvParkRefused, Lease: id, Engine: l.engine, Bytes: cost, Detail: why})
 		return false, why
@@ -237,6 +341,7 @@ func (b *Broker) parkingTick(key string, l *lease, now time.Time, read uint64) {
 		l.state = parked
 		l.parkedAt = now
 		l.parkedN = b.order()
+		b.oomFirst(l)
 		foot := b.footprintOf(l)
 		b.log.Info("parked", "lease", key, "engine", l.engine, "footprint", sizeHuman(foot), "residual", sizeHuman(l.used()))
 		b.emit(proto.Event{Kind: proto.EvParked, Lease: key, Engine: l.engine, Bytes: foot,
@@ -268,6 +373,7 @@ func (b *Broker) parkedTick(key string, l *lease, now time.Time) {
 	l.state = active
 	l.granted = now
 	l.grantedN = b.order()
+	b.oomRestore(l)
 	select {
 	case l.resumeCh <- struct{}{}:
 	default:
@@ -311,15 +417,22 @@ func (b *Broker) evictParked(now time.Time) {
 		case avail < b.cfg.ParkFloor:
 			why = "available RAM is under the floor"
 		}
-		l.state = draining
-		msg := "evicted: " + why
-		select {
-		case l.drainCh <- msg:
-		default:
-		}
-		b.log.Warn("evicting a parked engine", "lease", name, "engine", l.engine, "why", why)
-		b.emit(proto.Event{Kind: proto.EvParkEvicted, Lease: name, Engine: l.engine, Bytes: b.ramOf(l), Detail: why})
+		b.evict(l, why)
 	}
+}
+
+// evict stops a parked engine rather than resuming it: its runner hears
+// OpDrain and stops it as any drain, with no park to keep. why names the
+// rule that says so: the RAM floor, the ttl, memory pressure, a window that
+// closed. Called with b.mu held.
+func (b *Broker) evict(l *lease, why string) {
+	l.state = draining
+	select {
+	case l.drainCh <- "evicted: " + why:
+	default:
+	}
+	b.log.Warn("evicting a parked engine", "lease", l.id, "engine", l.engine, "why", why)
+	b.emit(proto.Event{Kind: proto.EvParkEvicted, Lease: l.id, Engine: l.engine, Bytes: b.ramOf(l), Detail: why})
 }
 
 // Resume puts the engine's parked lease back in the queue at its own
@@ -336,6 +449,7 @@ func (b *Broker) Resume(engine string, switched bool) error {
 		l.state = waiting
 		l.resumed = true
 		l.switched = switched
+		b.oomRestore(l)
 		l.lostTo, l.lostWhy = "", ""
 		l.arrived = b.now()
 		l.arrivedN = b.order()

@@ -46,12 +46,28 @@ const (
 	// higher-priority waiter would. The server answers once with the leases
 	// it asked.
 	OpStop = "stop"
+	// OpUnpark: client: evict the parked and parking leases of Engine (by
+	// name or group; "" = every one) so the RAM they hold is freed. The
+	// server answers once with the leases it evicted (none is no error).
+	OpUnpark = "unpark"
+	// OpParkMode: client: with ParkOff set, switch parking off (true, which
+	// also evicts every parked lease) or back on (false); without it, ask.
+	// The server answers once with the state in ParkOff and the leases it
+	// evicted.
+	OpParkMode = "park_mode"
 	// OpCordon, OpUncordon: client: stop or resume new grants on the cards
 	// Card names (as OpAcquire names them). A cordoned card keeps its
 	// holders and still grants a hold. The server answers with the same op
 	// and Cards, the cards' names, or OpRefused for a card the node lacks.
 	OpCordon   = "cordon"
 	OpUncordon = "uncordon"
+	// OpBatch: client: start (or renew) a batch for Engine (by name or
+	// group): its lease keeps the card from every waiter but a hold, and
+	// its waiting lease takes the card as a switch does, until the engine
+	// has been idle for Grace seconds or Max seconds have passed (0 = the
+	// defaults). With End set, end Engine's batch now. The server answers
+	// with the same op, or OpRefused when End finds no batch.
+	OpBatch = "batch"
 	// OpPark: the runner holding a draining lease asks to park its engine
 	// in RAM; the daemon answers OpParkOK or OpRefused with the why line.
 	// OpParked: the runner's park call is done; the daemon watches for the
@@ -110,6 +126,11 @@ type Msg struct {
 	Group    string `json:"group,omitempty"` // the engine family the lease counts for in juggles and usage
 	Priority string `json:"priority,omitempty"`
 	Needs    uint64 `json:"needs,omitempty"` // bytes; 0 = the whole card
+	// NeedsEach is the size in bytes on each card Card names, in that
+	// order, when the cards differ. Needs is then the largest, so a berthd
+	// that predates NeedsEach reserves too much on a small card, never too
+	// little.
+	NeedsEach []uint64 `json:"needs_each,omitempty"`
 	// Card is the card an OpAcquire or OpReattach is for: its name on the
 	// node (gpu1) or its PCI address, or a comma list of them for one lease
 	// on several cards. "" is the node's first card.
@@ -137,9 +158,17 @@ type Msg struct {
 	// younger than it after the grant, no waiter drains it but a hold.
 	// OpAcquire and OpReattach; 0 = off.
 	MinTurn float64 `json:"min_turn,omitempty"`
+	// Max and End are an OpBatch's cap, in seconds, and its end request;
+	// its idle grace travels in Grace.
+	Max float64 `json:"max,omitempty"`
+	End bool    `json:"end,omitempty"`
 	// ParkTTL is how long the lease may stay parked, in seconds, in place
 	// of the node's [park] ttl. OpAcquire and OpReattach; 0 = the node's.
 	ParkTTL float64 `json:"park_ttl,omitempty"`
+	// Window is the lease's hours as its entry wrote them, or berth run
+	// --window, "23:00-07:00": berthd grants the lease inside them and asks
+	// the holder back when they close. OpAcquire and OpReattach; "" = none.
+	Window string `json:"window,omitempty"`
 	// Containers is the containers the engine runs in: OpAcquire and
 	// OpReattach carry the names the operator gave (--container), OpAttach
 	// the full IDs berth run resolved them to. A Compose project is a set;
@@ -152,7 +181,10 @@ type Msg struct {
 	Container string `json:"container,omitempty"`
 	Lease     string `json:"lease,omitempty"`
 	// OpStop: Leases is the reply, the leases the daemon asked to drain.
+	// OpUnpark, OpParkMode: the leases evicted.
 	Leases []string `json:"leases,omitempty"`
+	// OpParkMode: the parking switch, asked (true = off) and answered.
+	ParkOff *bool `json:"park_off,omitempty"`
 	// OpCordon, OpUncordon: Cards is the reply, the cards' names.
 	Cards    []string  `json:"cards,omitempty"`
 	Reason   string    `json:"reason,omitempty"`
@@ -166,7 +198,8 @@ type Msg struct {
 	// OpReclaim: Lease names the lease to look at ("" = every stuck and
 	// releasing lease), Confirm stops the recorded ones, and Grace is the
 	// seconds a SIGTERM has to work before SIGKILL (0 = the daemon's
-	// default). Holders is the reply: the card processes in question.
+	// default). Holders is the reply: the card processes in question. On an
+	// OpBatch, Grace is the idle seconds that end the batch.
 	Confirm bool     `json:"confirm,omitempty"`
 	Grace   float64  `json:"grace,omitempty"`
 	Holders []Holder `json:"holders,omitempty"`
@@ -249,7 +282,9 @@ const (
 	EvParkRefused    = "lease.park_refused" // the RAM could not take the park; the drain runs as before
 	EvCordoned       = "card.cordoned"      // berth cordon: no new grants on the card but holds
 	EvUncordoned     = "card.uncordoned"    // berth uncordon: the card grants again
-	EvParkEvicted    = "lease.park_evicted" // the parked engine is being stopped: ttl, RAM floor or pressure
+	EvBatchStarted   = "batch.started"      // berth batch: the engine keeps the card until it has been idle
+	EvBatchEnded     = "batch.ended"        // the batch's engine stayed idle, hit the cap, or berth batch --end
+	EvParkEvicted    = "lease.park_evicted" // the parked engine is being stopped: ttl, RAM floor, pressure, a window
 	EvLending        = "lease.lending"      // a serving holder was asked to give part of its card to a waiter
 	EvLent           = "lease.lent"         // the engine gave it, and a card read after the answer shows it free
 	EvReturned       = "lease.returned"     // the borrower is gone; the holder took its memory back
@@ -331,6 +366,9 @@ type Status struct {
 	// scope's anon plus shmem, or its VRAM footprint where Berth reads no
 	// scope. A reading, never a reservation.
 	ParkedBytes uint64 `json:"parked_bytes,omitempty"`
+	// ParkOff is set while berth park off has parking switched off: a
+	// drain stops its engine instead of parking it in RAM.
+	ParkOff bool `json:"park_off,omitempty"`
 	// Passthrough is the VM state of the first scheduled card, set only
 	// while every scheduled card in this status is bound to vfio-pci or
 	// switching to or from it, so none serves. With one card of several in

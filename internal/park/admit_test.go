@@ -188,3 +188,22 @@ func TestLedgerCapsTheMachinesParkedRAM(t *testing.T) {
 		t.Fatalf("a refused park was recorded: gpu0 sees %+v", got)
 	}
 }
+
+// A render on gpu0 that will climb back to its peak keeps that RAM from a
+// park on gpu1, the same as a park in flight there.
+func TestLedgerBooksOtherCardsRAMToCome(t *testing.T) {
+	l := &Ledger{}
+	l.Set("gpu0", Totals{ToCome: 30 << 30})
+	b := Budget{Available: 40 << 30, Floor: 2 << 30}
+	ok, why := l.Admit("gpu1", Totals{}, b, 18<<30)
+	if want := "park refused: needs 18.0 GiB, 8.0 GiB available above the floor"; ok || why != want {
+		t.Fatalf("gpu1 beside 30 GiB to come on gpu0 = %v, %q; want false, %q", ok, why, want)
+	}
+	l.Set("gpu0", Totals{})
+	if ok, why := l.Admit("gpu1", Totals{ToCome: 4 << 30}, b, 18<<30); !ok {
+		t.Fatalf("gpu1 with room: refused %q", why)
+	}
+	if got := l.Others("gpu0"); got != (Totals{Parking: 18 << 30, ToCome: 4 << 30}) {
+		t.Fatalf("gpu1's admitted totals = %+v, want its parking and its own RAM to come", got)
+	}
+}

@@ -382,6 +382,32 @@ signal and skips a mismatch, so a reused PID is never signalled.`,
 		Run:     runReclaim,
 	},
 	{
+		Name:    "park",
+		Summary: "RAM parking: on, off, or status",
+		Args:    "[on|off|status] [--socket P] [--format F]",
+		Help: `Parking is automatic: a drained engine that fits in RAM parks there, so it
+comes back in seconds. berth park off switches it off for every card: it
+evicts what is parked now, and every drain after it stops its engine the way
+it did before parking existed. berth park on switches it back on. With no
+argument, or status, it reports the switch. The switch lives in the daemon:
+a restart of berthd starts with parking on.`,
+		Formats: []Format{FormatHuman, FormatJSON, FormatYAML},
+		Run:     runPark,
+	},
+	{
+		Name:    "unpark",
+		Summary: "drop a parked engine from RAM now",
+		Args:    "ENGINE | --all [--socket P] [--format F]",
+		Help: `Evict the parked engine (by name or engine family), or every parked engine
+with --all, so the RAM it holds is free now instead of at its ttl. Each one
+stops through its own wrapper, as a ttl eviction stops it; the next request
+for it starts it cold. An engine that is running on the card is not touched:
+berth stop is for that. Nothing parked is no error, so a long job can run
+berth unpark --all before it starts.`,
+		Formats: []Format{FormatHuman, FormatJSON, FormatYAML},
+		Run:     runUnpark,
+	},
+	{
 		Name:    "resume",
 		Summary: "put a parked engine back on the card",
 		Args:    "ENGINE [--socket P] [--format F]",
@@ -541,6 +567,23 @@ berth uncordon or until berthd restarts.`,
 		Help:    `Lift berth cordon from the named card. Its waiters are scheduled at once.`,
 		Formats: []Format{FormatHuman, FormatJSON, FormatYAML},
 		Run:     runUncordon,
+	},
+	{
+		Name:    "batch",
+		Summary: "keep the card on one engine until its queue has been empty for a while",
+		Args:    "ENGINE [--grace D] [--max D] [--end] [--socket P] [--format F]",
+		Help: `Start a batch for the named engine (by name or engine family) before
+queueing many jobs on it, such as forty images on ComfyUI. While the batch
+lasts, the engine's lease keeps the card from every waiter but a hold, as a
+minimum turn does, so a chat request between two jobs waits instead of
+draining it. If the engine is waiting for the card, it takes it the way a
+switch does. The batch ends by itself once the engine has had no job running
+or queued for --grace (default 30s), or after --max (default 4h); a single
+job with no batch hands the card back and forth as before. Run it again to
+renew the batch; --end ends it now. A batch lasts until it ends or berthd
+restarts.`,
+		Formats: []Format{FormatHuman, FormatJSON, FormatYAML},
+		Run:     runBatch,
 	},
 	{
 		Name:    "stop",

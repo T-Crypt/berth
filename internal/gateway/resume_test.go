@@ -155,7 +155,7 @@ func TestGatewayResumesAParkedEngine(t *testing.T) {
 		t.Fatal("the vllm adapter is missing")
 	}
 	engineLog := &syncBuf{}
-	go runner.Run(runner.Options{Socket: sock, Engine: "vllm", Priority: "interactive", Needs: 8 << 30,
+	go runner.Run(runner.Options{Socket: sock, Engine: "vllm", Priority: "interactive", Needs: []uint64{8 << 30},
 		Park: &adapter, ParkBase: srv.URL, ParkProbe: "/v1/models",
 		Grace: 200 * time.Millisecond, Argv: []string{"sleep", "30"}, Stderr: engineLog})
 

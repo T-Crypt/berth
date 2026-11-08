@@ -56,9 +56,9 @@ type Engine struct {
 	// model it serves and it is not running. Start is the engine's command;
 	// it runs under a lease exactly as `berth run` would.
 	Start    []string `toml:"start,omitempty" json:"start,omitempty" yaml:"start,omitempty"`
-	Serves   []string `toml:"serves,omitempty" json:"serves,omitempty" yaml:"serves,omitempty"`         // model names this engine answers for
-	Priority string   `toml:"priority,omitempty" json:"priority,omitempty" yaml:"priority,omitempty"`   // batch, interactive (default) or foreground
-	NeedsMiB uint64   `toml:"needs_mib,omitzero" json:"needs_mib,omitempty" yaml:"needs_mib,omitempty"` // 0 = the whole card
+	Serves   []string `toml:"serves,omitempty" json:"serves,omitempty" yaml:"serves,omitempty"`          // model names this engine answers for
+	Priority string   `toml:"priority,omitempty" json:"priority,omitempty" yaml:"priority,omitempty"`    // batch, interactive (default) or foreground
+	NeedsMiB MiBs     `toml:"needs_mib,omitempty" json:"needs_mib,omitempty" yaml:"needs_mib,omitempty"` // per card, in gpu order; none = the whole card
 	// Background: the gateway starts this engine at batch priority whenever
 	// the card has been free (no lease, no waiter, the card serving this
 	// machine) for IdleAfter. Any other request drains it as any batch
@@ -106,6 +106,11 @@ type Engine struct {
 	// time, whatever its priority, only a hold takes the card out. When
 	// the turn ends the normal rules apply. 0 = off, the default.
 	MinTurn Duration `toml:"min_turn,omitzero" json:"min_turn,omitempty" yaml:"min_turn,omitempty"`
+	// Window holds the lease to set hours: window = "23:00-07:00". A
+	// waiting lease outside it is not granted, and a holder is drained when
+	// the window closes, at its usual boundary. A background engine with a
+	// window is never started outside it. Unset = no window.
+	Window proto.Window `toml:"window,omitzero" json:"window,omitempty" yaml:"window,omitempty"`
 	// ParkTTL is how long this engine stays parked before Berth stops it,
 	// in place of [park] ttl. A short one suits keep_comfyui_up: a drain
 	// leaves ComfyUI up, so work its own nodes run outside the queue (a
@@ -231,6 +236,7 @@ type Config struct {
 		Ports    []int    `toml:"discover_ports,omitempty" json:"discover_ports,omitempty" yaml:"discover_ports,omitempty"`
 	} `toml:"engines" json:"engines" yaml:"engines"`
 	Engine    []Engine        `toml:"engine,omitempty" json:"engine,omitempty" yaml:"engine,omitempty"`
+	Peer      []Peer          `toml:"peer,omitempty" json:"peer,omitempty" yaml:"peer,omitempty"`
 	Alerts    AlertsConfig    `toml:"alerts" json:"alerts" yaml:"alerts"`
 	Priority  PriorityConfig  `toml:"priority,omitempty" json:"priority" yaml:"priority"`
 	Claims    ClaimsConfig    `toml:"claims,omitempty" json:"claims" yaml:"claims"`
@@ -698,6 +704,9 @@ func (c *Config) Validate() error {
 		if e.DrainMax.Duration < 0 {
 			errs = append(errs, fmt.Errorf("%s: drain_max %s must be >= 0", where, e.DrainMax))
 		}
+		if err := CheckNeeds(e.NeedsMiB, e.GPU); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", where, err))
+		}
 		if e.MinTurn.Duration < 0 {
 			errs = append(errs, fmt.Errorf("%s: min_turn %s must be >= 0", where, e.MinTurn))
 		}
@@ -847,6 +856,16 @@ func (c *Config) Validate() error {
 	}
 	if c.Park.TTL.Duration < 0 {
 		errs = append(errs, errors.New("park.ttl must not be negative"))
+	}
+	peers := map[string]bool{}
+	for i, p := range c.Peer {
+		if err := validPeer(p); err != nil {
+			errs = append(errs, fmt.Errorf("peer[%d] %s: %w", i, p.Name, err))
+		}
+		if peers[p.Name] {
+			errs = append(errs, fmt.Errorf("peer[%d]: the name %s is already a peer", i, p.Name))
+		}
+		peers[p.Name] = true
 	}
 	return errors.Join(errs...)
 }

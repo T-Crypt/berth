@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/T-Crypt/berth/internal/broker"
 	"github.com/T-Crypt/berth/internal/eventlog"
@@ -254,6 +255,54 @@ func (n *Node) Stop(engine string) ([]string, error) {
 	return slices.Compact(ids), nil
 }
 
+// Batch starts or renews engine's batch on every card (see Broker.Batch).
+func (n *Node) Batch(engine string, grace, max time.Duration) {
+	for _, c := range n.cards {
+		c.B.Batch(engine, grace, max)
+	}
+}
+
+// EndBatch ends engine's batch on every card; false when no card had one.
+func (n *Node) EndBatch(engine string) bool {
+	ended := false
+	for _, c := range n.cards {
+		ended = c.B.EndBatch(engine) || ended
+	}
+	return ended
+}
+
+// Unpark evicts engine's parked leases ("" = every one) on every card.
+func (n *Node) Unpark(engine string) []string {
+	ids := []string{}
+	for _, c := range n.cards {
+		ids = append(ids, c.B.Unpark(engine)...)
+	}
+	slices.Sort(ids)
+	return slices.Compact(ids)
+}
+
+// SetParkOff switches parking off or on for every card; off evicts what
+// is parked now.
+func (n *Node) SetParkOff(off bool) []string {
+	ids := []string{}
+	for _, c := range n.cards {
+		ids = append(ids, c.B.SetParkOff(off)...)
+	}
+	slices.Sort(ids)
+	return slices.Compact(ids)
+}
+
+// ParkOff is whether parking is switched off (any card counts: the switch
+// is set on all of them at once).
+func (n *Node) ParkOff() bool {
+	for _, c := range n.cards {
+		if c.B.ParkOff() {
+			return true
+		}
+	}
+	return false
+}
+
 // Resume puts engine's parked lease back in line on the card it parked on.
 func (n *Node) Resume(engine string, switched bool) error {
 	var first error
@@ -386,6 +435,7 @@ func (n *Node) Status() proto.Status {
 		st.Priority = mergePriority(st.Priority, cs.Priority)
 		st.Counters = add(st.Counters, cs.Counters)
 		st.ParkedBytes += cs.ParkedBytes
+		st.ParkOff = st.ParkOff || cs.ParkOff
 		if cs.ProbeErr != "" {
 			probeErrs = append(probeErrs, n.cards[i+1].Name+": "+cs.ProbeErr)
 		}

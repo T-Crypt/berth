@@ -826,7 +826,10 @@ func TestUnprotectedRunsAreListed(t *testing.T) {
 	tree := procs.Fake{Parents: map[int]int{301: 300}, Starts: map[int]uint64{300: 7, 301: 8}}
 	b, c, _ := setup(t, tree)
 	b.cfg.RunsDir = dir
-	if _, err := runs.Write(dir, runs.Record{Engine: "strata", PID: 300, Start: 7, Started: time.Now(), Reason: "berthd unreachable at start"}); err != nil {
+	// Past the re-attach window: inside it the run is due to re-attach,
+	// not a squatter.
+	b.cfg.ReattachWindow = time.Nanosecond
+	if _, err := runs.Write(dir, runs.Record{Engine: "strata", PID: 300, Start: 7, Started: time.Now(), Reason: runs.ReasonStart}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := runs.Write(dir, runs.Record{Engine: "ghost", PID: 400, Start: 3}); err != nil {

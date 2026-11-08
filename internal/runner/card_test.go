@@ -6,11 +6,14 @@
 package runner
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -69,11 +72,17 @@ func TestRunOnANamedCard(t *testing.T) {
 // are GPU-<name>-uuid.
 func twoCardDaemon(t *testing.T) (string, *node.Node) {
 	t.Helper()
+	return twoCardDaemonWait(t, 5*time.Second)
+}
+
+// twoCardDaemonWait is twoCardDaemon with berthd's default wait set.
+func twoCardDaemonWait(t *testing.T, wait time.Duration) (string, *node.Node) {
+	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	events, ids, seq, ledger := node.Shared()
 	card := func(name string) *node.Card {
 		b := broker.New(broker.Config{Card: name, Events: events, IDs: ids, Seq: seq, Ledger: ledger,
-			Poll: 20 * time.Millisecond, DefaultWait: 5 * time.Second, JuggleWindow: -1, Log: log},
+			Poll: 20 * time.Millisecond, DefaultWait: wait, JuggleWindow: -1, Log: log},
 			&parkCard{total: 24 << 30}, procs.System{})
 		return &node.Card{Name: name, UUID: "GPU-" + name + "-uuid", B: b}
 	}
@@ -171,10 +180,65 @@ func TestDrainOnOneCardStopsALeaseOnSeveral(t *testing.T) {
 }
 
 // A run re-attaches to the card it was granted on, so a restarted berthd
-// puts a gpu1 engine back on gpu1, not on the first card.
+// puts a gpu1 engine back on gpu1, not on the first card. Its hours ride
+// along, so a daemon restart does not hand back a window.
 func TestReattachNamesTheCard(t *testing.T) {
-	m := reattachMsg(Options{Engine: "maya", Card: "gpu1"}, 101, 7, &containerRef{}, false, newLine(nil))
-	if m.Op != proto.OpReattach || m.Card != "gpu1" {
-		t.Fatalf("reattach msg = op %s card %q, want reattach on gpu1", m.Op, m.Card)
+	m := reattachMsg(Options{Engine: "maya", Card: "gpu1", Window: proto.Window{Start: 23 * 60, End: 7 * 60}},
+		101, 7, &containerRef{}, false, newLine(nil))
+	if m.Op != proto.OpReattach || m.Card != "gpu1" || m.Window != "23:00-07:00" {
+		t.Fatalf("reattach msg = op %s card %q window %q, want reattach on gpu1 with its window", m.Op, m.Card, m.Window)
+	}
+}
+
+// A run split unevenly across two cards leases each card's own size, in the
+// order --gpu names them, through the socket and berthd; sizes that do not
+// match the cards are refused.
+func TestRunSizesEachCard(t *testing.T) {
+	sock, n := twoCardDaemon(t)
+	done := make(chan int, 1)
+	go func() {
+		done <- Run(Options{Socket: sock, Engine: "llama-70b", Priority: "interactive", Card: "gpu1,gpu0",
+			Needs: []uint64{6 << 30, 18 << 30}, Grace: time.Second, Argv: []string{"sleep", "2"}, Stderr: io.Discard})
+	}()
+	want := map[string]uint64{"gpu0": 18 << 30, "gpu1": 6 << 30}
+	got := map[string]uint64{}
+	for deadline := time.Now().Add(3 * time.Second); len(got) < 2 && time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		for name := range want {
+			c, err := n.Card(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, l := range c.B.Status().Leases {
+				if l.Engine == "llama-70b" {
+					got[name] = l.Needs
+				}
+			}
+		}
+	}
+	if got["gpu0"] != want["gpu0"] || got["gpu1"] != want["gpu1"] {
+		t.Errorf("shares = %v, want %v", got, want)
+	}
+	if code := <-done; code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+
+	var errBuf bytes.Buffer
+	code := Run(Options{Socket: sock, Engine: "llama-70b", Priority: "interactive", Card: "gpu0",
+		Needs: []uint64{6 << 30, 18 << 30}, Grace: time.Second, Argv: []string{"true"}, Stderr: &errBuf})
+	if code != ExitRefused || !strings.Contains(errBuf.String(), `2 sizes for 1 card(s) in "gpu0"`) {
+		t.Errorf("exit %d, output %q; want a refusal naming 2 sizes for 1 card", code, errBuf.String())
+	}
+}
+
+// A re-attach carries the per-card sizes too, with the largest in Needs for
+// a berthd that reads only that.
+func TestReattachCarriesEachCardsSize(t *testing.T) {
+	m := reattachMsg(Options{Engine: "llama-70b", Card: "gpu0,gpu1", Needs: []uint64{18 << 30, 6 << 30}}, 100, 7, &containerRef{}, false, newLine(nil))
+	if m.Needs != 18<<30 || !slices.Equal(m.NeedsEach, []uint64{18 << 30, 6 << 30}) {
+		t.Errorf("needs %d, each %v; want 18 GiB and [18 GiB 6 GiB]", m.Needs, m.NeedsEach)
+	}
+	m = reattachMsg(Options{Engine: "llama-70b", Card: "gpu0,gpu1", Needs: []uint64{8 << 30}}, 100, 7, &containerRef{}, false, newLine(nil))
+	if m.Needs != 8<<30 || m.NeedsEach != nil {
+		t.Errorf("one size: needs %d, each %v; want 8 GiB and none", m.Needs, m.NeedsEach)
 	}
 }
