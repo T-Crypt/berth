@@ -63,7 +63,7 @@ func (b *Broker) EndBatch(engine string) bool {
 	if _, ok := b.batches[engine]; !ok {
 		return false
 	}
-	b.endBatch(engine, "ended by hand")
+	b.endBatch(engine, "ended on request")
 	b.schedule(b.now())
 	return true
 }
