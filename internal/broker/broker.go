@@ -1047,11 +1047,11 @@ func (b *Broker) runFor(pid int) *runs.Record {
 	return nil
 }
 
-// dueToReattach is true for a run that lost the previous daemon mid-run,
-// while this daemon is young enough that its berth run is still dialling
-// back, and it has not re-attached yet.
+// dueToReattach is true for a run that lost the previous daemon mid-run, or
+// found none at its start, while this daemon is young enough that its berth
+// run is still dialling, and it has not re-attached yet.
 func (b *Broker) dueToReattach(r runs.Record, now time.Time) bool {
-	if r.Reason != runs.ReasonLost || now.Sub(b.started) >= b.cfg.ReattachWindow {
+	if (r.Reason != runs.ReasonLost && r.Reason != runs.ReasonStart) || now.Sub(b.started) >= b.cfg.ReattachWindow {
 		return false
 	}
 	for _, l := range b.leases {

@@ -386,6 +386,62 @@ func TestReattachAfterDaemonRestart(t *testing.T) {
 	}
 }
 
+// A service that starts before berthd at boot finds no socket. The engine
+// starts without a lease, and the run keeps dialling, so the daemon that
+// comes up leases it the card, and the lease drains like any other.
+func TestRunStartedBeforeDaemonReattaches(t *testing.T) {
+	sock := filepath.Join(t.TempDir(), "berth.sock")
+	eng, out := launch(runner.Options{Socket: sock, Engine: "gemma4", Priority: "foreground",
+		Retry: 50 * time.Millisecond, Grace: 200 * time.Millisecond, Argv: []string{"sleep", "30"}})
+	waitFor(t, "unprotected record", func() bool {
+		return len(runs.List(runs.Dir(sock), procs.System{}.StartTime)) == 1
+	})
+	if !strings.Contains(out.String(), "UNPROTECTED: berthd unreachable") {
+		t.Fatalf("no unprotected warning:\n%s", out.String())
+	}
+
+	b, _ := daemon(t, sock, time.Hour)
+	waitFor(t, "re-attach", func() bool { return strings.Contains(out.String(), "re-attached gemma4") })
+	st := b.Status()
+	if len(st.Leases) != 1 || st.Leases[0].Engine != "gemma4" || st.Leases[0].State != "active" || st.Leases[0].PID == 0 {
+		t.Fatalf("leases after re-attach = %+v", st.Leases)
+	}
+	waitFor(t, "record removed", func() bool { return len(runs.List(runs.Dir(sock), procs.System{}.StartTime)) == 0 })
+
+	second, out2 := launch(runner.Options{Socket: sock, Engine: "comfyui", Priority: "foreground", Argv: []string{"true"}})
+	if code := <-eng; code != 128+15 {
+		t.Fatalf("engine exit = %d, want 143 after drain; stderr:\n%s", code, out.String())
+	}
+	if code := <-second; code != 0 {
+		t.Fatalf("second exit = %d; stderr:\n%s", code, out2.String())
+	}
+}
+
+// A run that found no daemon at its start holds new grants in the window
+// the same way a run that lost one does.
+func TestRestartWindowHoldsGrantsForARunStartedBeforeIt(t *testing.T) {
+	sock := filepath.Join(t.TempDir(), "berth.sock")
+	orphan := exec.Command("sleep", "30")
+	if err := orphan.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = orphan.Process.Kill(); _ = orphan.Wait() })
+	pid := orphan.Process.Pid
+	if _, err := runs.Write(runs.Dir(sock), runs.Record{Engine: "gemma4", PID: pid, Start: procs.System{}.StartTime(pid),
+		Started: time.Now(), Reason: runs.ReasonStart}); err != nil {
+		t.Fatal(err)
+	}
+	daemon(t, sock, 600*time.Millisecond)
+	t0 := time.Now()
+	code, out := launch(runner.Options{Socket: sock, Engine: "comfyui", Argv: []string{"true"}})
+	if c := <-code; c != 0 {
+		t.Fatalf("exit = %d; stderr:\n%s", c, out.String())
+	}
+	if el := time.Since(t0); el < 400*time.Millisecond {
+		t.Fatalf("granted after %s, inside the re-attach window", el)
+	}
+}
+
 // While a run that lost the last daemon is alive and has not re-attached,
 // a new daemon grants nothing; once the window passes it schedules as usual.
 func TestRestartWindowHoldsNewGrants(t *testing.T) {

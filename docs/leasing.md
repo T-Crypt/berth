@@ -38,7 +38,9 @@
   card it will use. A `[[claim]]` with `gpu = "gpu1"` holds only the cards it names. A lease on several cards
   cannot park or lend yet.
 - **Fail-open, never silent.** If the daemon is down, `berth run` still starts the engine
-  but records it as an *unprotected run* that status shows (`--fail-closed` refuses).
+  but records it as an *unprotected run* that status shows (`--fail-closed` refuses). It
+  keeps dialling, and re-attaches when a daemon answers, so a service that starts before
+  berthd at boot ends up leased.
 - **Survives a daemon restart.** A running engine stays up when berthd restarts or is
   upgraded; `berth run` dials the new daemon and re-attaches by PID plus start time. For
   15 s after a start the daemon grants nothing new while such engines are still due back,
