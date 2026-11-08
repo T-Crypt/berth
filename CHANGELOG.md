@@ -8,6 +8,12 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Added
 
+- `berth batch ENGINE` and `POST /v1/berth/batch`: keep the card on one engine for a run of jobs. While the batch
+  lasts, no waiter but a hold drains the engine, and the engine takes the card the way a switch does when it is the
+  one waiting. The batch ends by itself once the engine has had no job running or queued for `--grace` (30 s), or
+  after `--max` (4 h). An agent that queues forty images on ComfyUI no longer gives the card to its own chat model
+  between images, and one image still goes back and forth as before. The ComfyUI skill tells agents when to use it.
+
 - On Linux, a parked engine is first in line for the OOM killer: its processes get `oom_score_adj` 1000 while
   parked, and their own scores back on resume. When RAM runs out anyway, the kernel or earlyoom kills the parked
   copy and not the render on the card.

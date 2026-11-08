@@ -91,6 +91,9 @@ func (b *Broker) keeps(h, w *lease, now time.Time) (bool, string) {
 	if w.switched {
 		return false, "" // a person's switch is the last switch: it wins
 	}
+	if _, bt := b.batchOf(w); bt != nil {
+		return false, "" // a batch asked for the card on purpose, as a switch does
+	}
 	if w.lostTo == h.id {
 		return true, w.lostWhy
 	}

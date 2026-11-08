@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/T-Crypt/berth/internal/broker"
 	"github.com/T-Crypt/berth/internal/eventlog"
@@ -252,6 +253,22 @@ func (n *Node) Stop(engine string) ([]string, error) {
 	// A lease on several cards is drained on each of them, under one ID.
 	slices.Sort(ids)
 	return slices.Compact(ids), nil
+}
+
+// Batch starts or renews engine's batch on every card (see Broker.Batch).
+func (n *Node) Batch(engine string, grace, max time.Duration) {
+	for _, c := range n.cards {
+		c.B.Batch(engine, grace, max)
+	}
+}
+
+// EndBatch ends engine's batch on every card; false when no card had one.
+func (n *Node) EndBatch(engine string) bool {
+	ended := false
+	for _, c := range n.cards {
+		ended = c.B.EndBatch(engine) || ended
+	}
+	return ended
 }
 
 // Unpark evicts engine's parked leases ("" = every one) on every card.
