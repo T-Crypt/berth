@@ -113,11 +113,25 @@ v0.4.1 lets a client choose the card on a node with several. Testers ran it firs
 - **The harbor.** A CLAIMS panel on the card tab, a rewritten About tab, and a header that no longer clips.
 - **Status after a stop.** An engine Berth stopped shows as offline, not unresponsive.
 
-## Next: v0.5, the switchboard and models across machines
+## Shipped: v0.5.0, the switchboard and peers (2026-11-08)
 
-- **A SWITCH tab in the harbor** with a card picker, as the gateway's `/gui/` page has. On `next`.
+v0.5.0 was tagged first as `v0.5.0-rc.1`.
+
+- **A SWITCH tab in the harbor.** A paired phone switches a card to an engine, stops its holder and loads one
+  llama-swap model. A picker narrows the engines to one card.
 - **Peers.** A `[[peer]]` entry names another node's gateway on the tailnet. A model no engine here serves goes
-  to the first peer that lists it, and leases stay on each node. On `next`.
+  to the first peer that lists it, and leases stay on each node.
+- **Batches.** `berth batch ENGINE` keeps the card on one engine while its queue has work, so a run of images
+  does not hand the card back between jobs.
+- **Lease windows.** `window = "23:00-07:00"` keeps an engine's work to the hours it names.
+- **A size per card.** `needs_mib = [18000, 6000]` reserves each card's share of a model split over two cards.
+- **RAM for the render.** Park admission keeps room for the RAM a holder or waiter will take back, a parked
+  engine is first for the OOM killer, and `berth unpark` and `berth park off` drop parks by hand.
+- **Restarts.** A run that started before berthd, or lost it, re-attaches when a daemon answers, and berthd
+  logs a refused re-attach with its reason.
+
+## Next: v0.5.x, models across machines
+
 - **The soonest node.** When several nodes serve a model, send the request to the one where it is warm or the
   card is free, by the same reach order a node uses for its own cards.
 - **One board.** The harbor's SWITCH tab shows each peer's cards and engines beside this node's.
