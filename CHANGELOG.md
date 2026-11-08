@@ -64,6 +64,11 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Fixed
 
+- An engine that `berth run` started while berthd was not up yet, as a service that starts beside berthd at boot
+  can be, is now leased once berthd answers. Before, it stayed unprotected until it exited, and berthd counted it
+  as a squatter. The run keeps dialling as it does after a daemon restart, and the new daemon holds new grants for
+  it in the same 15 s window.
+
 - An engine stopped by a SIGTERM or SIGINT sent to it directly, as `kill PID`, a stop script or Ctrl+C sends,
   no longer shows as unresponsive (LATCHED) in `berth status` and the harbor. It shows as offline, as an engine
   Berth or its supervisor stopped already does. One killed by SIGKILL or any other signal still shows as

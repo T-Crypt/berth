@@ -221,36 +221,19 @@ func Run(o Options) int {
 			say("berthd unreachable (%v); not starting %s", err, o.Engine)
 			return ExitRefused
 		}
-		say("UNPROTECTED: berthd unreachable (%v); starting %s without a lease", err, o.Engine)
-		return runUnleased(o, "berthd unreachable at start")
+		// The engine starts unleased and the line below dials on, so a
+		// daemon that comes up later (berthd starting beside this service
+		// at boot) re-attaches it the way it would a run it lost.
+		say("UNPROTECTED: berthd unreachable (%v); starting %s without a lease, retrying", err, o.Engine)
+		conn, raw = nil, nil
 	}
-	defer raw.Close()
 
-	if err := conn.Send(proto.Msg{Op: proto.OpAcquire, Card: o.Card, Engine: o.Engine, Group: o.Group, Priority: o.Priority, Needs: largest(o.Needs), NeedsEach: each(o.Needs), Wait: o.Wait.Seconds(), Pinned: o.Pinned, Switched: o.Switched, Lend: o.Lend != nil, WholeMachine: o.WholeMachine, MinTurn: o.MinTurn.Seconds(), ParkTTL: o.ParkTTL.Seconds(), Window: o.Window.String()}); err != nil {
-		say("acquire: %v", err)
-		return ExitRefused
-	}
 	var cardEnv string
-	for granted := false; !granted; {
-		m, err := conn.Recv()
-		if err != nil {
-			say("berthd went away while %s was waiting: %v", o.Engine, err)
+	if conn != nil {
+		defer raw.Close()
+		var ok bool
+		if cardEnv, ok = acquire(o, conn, say); !ok {
 			return ExitRefused
-		}
-		switch m.Op {
-		case proto.OpWaiting:
-			say("waiting: %s", m.Reason)
-		case proto.OpRefused:
-			say("refused: %s", m.Reason)
-			return ExitRefused
-		case proto.OpGranted:
-			if m.Reason != "" {
-				say("granted %s, WARNING: %s", m.Lease, m.Reason)
-			} else {
-				say("granted %s", m.Lease)
-			}
-			granted = true
-			cardEnv = visibleDevices(o.Card, m, os.LookupEnv, say)
 		}
 	}
 
@@ -264,7 +247,9 @@ func Run(o Options) int {
 		return 127
 	}
 	afterStart(cmd)
-	_ = conn.Send(proto.Msg{Op: proto.OpAttach, PID: cmd.Process.Pid})
+	if conn != nil {
+		_ = conn.Send(proto.Msg{Op: proto.OpAttach, PID: cmd.Process.Pid})
+	}
 	if o.Checkpoint {
 		o.Park = checkpointPark(o, cmd.Process.Pid, say)
 	}
@@ -350,33 +335,41 @@ func Run(o Options) int {
 	// Run returns only after the listener does, so an unprotected-run record
 	// it wrote is gone by then.
 	listening := make(chan struct{})
-	go func(c net.Conn) { <-done; c.Close() }(raw)
+	if raw != nil {
+		go func(c net.Conn) { <-done; c.Close() }(raw)
+	}
 	go func() {
 		defer close(listening)
+		// A run that found no daemon at its start has no line to hear yet:
+		// it goes straight to dialling.
+		reason := runs.ReasonStart
 		for {
-			err := listen(conn, func(m proto.Msg) {
-				switch {
-				case m.Op == proto.OpDrain:
-					startDrain(o, m.Reason)
-				case m.Op == proto.OpParkOK || m.Op == proto.OpRefused:
-					line.note(m)
-				case m.Op == proto.OpLend:
-					go line.lendStep(o, m, say)
-				case m.Op == proto.OpReturn:
-					go line.returnStep(o, m.LendID, say)
-				case m.Op == proto.OpGranted && m.Resume:
-					go line.resume(o, cmd, done, say)
+			if conn != nil {
+				err := listen(conn, func(m proto.Msg) {
+					switch {
+					case m.Op == proto.OpDrain:
+						startDrain(o, m.Reason)
+					case m.Op == proto.OpParkOK || m.Op == proto.OpRefused:
+						line.note(m)
+					case m.Op == proto.OpLend:
+						go line.lendStep(o, m, say)
+					case m.Op == proto.OpReturn:
+						go line.returnStep(o, m.LendID, say)
+					case m.Op == proto.OpGranted && m.Resume:
+						go line.resume(o, cmd, done, say)
+					}
+				})
+				select {
+				case <-done:
+					return
+				default:
 				}
-			})
-			select {
-			case <-done:
-				return
-			default:
+				// The engine keeps running (fail-open) and is on record as
+				// unprotected until a daemon answers again and re-attaches it.
+				say("UNPROTECTED: lost berthd (%v); %s keeps running without a lease, retrying", err, o.Engine)
+				reason = runs.ReasonLost
 			}
-			// The engine keeps running (fail-open) and is on record as
-			// unprotected until a daemon answers again and re-attaches it.
-			say("UNPROTECTED: lost berthd (%v); %s keeps running without a lease, retrying", err, o.Engine)
-			remove := record(o, cmd, runs.ReasonLost)
+			remove := record(o, cmd, reason)
 			line.adoptLends(o, say)
 			var lease string
 			conn, raw, lease = reattach(o, cmd, done, &cid, line)
@@ -407,6 +400,36 @@ func Run(o Options) int {
 	close(done)
 	<-listening
 	return code
+}
+
+// acquire asks berthd for the card and waits for the grant. It returns the
+// device entry the engine starts with, and false when there is no grant.
+func acquire(o Options, conn *proto.Conn, say func(string, ...any)) (string, bool) {
+	if err := conn.Send(proto.Msg{Op: proto.OpAcquire, Card: o.Card, Engine: o.Engine, Group: o.Group, Priority: o.Priority, Needs: largest(o.Needs), NeedsEach: each(o.Needs), Wait: o.Wait.Seconds(), Pinned: o.Pinned, Switched: o.Switched, Lend: o.Lend != nil, WholeMachine: o.WholeMachine, MinTurn: o.MinTurn.Seconds(), ParkTTL: o.ParkTTL.Seconds(), Window: o.Window.String()}); err != nil {
+		say("acquire: %v", err)
+		return "", false
+	}
+	for {
+		m, err := conn.Recv()
+		if err != nil {
+			say("berthd went away while %s was waiting: %v", o.Engine, err)
+			return "", false
+		}
+		switch m.Op {
+		case proto.OpWaiting:
+			say("waiting: %s", m.Reason)
+		case proto.OpRefused:
+			say("refused: %s", m.Reason)
+			return "", false
+		case proto.OpGranted:
+			if m.Reason != "" {
+				say("granted %s, WARNING: %s", m.Lease, m.Reason)
+			} else {
+				say("granted %s", m.Lease)
+			}
+			return visibleDevices(o.Card, m, os.LookupEnv, say), true
+		}
+	}
 }
 
 // listen hears the daemon until the connection drops, passing each
@@ -707,25 +730,6 @@ func slotsBusy(url, key string) (int, error) {
 		}
 	}
 	return n, nil
-}
-
-func runUnleased(o Options, reason string) int {
-	cmd := command(o, o.Output)
-	if err := cmd.Start(); err != nil {
-		fmt.Fprintf(o.Stderr, "berth: start %s: %v\n", o.Argv[0], err)
-		return 127
-	}
-	afterStart(cmd)
-	defer record(o, cmd, reason)()
-	done := make(chan struct{})
-	go forwardSignals(cmd, done, func() bool { return false }, func() {})
-	err := cmd.Wait()
-	afterWait(cmd)
-	close(done)
-	if errors.Is(err, exec.ErrWaitDelay) {
-		err = nil
-	}
-	return exitCode(cmd, err)
 }
 
 // record leaves a note beside the socket that this engine runs without a
