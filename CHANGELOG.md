@@ -6,6 +6,15 @@ has a matching GitHub release whose body comes from its section below.
 
 ## [Unreleased]
 
+## [v0.5.0] - 2026-11-08
+
+v0.5.0 puts the switchboard on a phone and lets one node send a request to another. The harbor's SWITCH tab
+switches a card to an engine, stops its holder and loads one llama-swap model from a paired device. A `[[peer]]`
+entry names another node's gateway on the tailnet, and a model no engine here serves goes to the first peer that
+lists it. `berth batch` keeps the card on one engine for a run of jobs, a lease window keeps work to the hours you
+set, a model split unevenly over two cards reserves a size per card, and park admission keeps room for the RAM a
+render will take back.
+
 ### Added
 
 - `berth batch ENGINE` and `POST /v1/berth/batch`: keep the card on one engine for a run of jobs. While the batch
@@ -39,11 +48,12 @@ has a matching GitHub release whose body comes from its section below.
   serve another engine. One value still sizes every card. A berthd from before this release reads only the largest
   size and reserves it on every card. docs/leasing.md has a new section on splitting one model across cards.
 
-- `window = "23:00-07:00"` on an `[[engine]]` entry, and `berth run --window 23:00-07:00`: a lease window, for work that should only run
-  in cheap hours. berthd grants the lease inside them and drains its holder when they close, at the same boundary as any other drain. A
-  run that asks outside its window, on one card or several, waits for it with no deadline unless `--wait` sets one, holds up no waiter behind it, and `berth
-  status` says when the window opens. A gateway background engine is not started outside its window at all. A window needs a lease that can be asked back, so it goes with neither `--pinned` nor
-  `--priority hold`.
+- `window = "23:00-07:00"` on an `[[engine]]` entry, and `berth run --window 23:00-07:00`: a lease window, for
+  work that should only run in cheap hours. berthd grants the lease inside them and drains its holder when they
+  close, at the same boundary as any other drain. A run that asks outside its window, on one card or several,
+  waits for it with no deadline unless `--wait` sets one, holds up no waiter behind it, and `berth status` says
+  when the window opens. A gateway background engine is not started outside its window at all. A window needs a
+  lease that can be asked back, so it goes with neither `--pinned` nor `--priority hold`.
 
 - `berth gateway --harbor URL` redirects the gateway's `/gui/` index and `/` to `URL/#switch`, so an old bookmark of the
   engine list lands on the harbor's SWITCH tab. The per-engine wake pages, their state endpoints and the wake POST keep
