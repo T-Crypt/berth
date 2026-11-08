@@ -77,6 +77,22 @@ curl -s -o out.png "$COMFY/view?filename=FILE&subfolder=SUB&type=output"
 - ComfyUI caches a workflow it has already run. The same JSON with the same seed returns the old
   result at once and loads nothing. Change the seed for a new image.
 
+## Many jobs in a row
+
+Before you queue a run of jobs (a set of images, a sheet, a video in passes), start a batch:
+
+```sh
+berth batch comfyui
+# over the network: curl -s http://127.0.0.1:9799/v1/berth/batch \
+#   -H "Authorization: Bearer $(berth key)" -d '{"engine":"comfyui"}'
+```
+
+Without one, every chat turn between two jobs takes the card back, and each job reloads its
+models. With one, ComfyUI keeps the card until its queue has been empty for 30 s (`--grace`), then
+hands it on by itself. Chat requests wait for the batch instead of draining it. Submit the jobs
+back to back, or queue them all at once: a gap longer than the grace ends the batch. `berth batch
+comfyui --end` hands the card on now. One image needs no batch.
+
 ## Hand the card back
 
 You don't release anything by hand. When a chat model asks for the card, Berth waits for

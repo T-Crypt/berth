@@ -88,6 +88,20 @@
     or job boundary, and a minimum turn never cuts a request off. After a daemon restart, a
     re-attach starts a fresh turn.
 
+  - **A batch.** A minimum turn is a fixed time; a batch lasts as long as the work. Before an
+    agent or a script queues many jobs on one engine, `berth batch comfyui` (or
+    `POST /v1/berth/batch`) keeps the card on it until it has had no job running or queued for
+    the grace (`--grace 30s`), or until `--max` (4h) runs out. While it lasts, no waiter but a
+    hold drains the engine, so a chat turn between two images waits for the batch instead of
+    costing both engines a reload. If the engine is the one waiting, it takes the card as a
+    switch does. Waiters read "next in line: comfyui runs a batch; it keeps the card until it
+    has been idle 30s", and the event log has `batch.started` and `batch.ended`. A single job
+    with no batch hands the card back and forth as before. `berth batch comfyui --end` ends it
+    now; a berthd restart ends it too.
+
+    A batch is not the `batch` priority. That one makes an engine wait behind everything
+    else; this one keeps an engine on the card while its queue has work.
+
 ## Games, apps and holds
 - **Claims cover work Berth does not start.** berthd scans the process table every 2 s.
   A *hold* claim keeps the card while its process runs: engines are drained and wait, with a

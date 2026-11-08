@@ -61,6 +61,13 @@ const (
 	// and Cards, the cards' names, or OpRefused for a card the node lacks.
 	OpCordon   = "cordon"
 	OpUncordon = "uncordon"
+	// OpBatch: client: start (or renew) a batch for Engine (by name or
+	// group): its lease keeps the card from every waiter but a hold, and
+	// its waiting lease takes the card as a switch does, until the engine
+	// has been idle for Grace seconds or Max seconds have passed (0 = the
+	// defaults). With End set, end Engine's batch now. The server answers
+	// with the same op, or OpRefused when End finds no batch.
+	OpBatch = "batch"
 	// OpPark: the runner holding a draining lease asks to park its engine
 	// in RAM; the daemon answers OpParkOK or OpRefused with the why line.
 	// OpParked: the runner's park call is done; the daemon watches for the
@@ -151,6 +158,10 @@ type Msg struct {
 	// younger than it after the grant, no waiter drains it but a hold.
 	// OpAcquire and OpReattach; 0 = off.
 	MinTurn float64 `json:"min_turn,omitempty"`
+	// Max and End are an OpBatch's cap, in seconds, and its end request;
+	// its idle grace travels in Grace.
+	Max float64 `json:"max,omitempty"`
+	End bool    `json:"end,omitempty"`
 	// ParkTTL is how long the lease may stay parked, in seconds, in place
 	// of the node's [park] ttl. OpAcquire and OpReattach; 0 = the node's.
 	ParkTTL float64 `json:"park_ttl,omitempty"`
@@ -187,7 +198,8 @@ type Msg struct {
 	// OpReclaim: Lease names the lease to look at ("" = every stuck and
 	// releasing lease), Confirm stops the recorded ones, and Grace is the
 	// seconds a SIGTERM has to work before SIGKILL (0 = the daemon's
-	// default). Holders is the reply: the card processes in question.
+	// default). Holders is the reply: the card processes in question. On an
+	// OpBatch, Grace is the idle seconds that end the batch.
 	Confirm bool     `json:"confirm,omitempty"`
 	Grace   float64  `json:"grace,omitempty"`
 	Holders []Holder `json:"holders,omitempty"`
@@ -270,6 +282,8 @@ const (
 	EvParkRefused    = "lease.park_refused" // the RAM could not take the park; the drain runs as before
 	EvCordoned       = "card.cordoned"      // berth cordon: no new grants on the card but holds
 	EvUncordoned     = "card.uncordoned"    // berth uncordon: the card grants again
+	EvBatchStarted   = "batch.started"      // berth batch: the engine keeps the card until it has been idle
+	EvBatchEnded     = "batch.ended"        // the batch's engine stayed idle, hit the cap, or berth batch --end
 	EvParkEvicted    = "lease.park_evicted" // the parked engine is being stopped: ttl, RAM floor, pressure, a window
 	EvLending        = "lease.lending"      // a serving holder was asked to give part of its card to a waiter
 	EvLent           = "lease.lent"         // the engine gave it, and a card read after the answer shows it free

@@ -493,6 +493,7 @@ type Broker struct {
 	saveFailed bool
 
 	verdicts map[string]verdict // loser engine key -> the juggle it lost
+	batches  map[string]*batch  // berth batch: engine or group -> its batch
 	cordoned bool               // berth cordon: grant only holds
 	parkOff  bool               // berth park off: drains stop their engine, nothing parks
 	// tracked is the claim watcher's last scan: a process (and every child)
@@ -703,6 +704,7 @@ func New(cfg Config, probe gpu.Probe, tree procs.Tree) *Broker {
 		counters:       counters,
 		saved:          counters,
 		verdicts:       map[string]verdict{},
+		batches:        map[string]*batch{},
 		usage:          use,
 		footprints:     foots,
 		started:        time.Now(),
@@ -767,6 +769,7 @@ func (b *Broker) Tick(ctx context.Context) {
 	b.runs = rs
 	b.accountUsage(now)
 	b.pruneVerdicts(now)
+	b.pruneBatches(now)
 	if held != nil {
 		// The switch is berthd's to watch, not to touch: read the driver
 		// from sysfs, grant nothing, keep the hold HOT.
@@ -1481,6 +1484,11 @@ func (b *Broker) evaluate(w *lease, now time.Time) (bool, string, []*lease) {
 			// a call, the operator's own berth hold) takes it out before.
 			kept = append(kept, h)
 			keptWhy = h.turnWhy(now)
+			continue
+		case w.prio != Hold && b.inBatch(h, w):
+			k, bt := b.batchOf(h)
+			kept = append(kept, h)
+			keptWhy = batchWhy(k, bt)
 			continue
 		case h.prio == w.prio:
 			if keep, why := b.keeps(h, w, now); keep {

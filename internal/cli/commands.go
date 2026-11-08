@@ -569,6 +569,23 @@ berth uncordon or until berthd restarts.`,
 		Run:     runUncordon,
 	},
 	{
+		Name:    "batch",
+		Summary: "keep the card on one engine until its queue has been empty for a while",
+		Args:    "ENGINE [--grace D] [--max D] [--end] [--socket P] [--format F]",
+		Help: `Start a batch for the named engine (by name or engine family) before
+queueing many jobs on it, such as forty images on ComfyUI. While the batch
+lasts, the engine's lease keeps the card from every waiter but a hold, as a
+minimum turn does, so a chat request between two jobs waits instead of
+draining it. If the engine is waiting for the card, it takes it the way a
+switch does. The batch ends by itself once the engine has had no job running
+or queued for --grace (default 30s), or after --max (default 4h); a single
+job with no batch hands the card back and forth as before. Run it again to
+renew the batch; --end ends it now. A batch lasts until it ends or berthd
+restarts.`,
+		Formats: []Format{FormatHuman, FormatJSON, FormatYAML},
+		Run:     runBatch,
+	},
+	{
 		Name:    "stop",
 		Summary: "stop an engine on purpose: its leases drain through their own wrappers",
 		Args:    "ENGINE [--wait] [--socket P] [--format F]",

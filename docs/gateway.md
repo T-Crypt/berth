@@ -267,7 +267,13 @@ name the engine:
 curl -s http://127.0.0.1:9799/v1/berth/switch -H "Authorization: Bearer $(berth key)" -d '{"engine":"strata"}'
 curl -s http://127.0.0.1:9799/v1/berth/stop   -H "Authorization: Bearer $(berth key)" -d '{"engine":"strata"}'
 curl -s http://127.0.0.1:9799/v1/berth/load   -H "Authorization: Bearer $(berth key)" -d '{"engine":"llama-swap","model":"qwen3.6-35b-a3b"}'
+curl -s http://127.0.0.1:9799/v1/berth/batch  -H "Authorization: Bearer $(berth key)" -d '{"engine":"comfyui","grace":30}'
 ```
+
+- **Batch** is `berth batch` on the network (see [leasing](leasing.md), "A batch"): `202` once berthd has the batch,
+  and an engine with a `start` command is switched to as **Switch** does, so one call comes before the jobs.
+  `"grace"` and `"max"` are seconds (absent: 30 and 14400). `{"engine":"comfyui","end":true}` ends it, and a `409`
+  says there was none. An engine not in `berth.toml` is a `404`.
 
 - **Switch** answers `202` once the start is under way, and starts the engine under a lease the same way a request
   would: the holder drains at its boundary first. It takes any engine with a `start` command; another is a `404`.
