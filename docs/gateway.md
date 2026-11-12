@@ -268,7 +268,13 @@ curl -s http://127.0.0.1:9799/v1/berth/switch -H "Authorization: Bearer $(berth 
 curl -s http://127.0.0.1:9799/v1/berth/stop   -H "Authorization: Bearer $(berth key)" -d '{"engine":"strata"}'
 curl -s http://127.0.0.1:9799/v1/berth/load   -H "Authorization: Bearer $(berth key)" -d '{"engine":"llama-swap","model":"qwen3.6-35b-a3b"}'
 curl -s http://127.0.0.1:9799/v1/berth/batch  -H "Authorization: Bearer $(berth key)" -d '{"engine":"comfyui","grace":30}'
+curl -s http://127.0.0.1:9799/v1/berth/yield  -H "Authorization: Bearer $(berth key)" -d '{"engine":"comfyui","seconds":120}'
 ```
+
+- **Yield** is for a ComfyUI node that calls an LLM in the middle of a job (see [leasing](leasing.md), "A yield").
+  `{"engine":"comfyui","seconds":120}` answers `200` once berthd has told ComfyUI's run, and the yield lasts the
+  seconds given (absent: 300, at most 3600). `{"engine":"comfyui","end":true}` ends it and answers `200` only once
+  ComfyUI holds the card again. An engine with no lease is a `409`, and one not in `berth.toml` a `404`.
 
 - **Batch** is `berth batch` on the network (see [leasing](leasing.md), "A batch"): `202` once berthd has the batch,
   and an engine with a `start` command is switched to as **Switch** does, so one call comes before the jobs.

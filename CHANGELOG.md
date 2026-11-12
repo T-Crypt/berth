@@ -12,6 +12,12 @@ has a matching GitHub release whose body comes from its section below.
   opens the harbor. The tooltip shows the latest event, and keeps it after explorer restarts. The menu opens the
   harbor, turns the toasts off and on, lists the last 10 events and quits. `berth service install --notify`
   starts it at logon for the current user ([#186](https://github.com/T-Crypt/berth/pull/186)).
+- `POST /v1/berth/yield` lets a ComfyUI node that calls an LLM in the middle of a job give the card to that LLM
+  and take it back. Before, the LLM's drain of ComfyUI waited for the job to end, the job waited for the LLM, and
+  neither moved until the node's call timed out. The node frees ComfyUI's models in-process and yields. The drain
+  then parks ComfyUI as it would between jobs, the LLM runs, and `{"end":true}` answers once ComfyUI holds the card
+  again. A yield runs out after its seconds (300 by default), so a node that dies mid-yield cannot leave it on
+  ([#299](https://github.com/T-Crypt/berth/issues/299)).
 
 ## [v0.5.0] - 2026-11-08
 

@@ -190,6 +190,8 @@ func handle(ctx context.Context, c net.Conn, n *node.Node, x Extras, log *slog.L
 		cordon(conn, log, first, n)
 	case proto.OpBatch:
 		batch(conn, log, first, n)
+	case proto.OpYield:
+		yield(conn, log, first, n)
 	case proto.OpPairCode, proto.OpPairRedeem, proto.OpPairCheck, proto.OpPairList, proto.OpPairRevoke:
 		pairing(conn, log, first, x.Pair)
 	case proto.OpResume:
@@ -317,6 +319,10 @@ func hold(ctx context.Context, conn *proto.Conn, req proto.Msg, n *node.Node, fi
 			}
 		case why := <-lease.Waits():
 			u.send(proto.Msg{Op: proto.OpWaiting, Reason: why})
+		case d := <-lease.Yields():
+			if !u.send(proto.Msg{Op: proto.OpYield, Yield: d.Seconds()}) {
+				return
+			}
 		case <-lease.Resumed():
 			if !u.send(proto.Msg{Op: proto.OpGranted, Lease: lease.ID(), Resume: true}) {
 				return

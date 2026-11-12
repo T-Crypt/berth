@@ -58,6 +58,26 @@ type leaseLine struct {
 	// the engine, so the watch never takes back a ticket the run is about to
 	// record.
 	endWatch context.CancelFunc
+	// yieldUntil is when a yield from inside a ComfyUI job ends: until then
+	// a drain treats the job as at its boundary (#299). A deadline and not a
+	// flag, so a node that dies mid-yield cannot leave it on.
+	yieldUntil time.Time
+}
+
+// setYield starts a yield that lasts d, or ends it when d is not positive.
+func (l *leaseLine) setYield(d time.Duration) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.yieldUntil = time.Time{}
+	if d > 0 {
+		l.yieldUntil = time.Now().Add(d)
+	}
+}
+
+func (l *leaseLine) yielding() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return time.Now().Before(l.yieldUntil)
 }
 
 func newLine(conn *proto.Conn) *leaseLine {
