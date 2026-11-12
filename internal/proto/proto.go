@@ -138,6 +138,10 @@ type Msg struct {
 	// that predates NeedsEach reserves too much on a small card, never too
 	// little.
 	NeedsEach []uint64 `json:"needs_each,omitempty"`
+	// LearnSize asks berthd to size an OpAcquire or OpReattach with no
+	// Needs from the engine's measured peak. A berthd that predates it
+	// grants the whole card, as it would without.
+	LearnSize bool `json:"learn_size,omitempty"`
 	// Card is the card an OpAcquire or OpReattach is for: its name on the
 	// node (gpu1) or its PCI address, or a comma list of them for one lease
 	// on several cards. "" is the node's first card.

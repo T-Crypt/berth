@@ -209,7 +209,11 @@ type Request struct {
 	Group    string // the engine family a lease counts for (llama-swap's models); "" = Engine
 	Priority Priority
 	Needs    uint64 // bytes; 0 = the whole card
-	Wait     time.Duration
+	// LearnSize: with Needs 0, the lease takes the most this engine has
+	// been measured holding plus the load headroom, not the whole card. An
+	// engine never measured still takes the whole card.
+	LearnSize bool
+	Wait      time.Duration
 	// Pinned: never a drain victim. A hold (berth hold, a game claim) or an
 	// app that must not be stopped (berth run --pinned) keeps the card until
 	// it lets go; waiters are told who pins it.
@@ -331,6 +335,7 @@ type lease struct {
 	parkedCall time.Time
 	resumed    bool
 	beside     string
+	sized      string // how a LearnSize request got its size, for the grant line
 
 	// The lend sub-state (docs/design.md): at most one open lend per holder,
 	// and never a park at the same time. lentBytes is what the engine said it
@@ -1225,6 +1230,9 @@ func (b *Broker) grant(w *lease, now time.Time) {
 	if beside != "" {
 		detail += "; " + beside
 	}
+	if w.sized != "" {
+		detail += "; " + w.sized
+	}
 	b.emit(proto.Event{Kind: proto.EvGranted, Lease: w.id, Engine: w.engine, Bytes: w.contested, Detail: detail})
 	b.log.Info("granted", "lease", w.id, "engine", w.engine, "priority", w.prio, "needs_mib", w.needs/gpu.MiB, "waited", now.Sub(w.arrived).Round(time.Millisecond))
 }
@@ -1786,6 +1794,7 @@ func (b *Broker) reattach(id string, r Request, pid int, start uint64) (_ *Lease
 		}
 	}
 	now := b.now()
+	r.Needs, _ = b.learnSize(r)
 	l := newLease(id, r, now)
 	l.arrivedN = b.order()
 	l.containers = containerSet(r.Containers)
@@ -1865,8 +1874,10 @@ func (b *Broker) Acquire(ctx context.Context, r Request, onWait func(string)) (*
 		b.mu.Unlock()
 		return nil, err
 	}
+	var sized string
+	r.Needs, sized = b.learnSize(r)
 	l := newLease(fmt.Sprintf("%s-%d", r.Engine, b.cfg.IDs.Add(1)), r, b.now())
-	l.arrivedN = b.order()
+	l.arrivedN, l.sized = b.order(), sized
 	b.queue = append(b.queue, l)
 	b.log.Info("acquire", "lease", l.id, "engine", l.engine, "priority", l.prio, "needs_mib", l.needs/gpu.MiB)
 	b.emit(proto.Event{Kind: proto.EvRequested, Lease: l.id, Engine: l.engine, Bytes: l.needs, Detail: l.prio.String()})

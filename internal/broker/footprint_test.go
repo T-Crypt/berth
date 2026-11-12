@@ -117,6 +117,35 @@ func TestFootprintIgnoresACorruptFile(t *testing.T) {
 	}
 }
 
+// A LearnSize lease takes the engine's measured peak plus the load headroom,
+// not the whole card, so a sized engine is granted beside it and the holder
+// is never drained. An engine never measured still takes the whole card.
+func TestLearnSizeSharesTheCard(t *testing.T) {
+	b, c, _ := setup(t, procs.Map{101: 100})
+	runFootprint(t, b, c, "llama", 12*GiB)
+
+	llama := granted(t, b, "llama", acquire(b, Request{Engine: "llama", Priority: Foreground, LearnSize: true}))
+	llama.Attach(100)
+	c.set(gpu.Proc{PID: 101, Name: "llama-server", Used: 12 * GiB})
+	b.Tick(context.Background())
+	if d := grantDetail(t, b, "llama"); !strings.Contains(d, "sized from its measured peak 12.0 GiB") {
+		t.Fatalf("grant detail = %q, want the learned size named", d)
+	}
+
+	granted(t, b, "whisper", acquire(b, Request{Engine: "whisper", Priority: Foreground, Needs: 8 * GiB}))
+	select {
+	case why := <-llama.Drains():
+		t.Fatalf("llama was drained for a waiter that fits beside its learned size: %s", why)
+	default:
+	}
+
+	fresh := acquire(b, Request{Engine: "fresh", Priority: Batch, LearnSize: true})
+	pending(t, fresh)
+	if w := lastWaiting(b); w == "" {
+		t.Fatal("an unmeasured LearnSize engine was not left waiting for the whole card")
+	}
+}
+
 // A run that holds far more than the learned footprint warns once, once
 // the engine has three runs to learn from.
 func TestFootprintWarnsOnceOnADrift(t *testing.T) {

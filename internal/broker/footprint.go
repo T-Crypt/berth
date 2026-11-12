@@ -50,6 +50,26 @@ func (b *Broker) hotPeak(engine string) uint64 {
 	return 0
 }
 
+// learnSize is the size a request takes, and for a LearnSize request the
+// grant's line saying where the size came from: the most VRAM a run of the
+// engine has held plus besideHeadroom. A request with a size, for the whole
+// machine or on an APU keeps what it asked. An engine never measured, or one
+// whose peak leaves the card nothing to share, takes the whole card. b.mu
+// must be held.
+func (b *Broker) learnSize(r Request) (uint64, string) {
+	if !r.LearnSize || r.Needs > 0 || r.WholeMachine || b.snap.APU {
+		return r.Needs, ""
+	}
+	peak := b.hotPeak(r.Engine)
+	if peak == 0 {
+		return 0, "not measured yet, so the whole card"
+	}
+	if peak+besideHeadroom >= b.ceiling() {
+		return 0, fmt.Sprintf("its measured peak %s fills the card", sizeHuman(peak))
+	}
+	return peak + besideHeadroom, fmt.Sprintf("sized from its measured peak %s", sizeHuman(peak))
+}
+
 // footprints is the table keyed by engine key: the lease's group, else its
 // engine name. A park record (ParkedRAM, ParkBase) is keyed by the engine
 // name alone, since the models of one group park different amounts.

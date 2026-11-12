@@ -30,6 +30,7 @@ func runRun(c *Context) int {
 	switched := fs.Bool("switched", false, "a person's switch (the gateway sets it for the wake page's Launch and /v1/berth/switch): wins a juggle")
 	var needs config.MiBs
 	fs.Var(&needs, "needs-mib", "memory this engine needs in MiB; 0 = the whole card; with --gpu gpu0,gpu1, one size for every card or one per card in the same order (18000,6000)")
+	learnSize := fs.Bool("learn-size", false, "with no --needs-mib: take the most this engine has been measured holding plus a load headroom, not the whole card, so engines that fit together share it; the whole card until a run is measured")
 	wait := fs.Duration("wait", 0, "how long to wait for a berth; 0 = berthd's default; negative = no deadline")
 	drainPost := fs.String("drain-post", "", "URL to POST when asked to drain, before signalling (e.g. llama-swap's unload)")
 	drainSlots := fs.String("drain-slots", "", "engine base URL whose /slots must show idle before a drain unloads or stops it (Strata, or a llama-swap model's /upstream/<model>)")
@@ -89,6 +90,9 @@ func runRun(c *Context) int {
 		drainComfyUI: drainComfy, keepComfyUI: keepComfy, drainMax: drainMax, minTurn: minTurn,
 		window: &win, container: container, compose: composeFile,
 	})
+	if c.Changed("learn-size") {
+		e.LearnSize = *learnSize
+	}
 	if c.Changed("api-key-env") {
 		e.APIKeyEnv = *keyEnv
 	}
@@ -150,6 +154,9 @@ func runRun(c *Context) int {
 	}
 	if err := config.CheckNeeds(e.NeedsMiB, e.GPU); err != nil {
 		return c.fail(Systemf("--needs-mib: %v", err))
+	}
+	if err := config.CheckLearnSize(e); err != nil {
+		return c.fail(Systemf("--learn-size: %v", err))
 	}
 	// Nothing here goes to stdout: the engine owns it. berth's own notices are
 	// diagnostics on stderr, and --quiet never hides the unprotected warning.
