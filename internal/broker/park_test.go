@@ -1041,3 +1041,26 @@ func TestWholeCardWaiterBesideParkedOnlyWhenItFits(t *testing.T) {
 	b.Tick(context.Background())
 	must(t, dirk)
 }
+
+// Measured on aphotic (RTX 4090, 24564 MiB): Dirk-27B held 23710 MiB alone and
+// served; beside a parked ComfyUI's 456 MiB it reached 24147 MiB on the card and
+// died loading, though its peak plus the residual is 398 MiB under the total. A
+// model that fills the card needs headroom past its steady peak while it loads.
+func TestFillingModelKeepsLoadHeadroomBesideParked(t *testing.T) {
+	tree := procs.Fake{
+		Parents: map[int]int{101: 100, 100: 1, 301: 300, 300: 1},
+		Starts:  map[int]uint64{100: 1, 101: 1, 300: 1, 301: 1},
+	}
+	b, c, _ := parkSetup(t, tree, 32*GiB, 0)
+	c.total = 24564 << 20
+	runOnce(t, b, c, "Dirk-27B", "llama-swap", 300, 301, 23710<<20)
+	comfy := warmLease(t, b, c, "comfyui", 8*GiB, 100, 101)
+	c.set(gpu.Proc{PID: 101, Name: "comfyui-engine", Used: 456 << 20})
+	b.Tick(context.Background())
+
+	dirk := acquire(b, Request{Engine: "Dirk-27B", Group: "llama-swap"})
+	pending(t, dirk)
+	if why := drained(t, comfy); !strings.Contains(why, "Dirk-27B") {
+		t.Fatalf("eviction drain reason %q", why)
+	}
+}
