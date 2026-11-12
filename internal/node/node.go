@@ -278,7 +278,10 @@ func (n *Node) Yield(engine string, d time.Duration) ([]string, error) {
 	var first error
 	for _, c := range n.cards {
 		got, err := c.B.Yield(engine, d)
-		if err != nil {
+		switch {
+		case err != nil && !broker.IsNotFound(err):
+			return nil, err
+		case err != nil:
 			first = cmpErr(first, err)
 			continue
 		}

@@ -19,12 +19,12 @@ func yield(conn *proto.Conn, log *slog.Logger, req proto.Msg, n *node.Node) {
 		return
 	}
 	ids, err := n.Yield(req.Engine, seconds(req.Yield))
-	if req.Yield == 0 && n.Resume(req.Engine, false) == nil {
-		err = nil
-	}
 	if err != nil {
 		reply(conn, log, proto.Msg{Op: proto.OpRefused, Reason: err.Error()})
 		return
 	}
-	reply(conn, log, proto.Msg{Op: proto.OpYield, Engine: req.Engine, Yield: req.Yield, Leases: ids})
+	// Resume says the end queued a parked engine: the caller waits for its
+	// lease.resumed before the job may load onto the card again.
+	resumed := req.Yield == 0 && n.Resume(req.Engine, false) == nil
+	reply(conn, log, proto.Msg{Op: proto.OpYield, Engine: req.Engine, Yield: req.Yield, Leases: ids, Resume: resumed})
 }

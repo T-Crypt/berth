@@ -28,6 +28,11 @@ func (b *Broker) Yield(engine string, d time.Duration) ([]string, error) {
 			(l.engine != engine && l.group != engine) {
 			continue
 		}
+		if l.gang != nil {
+			// A share cannot park yet, so a drain that skipped the job
+			// boundary would stop the engine mid-job.
+			return nil, fmt.Errorf("%w: %s runs on several cards, and a lease on several cards cannot park, so it cannot yield", ErrRefused, engine)
+		}
 		select {
 		case <-l.yieldCh:
 		default:

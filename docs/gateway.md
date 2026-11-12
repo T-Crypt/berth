@@ -274,7 +274,8 @@ curl -s http://127.0.0.1:9799/v1/berth/yield  -H "Authorization: Bearer $(berth 
 - **Yield** is for a ComfyUI node that calls an LLM in the middle of a job (see [leasing](leasing.md), "A yield").
   `{"engine":"comfyui","seconds":120}` answers `200` once berthd has told ComfyUI's run, and the yield lasts the
   seconds given (absent: 300, at most 3600). `{"engine":"comfyui","end":true}` ends it and answers `200` only once
-  ComfyUI holds the card again. An engine with no lease is a `409`, and one not in `berth.toml` a `404`.
+  ComfyUI holds the card again. An engine with no lease is a `409`, and so is one whose lease covers several cards,
+  since that lease cannot park yet. An engine not in `berth.toml` is a `404`.
 
 - **Batch** is `berth batch` on the network (see [leasing](leasing.md), "A batch"): `202` once berthd has the batch,
   and an engine with a `start` command is switched to as **Switch** does, so one call comes before the jobs.

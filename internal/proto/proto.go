@@ -214,7 +214,8 @@ type Msg struct {
 	Holders []Holder `json:"holders,omitempty"`
 	// Resume is set on an OpGranted that hands a parked lease the card
 	// back, so the runner knows to call the adapter's resume instead of
-	// starting anything.
+	// starting anything. On the OpYield reply to an end, it says the end
+	// queued a parked engine, whose lease.resumed is still to come.
 	Resume bool `json:"resume,omitempty"`
 	// Lending (the OpLend / OpLent / OpLendFailed / OpReturn* ops). Needs
 	// carries the bytes to give on OpLend and what the engine gave on OpLent;

@@ -55,6 +55,11 @@ func (g *Gateway) apiYield(w http.ResponseWriter, r *http.Request) {
 	case d == 0:
 		d = defaultYield.Seconds()
 	}
+	// The cursor comes before the end, so the wake it may queue is after it.
+	var since uint64
+	if st := g.nodeStatus(); st != nil {
+		since = st.LastEvent
+	}
 	conn, raw, err := server.Dial(g.Socket)
 	if err != nil {
 		apiError(w, http.StatusServiceUnavailable, "berthd is not answering; no yield was set")
@@ -74,8 +79,10 @@ func (g *Gateway) apiYield(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusConflict, m.Reason)
 		return
 	}
-	if req.End {
-		if err := g.ensure(r.Context(), e, false); err != nil {
+	// A parked ComfyUI answers its queue the whole time, so only the wake
+	// says it holds the card again.
+	if m.Resume {
+		if err := g.waitForWake(r.Context(), e.Name, since); err != nil {
 			g.startFailed(w, e.Name, e.Name, err)
 			return
 		}
