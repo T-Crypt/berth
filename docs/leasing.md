@@ -31,7 +31,11 @@
   Windows, Ctrl-C, Ctrl-Break, closing the console window and logging off do the same, and the engine's drain
   has to finish in the few seconds Windows allows after a close. `berth gateway` starts each run in its own
   process group on Windows, so Ctrl-C in the gateway's console does not drain engines it meant to leave running.
-- **Whole-card or sized leases.** `--needs-mib N` lets engines that fit share a card.
+- **Whole-card or sized leases.** `--needs-mib N` lets engines that fit share a card. `--learn-size`, or
+  `learn_size = true` on the engine entry, sizes the lease for you. It takes the most the engine has been measured
+  holding plus 512 MiB for its load, so you never type or update a number. The first run takes the whole card,
+  because nothing is measured yet. The grant in `berth events` says which size it used. A run that grows past its
+  size still counts at what the driver measures, so a waiter never gets memory the engine holds.
 - **Several cards.** One berthd governs every card by default. A foreground request on one card never drains a
   holder on another. `berth run --gpu gpu1` puts a lease on one card, and `--gpu gpu0,gpu1` holds one lease on
   both (see [Training runs](#training-runs)). A running game holds every card, because Berth cannot tell which

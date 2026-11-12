@@ -144,6 +144,23 @@ func (m *MiBs) UnmarshalYAML(node *yaml.Node) error {
 	return nil
 }
 
+// CheckLearnSize is the rule for learn_size and berth run --learn-size: it
+// learns one size on one card, so it takes no typed size, no list of cards
+// and no whole_machine.
+func CheckLearnSize(e Engine) error {
+	switch {
+	case !e.LearnSize:
+		return nil
+	case len(e.NeedsMiB.Bytes()) > 0:
+		return fmt.Errorf("learn_size and needs_mib %s both size the lease: keep one", e.NeedsMiB)
+	case strings.Contains(e.GPU, ","):
+		return fmt.Errorf("learn_size sizes a lease on one card, and gpu %q names several", e.GPU)
+	case e.WholeMachine:
+		return errors.New("learn_size and whole_machine disagree: whole_machine takes every card")
+	}
+	return nil
+}
+
 // CheckNeeds is the rule for needs_mib and berth run --needs-mib: a list of
 // sizes has one size per card that gpu names.
 func CheckNeeds(m MiBs, gpu string) error {

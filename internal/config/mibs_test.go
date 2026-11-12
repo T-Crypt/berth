@@ -48,6 +48,27 @@ func TestEngineNeedsPerCard(t *testing.T) {
 	}
 }
 
+// learn_size learns one size on one card: it loads alone or with gpu naming
+// one card, and refuses a typed size, several cards or whole_machine.
+func TestEngineLearnSize(t *testing.T) {
+	const entry = "[[engine]]\nname = \"llama\"\ntype = \"custom\"\nurl = \"http://127.0.0.1:8080\"\nhealth = \"/health\"\nlearn_size = true\n"
+	for _, body := range []string{"", "gpu = \"gpu1\"\n"} {
+		c, err := Load(write(t, entry+body))
+		if err != nil || !c.Engine[0].LearnSize {
+			t.Fatalf("%q: learn_size = %v, err %v; want true, nil", body, c.Engine[0].LearnSize, err)
+		}
+	}
+	for _, bad := range []struct{ body, wantErr string }{
+		{"needs_mib = 8192\n", "learn_size and needs_mib 8192 both size the lease"},
+		{"gpu = \"gpu0,gpu1\"\n", `learn_size sizes a lease on one card, and gpu "gpu0,gpu1" names several`},
+		{"whole_machine = true\n", "learn_size and whole_machine disagree"},
+	} {
+		if _, err := Load(write(t, entry+bad.body)); err == nil || !strings.Contains(err.Error(), bad.wantErr) {
+			t.Errorf("%q: error %v, want it to say %q", bad.body, err, bad.wantErr)
+		}
+	}
+}
+
 // One size writes back as the plain number it always was, and a list as a
 // list, in every encoding the config has.
 func TestNeedsKeepTheirSpelling(t *testing.T) {

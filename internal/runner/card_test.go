@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/T-Crypt/berth/internal/broker"
+	"github.com/T-Crypt/berth/internal/config"
 	"github.com/T-Crypt/berth/internal/node"
 	"github.com/T-Crypt/berth/internal/procs"
 	"github.com/T-Crypt/berth/internal/proto"
@@ -227,6 +228,15 @@ func TestRunSizesEachCard(t *testing.T) {
 		Needs: []uint64{6 << 30, 18 << 30}, Grace: time.Second, Argv: []string{"true"}, Stderr: &errBuf})
 	if code != ExitRefused || !strings.Contains(errBuf.String(), `2 sizes for 1 card(s) in "gpu0"`) {
 		t.Errorf("exit %d, output %q; want a refusal naming 2 sizes for 1 card", code, errBuf.String())
+	}
+}
+
+// learn_size on the entry reaches berthd on the acquire's re-attach too, so a
+// restarted daemon sizes the lease the same way.
+func TestReattachCarriesLearnSize(t *testing.T) {
+	o := OptionsFor(&config.Engine{Name: "llama", LearnSize: true}, Over{})
+	if m := reattachMsg(o, 100, 7, &containerRef{}, false, newLine(nil)); !m.LearnSize || m.Needs != 0 {
+		t.Errorf("learn_size %v, needs %d; want true and 0", m.LearnSize, m.Needs)
 	}
 }
 

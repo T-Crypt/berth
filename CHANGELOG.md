@@ -18,6 +18,11 @@ has a matching GitHub release whose body comes from its section below.
   then parks ComfyUI as it would between jobs, the LLM runs, and `{"end":true}` answers once ComfyUI holds the card
   again. A yield runs out after its seconds (300 by default), so a node that dies mid-yield cannot leave it on
   ([#299](https://github.com/T-Crypt/berth/issues/299)).
+- `learn_size = true` on an engine entry, or `berth run --learn-size`, sizes the lease from the most that engine
+  has been measured holding plus 512 MiB, in place of the whole card. Engines that fit together then share the card
+  without anyone typing `needs_mib` or keeping it up to date. An engine not yet measured takes the whole card, and
+  the grant line in `berth events` names the size it used
+  ([#311](https://github.com/T-Crypt/berth/issues/311)).
 
 ### Fixed
 

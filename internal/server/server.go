@@ -263,6 +263,7 @@ func hold(ctx context.Context, conn *proto.Conn, req proto.Msg, n *node.Node, fi
 		Group:        req.Group,
 		Priority:     prio,
 		Needs:        req.Needs,
+		LearnSize:    req.LearnSize,
 		Wait:         time.Duration(req.Wait * float64(time.Second)),
 		Pinned:       req.Pinned,
 		Switched:     req.Switched,
@@ -401,7 +402,7 @@ func holdAll(ctx context.Context, u *consumer, req proto.Msg, r broker.Request, 
 	for i, c := range cards {
 		bs[i], names[i], uuids[i] = c.B, c.Name, c.UUID
 	}
-	r.Lend = false
+	r.Lend, r.LearnSize = false, false
 	var leases []*broker.Lease
 	var err error
 	if req.Op == proto.OpReattach {

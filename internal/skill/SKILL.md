@@ -39,7 +39,7 @@ do not assume any engine is protected.
 
 | Need | Command |
 |---|---|
-| Run an engine under a lease | `berth run --as NAME [--priority batch\|interactive\|foreground] [--needs-mib N] -- CMD ARGS` |
+| Run an engine under a lease | `berth run --as NAME [--priority batch\|interactive\|foreground] [--needs-mib N \| --learn-size] -- CMD ARGS` |
 | Run an engine on one card of several | `berth run --as NAME --gpu gpu1 -- CMD`, or `gpu = "gpu1"` in its engine entry (`berth status` names the cards; the engine gets `CUDA_VISIBLE_DEVICES` for that card unless already set) |
 | Run an engine across several cards | `berth run --as NAME --gpu gpu0,gpu1 -- CMD`: one lease, granted on every card at once. It cannot park or lend yet |
 | Run a configured engine without retyping its command | `berth run --as NAME` with no command runs the `start` of NAME's `[[engine]]` entry |

@@ -115,7 +115,7 @@ func OptionsFor(e *config.Engine, o Over) Options {
 	// lend = "hook" gives the run its engine's lend calls. berthd asks for a
 	// lend only from a run whose entry has them: the protocol base is
 	// lend_url, and a kind with built-in calls (strata) uses its own URL.
-	opts.WholeMachine = e.WholeMachine
+	opts.WholeMachine, opts.LearnSize = e.WholeMachine, e.LearnSize
 	if e.Lend == "hook" {
 		if adapter, ok := lend.For(e.Type, e.URL, e.LendURL); ok {
 			opts.Lend = &adapter
