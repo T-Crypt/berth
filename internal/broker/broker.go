@@ -1551,7 +1551,13 @@ func (b *Broker) evaluate(w *lease, now time.Time) (bool, string, []*lease) {
 		for _, p := range warm {
 			residual += p.used()
 		}
-		if len(warm) > 0 && residual <= b.cfg.ParkResidualMax && !w.wholeMachine {
+		// A waiter that has held more than the card keeps beside the
+		// residual would fail to load there, so the residual must go.
+		need := b.hotPeak(w.engine)
+		besideOK := func(left uint64) bool {
+			return left <= b.cfg.ParkResidualMax && !w.wholeMachine && (need == 0 || need+left <= b.ceiling())
+		}
+		if len(warm) > 0 && besideOK(residual) {
 			w.beside = besideLine(warm, residual)
 			return true, "", nil
 		}
@@ -1561,7 +1567,7 @@ func (b *Broker) evaluate(w *lease, now time.Time) (bool, string, []*lease) {
 			var victims []*lease
 			var evicted uint64
 			for _, p := range sortParked(warm) {
-				if residual-evicted <= b.cfg.ParkResidualMax && !w.wholeMachine {
+				if besideOK(residual - evicted) {
 					break
 				}
 				victims = append(victims, p)

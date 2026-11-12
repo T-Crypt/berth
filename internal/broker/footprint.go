@@ -29,6 +29,19 @@ type engineFootprint struct {
 	ParkedRAM uint64    // the RAM a parked run last held (its scope's anon + shmem); 0 = never measured
 	ParkBase  uint64    // what that run held hot, just before it parked
 	RAMPeak   uint64    // the most RAM any run held while active (its scope's anon + shmem); 0 = never measured
+	// HotPeak is the most VRAM a run of this engine name held, kept on the
+	// name's entry: a group's Peak is its largest model's, and one model of
+	// a llama-swap may fit beside a parked engine while another does not.
+	HotPeak uint64
+}
+
+// hotPeak is the most VRAM a run of engine has held, 0 until one was measured.
+// b.mu must be held.
+func (b *Broker) hotPeak(engine string) uint64 {
+	if f := b.footprints[engine]; f != nil {
+		return f.HotPeak
+	}
+	return 0
 }
 
 // footprints is the table keyed by engine key: the lease's group, else its
@@ -75,6 +88,12 @@ func (b *Broker) foldFootprint(l *lease, now time.Time) {
 	f.Last = l.peak
 	f.Runs++
 	f.At = now
+	n := b.footprints[l.engine]
+	if n == nil {
+		n = &engineFootprint{}
+		b.footprints[l.engine] = n
+	}
+	n.HotPeak = max(n.HotPeak, l.peak)
 	b.footprintDirty = true
 }
 
