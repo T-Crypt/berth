@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -367,6 +368,9 @@ func TestReattachAfterDaemonRestart(t *testing.T) {
 	waitFor(t, "unprotected record", func() bool {
 		return len(runs.List(runs.Dir(sock), procs.System{}.StartTime)) == 1
 	})
+	if rec := runs.List(runs.Dir(sock), procs.System{}.StartTime)[0]; rec.WrapperState(procs.System{}.StartTime) != "alive" || rec.Wrapper != os.Getpid() {
+		t.Fatalf("record = %+v, want it to name this berth run (pid %d) as alive", rec, os.Getpid())
+	}
 
 	b2, _ := daemon(t, sock, time.Hour)
 	waitFor(t, "re-attach", func() bool { return strings.Contains(out.String(), "re-attached llamacpp") })
