@@ -6,6 +6,14 @@ has a matching GitHub release whose body comes from its section below.
 
 ## [Unreleased]
 
+### Changed
+
+- An engine left without a lease after berthd restarts now tells you whether its `berth run` can still re-attach
+  it. The squatter line in berthd's log carries `berth_run=alive` or `berth_run=exited`. A request refused behind
+  its own engine's orphan adds "its berth run (pid N) has exited, so nothing will re-attach it", or "is alive and
+  has not re-attached". Before, the two cases looked the same, and only the wrapper's stderr could tell them
+  apart ([#300](https://github.com/T-Crypt/berth/issues/300)).
+
 ## [v0.5.0] - 2026-11-08
 
 v0.5.0 puts the switchboard on a phone and lets one node send a request to another. The harbor's SWITCH tab

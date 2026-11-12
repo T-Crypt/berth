@@ -867,8 +867,10 @@ func (b *Broker) Tick(ctx context.Context) {
 			continue
 		}
 		s := &squatter{id: id, proc: p, seen: now}
+		wrapper := ""
 		if run != nil {
 			s.run = run.Engine
+			wrapper = run.WrapperState(b.tree.StartTime)
 		}
 		if cid := b.containerOf(p.PID); cid != "" {
 			s.container = cid
@@ -887,7 +889,7 @@ func (b *Broker) Tick(ctx context.Context) {
 				detail += " (" + s.containerName + ")"
 			}
 		}
-		b.log.Warn("squatter: GPU memory held without a lease", "pid", p.PID, "name", p.Name, "mib", p.Used/gpu.MiB, "gtt_mib", p.GTT/gpu.MiB, "unprotected_run", s.run, "container", short(s.container))
+		b.log.Warn("squatter: GPU memory held without a lease", "pid", p.PID, "name", p.Name, "mib", p.Used/gpu.MiB, "gtt_mib", p.GTT/gpu.MiB, "unprotected_run", s.run, "berth_run", wrapper, "container", short(s.container))
 		b.counters.SquattersCaught++
 		b.emit(proto.Event{Kind: proto.EvSquatter, PID: p.PID, Bytes: p.Used, Engine: s.run, Detail: detail})
 		if b.cfg.Reporter != nil {
@@ -1331,21 +1333,45 @@ func (b *Broker) squatBytes() uint64 {
 func (b *Broker) ownSquat(engine string) string {
 	var n uint64
 	var pids []int
+	var notes []string
 	for _, s := range b.squatters {
-		if s.run == engine {
-			n += s.proc.Used
-			pids = append(pids, s.proc.PID)
+		if s.run != engine {
+			continue
+		}
+		n += s.proc.Used
+		pids = append(pids, s.proc.PID)
+		if r := b.runFor(s.proc.PID); r != nil {
+			if note := wrapperNote(*r, b.tree.StartTime); note != "" && !slices.Contains(notes, note) {
+				notes = append(notes, note)
+			}
 		}
 	}
 	if len(pids) == 0 {
 		return ""
 	}
 	slices.Sort(pids)
+	slices.Sort(notes)
 	ids := make([]string, len(pids))
 	for i, p := range pids {
 		ids[i] = strconv.Itoa(p)
 	}
-	return fmt.Sprintf(", %d MiB of that is an unleased %s (pid %s)", n/gpu.MiB, engine, strings.Join(ids, ", "))
+	out := fmt.Sprintf(", %d MiB of that is an unleased %s (pid %s)", n/gpu.MiB, engine, strings.Join(ids, ", "))
+	if len(notes) > 0 {
+		out += "; " + strings.Join(notes, "; ")
+	}
+	return out
+}
+
+// wrapperNote says whether the berth run that recorded r can still
+// re-attach its engine, "" when the record does not name it.
+func wrapperNote(r runs.Record, start func(int) uint64) string {
+	switch r.WrapperState(start) {
+	case "alive":
+		return fmt.Sprintf("its berth run (pid %d) is alive and has not re-attached", r.Wrapper)
+	case "exited":
+		return fmt.Sprintf("its berth run (pid %d) has exited, so nothing will re-attach it", r.Wrapper)
+	}
+	return ""
 }
 
 // boundSquat caps the squatter sum at the card's used figure. Per-process
