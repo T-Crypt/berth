@@ -26,6 +26,23 @@ type Record struct {
 	Start   uint64    `json:"pid_start"`
 	Started time.Time `json:"started"`
 	Reason  string    `json:"reason"`
+	// Wrapper is the berth run that wrote the record, the one process that
+	// can re-attach the engine. 0 in a record from before v0.5.1.
+	Wrapper      int    `json:"wrapper_pid,omitempty"`
+	WrapperStart uint64 `json:"wrapper_start,omitempty"`
+}
+
+// WrapperState is "alive" while the berth run that wrote r still runs,
+// "exited" once it is gone (or its PID is someone else's), and "" when the
+// record does not say which berth run wrote it.
+func (r Record) WrapperState(start func(pid int) uint64) string {
+	if r.Wrapper <= 0 || r.WrapperStart == 0 {
+		return ""
+	}
+	if start(r.Wrapper) == r.WrapperStart {
+		return "alive"
+	}
+	return "exited"
 }
 
 // ReasonLost is the reason berth run records when its daemon goes away

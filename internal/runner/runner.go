@@ -746,9 +746,10 @@ func slotsBusy(url, key string) (int, error) {
 // lease, so berthd lists it instead of it being an anonymous squatter. It
 // returns the func that removes the note.
 func record(o Options, cmd *exec.Cmd, reason string) func() {
-	pid := cmd.Process.Pid
+	pid, self := cmd.Process.Pid, os.Getpid()
 	remove, err := runs.Write(runs.Dir(o.Socket), runs.Record{
 		Engine: o.Engine, PID: pid, Start: procs.System{}.StartTime(pid), Started: time.Now(), Reason: reason,
+		Wrapper: self, WrapperStart: procs.System{}.StartTime(self),
 	})
 	if err != nil {
 		fmt.Fprintf(o.Stderr, "berth: could not record the unprotected run: %v\n", err)
