@@ -35,6 +35,12 @@ type engineFootprint struct {
 	HotPeak uint64
 }
 
+// besideHeadroom is the free card memory a whole-card engine needs past its
+// measured peak to load beside a parked engine. Measured on an RTX 4090: a
+// 23710 MiB model served alone, and died loading with 398 MiB left beside a
+// 456 MiB residual. The 2 s card read misses the load's last allocations.
+const besideHeadroom = 512 << 20
+
 // hotPeak is the most VRAM a run of engine has held, 0 until one was measured.
 // b.mu must be held.
 func (b *Broker) hotPeak(engine string) uint64 {

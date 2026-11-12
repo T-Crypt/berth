@@ -24,8 +24,9 @@ has a matching GitHub release whose body comes from its section below.
 - A model that fills the card no longer loads beside a parked engine it cannot fit next to. Berth granted any
   whole-card engine the card beside a parked residual under `residual_max_gib`, so a 23.4 GiB model on a 24 GiB
   card started beside a kept-up ComfyUI's 768 MiB context and failed to load. Berth now remembers the most each
-  engine has held, by its own name inside a llama-swap group, and evicts the parked engine first when that does
-  not fit beside it. A smaller model still loads beside it, and an engine never measured is granted as before.
+  engine has held, by its own name inside a llama-swap group, and evicts the parked engine first when that, plus
+  512 MiB the load needs past its measured peak, does not fit beside it. A smaller model still loads beside it,
+  and an engine never measured is granted as before.
 
 ### Changed
 
