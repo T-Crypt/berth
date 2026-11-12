@@ -987,3 +987,57 @@ func TestWholeMachineWaiterRefusesThePark(t *testing.T) {
 		t.Fatalf("park without a whole-machine waiter refused: %s", why)
 	}
 }
+
+// runOnce leases engine in group, measures it at used on the card, and frees
+// it, so the broker has learned what one run of it holds.
+func runOnce(t *testing.T, b *Broker, c *card, engine, group string, root, eng int, used uint64) {
+	t.Helper()
+	l := must(t, acquire(b, Request{Engine: engine, Group: group}))
+	l.Attach(root)
+	c.set(gpu.Proc{PID: eng, Name: engine, Used: used})
+	b.Tick(context.Background())
+	l.Release()
+	c.set()
+	b.Tick(context.Background())
+}
+
+// A whole-card waiter is granted beside a parked residual only when what it
+// has held fits beside it. Dirk-27B holds 23.4 GiB of a 24 GiB card, so a
+// grant beside a kept-up ComfyUI's 768 MiB context fails to load; it evicts
+// the parked engine instead. A small model of the same llama-swap still goes
+// beside it, and an engine never measured keeps today's grant.
+func TestWholeCardWaiterBesideParkedOnlyWhenItFits(t *testing.T) {
+	tree := procs.Fake{
+		Parents: map[int]int{101: 100, 100: 1, 301: 300, 300: 1, 401: 400, 400: 1},
+		Starts:  map[int]uint64{100: 1, 101: 1, 300: 1, 301: 1, 400: 1, 401: 1},
+	}
+	b, c, _ := parkSetup(t, tree, 32*GiB, 0)
+	runOnce(t, b, c, "Dirk-27B", "llama-swap", 300, 301, 23*GiB+400<<20)
+	runOnce(t, b, c, "small-8b", "llama-swap", 400, 401, 6*GiB)
+	comfy := warmLease(t, b, c, "comfyui", 8*GiB, 100, 101)
+	c.set(gpu.Proc{PID: 101, Name: "comfyui-engine", Used: 768 << 20})
+	b.Tick(context.Background())
+
+	small := acquire(b, Request{Engine: "small-8b", Group: "llama-swap"})
+	must(t, small).Release()
+	b.Tick(context.Background())
+	select {
+	case why := <-comfy.Drains():
+		t.Fatalf("a model that fits beside the residual evicted it: %q", why)
+	default:
+	}
+
+	unknown := acquire(b, Request{Engine: "never-run"})
+	must(t, unknown).Release()
+	b.Tick(context.Background())
+
+	dirk := acquire(b, Request{Engine: "Dirk-27B", Group: "llama-swap"})
+	pending(t, dirk)
+	if why := drained(t, comfy); !strings.Contains(why, "Dirk-27B") {
+		t.Fatalf("eviction drain reason %q, want Dirk-27B's need", why)
+	}
+	comfy.Release()
+	c.set()
+	b.Tick(context.Background())
+	must(t, dirk)
+}

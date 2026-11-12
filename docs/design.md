@@ -116,7 +116,8 @@ When a waiter does not fit on a card, the scheduler tries the cheapest way to ma
 stops at the first that works:
 
 1. **Fits now**: grant.
-2. **Beside a parked residual**: grant beside it.
+2. **Beside a parked residual**: grant beside it, when the most the waiter's engine has held fits beside it.
+   An engine that has filled the card evicts the parked engine instead of loading into a card it cannot fit.
 3. **Lend**: a holder that can lend gives the waiter's size on that card, and keeps serving.
 4. **Park or checkpoint**: the holder sleeps in RAM, if the RAM budget admits it.
 5. **Drain**: the holder stops.
