@@ -68,6 +68,13 @@ const (
 	// defaults). With End set, end Engine's batch now. The server answers
 	// with the same op, or OpRefused when End finds no batch.
 	OpBatch = "batch"
+	// OpYield: client: the running job of Engine (by name or group) let go
+	// of the card from inside for Yield seconds, or took it back (Yield 0),
+	// so a drain treats the job as at its boundary while it lasts (#299).
+	// Ending a yield resumes the engine if a drain parked it. The server
+	// answers with the same op and the Leases it told, or OpRefused. The
+	// server sends the same op to each lease's runner.
+	OpYield = "yield"
 	// OpPark: the runner holding a draining lease asks to park its engine
 	// in RAM; the daemon answers OpParkOK or OpRefused with the why line.
 	// OpParked: the runner's park call is done; the daemon watches for the
@@ -162,6 +169,8 @@ type Msg struct {
 	// its idle grace travels in Grace.
 	Max float64 `json:"max,omitempty"`
 	End bool    `json:"end,omitempty"`
+	// Yield is an OpYield's length in seconds; 0 ends the yield.
+	Yield float64 `json:"yield,omitempty"`
 	// ParkTTL is how long the lease may stay parked, in seconds, in place
 	// of the node's [park] ttl. OpAcquire and OpReattach; 0 = the node's.
 	ParkTTL float64 `json:"park_ttl,omitempty"`
@@ -205,7 +214,8 @@ type Msg struct {
 	Holders []Holder `json:"holders,omitempty"`
 	// Resume is set on an OpGranted that hands a parked lease the card
 	// back, so the runner knows to call the adapter's resume instead of
-	// starting anything.
+	// starting anything. On the OpYield reply to an end, it says the end
+	// queued a parked engine, whose lease.resumed is still to come.
 	Resume bool `json:"resume,omitempty"`
 	// Lending (the OpLend / OpLent / OpLendFailed / OpReturn* ops). Needs
 	// carries the bytes to give on OpLend and what the engine gave on OpLent;

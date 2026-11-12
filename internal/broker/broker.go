@@ -360,6 +360,7 @@ type lease struct {
 	resumeCh chan struct{}
 	drainCh  chan string
 	waitCh   chan string
+	yieldCh  chan time.Duration // Yield; only the newest is kept
 	// lendAsk and returnAsk are the asks the broker made and this lease's
 	// runner has not picked up yet; lendSig and returnSig wake its connection.
 	// One ask of each kind per lease, so a runner that stops reading loses
@@ -430,6 +431,7 @@ func newLease(id string, r Request, now time.Time) *lease {
 		resumeCh:     make(chan struct{}, 1),
 		drainCh:      make(chan string, 1),
 		waitCh:       make(chan string, 8),
+		yieldCh:      make(chan time.Duration, 1),
 		lendSig:      make(chan struct{}, 1),
 		returnSig:    make(chan struct{}, 1),
 	}

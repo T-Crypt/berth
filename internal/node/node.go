@@ -271,6 +271,28 @@ func (n *Node) EndBatch(engine string) bool {
 	return ended
 }
 
+// Yield tells engine's runs on every card that its job yielded the card for
+// d, or took it back (d <= 0), and answers the leases it told.
+func (n *Node) Yield(engine string, d time.Duration) ([]string, error) {
+	var ids []string
+	var first error
+	for _, c := range n.cards {
+		got, err := c.B.Yield(engine, d)
+		switch {
+		case err != nil && !broker.IsNotFound(err):
+			return nil, err
+		case err != nil:
+			first = cmpErr(first, err)
+			continue
+		}
+		ids = append(ids, got...)
+	}
+	if len(ids) == 0 {
+		return nil, first
+	}
+	return ids, nil
+}
+
 // Unpark evicts engine's parked leases ("" = every one) on every card.
 func (n *Node) Unpark(engine string) []string {
 	ids := []string{}

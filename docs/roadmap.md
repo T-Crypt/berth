@@ -132,6 +132,15 @@ v0.5.0 was tagged first as `v0.5.0-rc.1`.
 
 ## Next: v0.5.x, models across machines
 
+In `next` for the next release candidate:
+
+- **A yield for a ComfyUI job that calls an LLM** ([#299](https://github.com/T-Crypt/berth/issues/299)). The job
+  gives the card to the LLM it calls and takes it back, in place of a deadlock until the call times out.
+- **`berth notify` on Windows**, a tray icon with native toasts ([#186](https://github.com/T-Crypt/berth/pull/186)).
+  `berth service install --notify` on Windows still needs its test on a real desktop.
+
+Planned:
+
 - **The soonest node.** When several nodes serve a model, send the request to the one where it is warm or the
   card is free, by the same reach order a node uses for its own cards.
 - **One board.** The harbor's SWITCH tab shows each peer's cards and engines beside this node's.
@@ -149,8 +158,6 @@ Each item has its building blocks merged or a spec written:
 - Models started on demand for a standalone llama-server.
 - Parked resume numbers for vLLM and SGLang in [Swap numbers](benchmarks.md#swap-numbers), which take
   their park adapters out of experimental.
-- `berth notify` on Windows: a tray icon with native toasts ([#186](https://github.com/T-Crypt/berth/pull/186)),
-  after a test on a real Windows desktop.
 - VFIO on a box with two NVIDIA cards: keep the other card's berthd from opening the card being
   switched, after a measurement on a real two-card box.
 - Hermes Agent: an overnight recipe in the setup page, built on the gateway workflow test, where Hermes

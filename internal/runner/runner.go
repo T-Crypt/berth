@@ -79,6 +79,9 @@ type Options struct {
 	// has nothing running or pending before any stop step, so a job is
 	// never cut off. There is no time limit; a job ends when it ends.
 	DrainComfyUI string
+	// yielded reports a yield from inside the running ComfyUI job, which a
+	// drain's boundary wait counts as the job's end. drain sets it.
+	yielded func() bool
 	// Session release is opt-in and uses the same drain ticket as daemon requests.
 	ExitComfyUIIdle      bool
 	ExitComfyUIIdleAfter time.Duration
@@ -357,6 +360,13 @@ func Run(o Options) int {
 						go line.returnStep(o, m.LendID, say)
 					case m.Op == proto.OpGranted && m.Resume:
 						go line.resume(o, cmd, done, say)
+					case m.Op == proto.OpYield:
+						line.setYield(time.Duration(m.Yield * float64(time.Second)))
+						if m.Yield > 0 {
+							say("%s yielded the card from inside its job for %s", o.Engine, time.Duration(m.Yield*float64(time.Second)))
+						} else {
+							say("%s ended its yield", o.Engine)
+						}
 					}
 				})
 				select {
@@ -833,6 +843,7 @@ func drain(o Options, cmd *exec.Cmd, line *leaseLine, done <-chan struct{}, reas
 	if o.DrainComfyUI != "" {
 		boundary := o
 		boundary.ExitComfyUIIdle = false
+		boundary.yielded = line.yielding
 		if !jobBoundary(boundary, done, say) {
 			return
 		}

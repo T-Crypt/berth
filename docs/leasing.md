@@ -104,6 +104,23 @@
     A batch is not the `batch` priority. That one makes an engine wait behind everything
     else; this one keeps an engine on the card while its queue has work.
 
+  - **A yield.** A drain of ComfyUI waits for the job boundary, so a job that calls an LLM
+    in the middle can deadlock: the job waits on the LLM, the LLM waits for the card, and the
+    drain waits on the job ([#299](https://github.com/T-Crypt/berth/issues/299)). A node in
+    that job can yield the card instead:
+
+    1. It frees ComfyUI's models in-process, which `/free` cannot do while a job runs.
+    2. It calls `POST /v1/berth/yield` with `{"engine":"comfyui","seconds":120}`. For that
+       long, a drain treats the job as at its boundary, so the LLM's drain parks ComfyUI as
+       it would between jobs. The card read after the park still decides what is free.
+    3. It makes its LLM call. The LLM is granted in the room the park left.
+    4. It calls `POST /v1/berth/yield` with `{"engine":"comfyui","end":true}`, which resumes
+       ComfyUI and answers once it holds the card again. The next node loads its models.
+
+    A yield only ends the wait for the job boundary. A node that yields without freeing
+    its models gets the usual fallback: the park does not free the card within the grace,
+    and the drain stops ComfyUI. A yield that is never ended runs out after its seconds.
+
 ## Games, apps and holds
 - **Claims cover work Berth does not start.** berthd scans the process table every 2 s.
   A *hold* claim keeps the card while its process runs: engines are drained and wait, with a
