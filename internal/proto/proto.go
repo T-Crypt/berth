@@ -154,6 +154,7 @@ type Msg struct {
 	PID      int     `json:"pid,omitempty"`
 	PIDStart uint64  `json:"pid_start,omitempty"` // OpReattach: the engine's start time, so a reused PID is refused
 	Pinned   bool    `json:"pinned,omitempty"`    // OpAcquire/OpReattach: never drained (holds, berth run --pinned)
+	Training bool    `json:"training,omitempty"`  // OpAcquire/OpReattach: berth train, locks the card
 	Parked   bool    `json:"parked,omitempty"`    // OpReattach: the engine's weights are parked in RAM; its lease comes back parked
 	// Lend marks a run whose engine has lend calls (its entry says
 	// lend = "hook"): OpAcquire and OpReattach declare it, and the broker
@@ -582,6 +583,9 @@ type Lease struct {
 	Contested    uint64   `json:"contested,omitempty"`
 	Age          float64  `json:"age_seconds"`
 	Pinned       bool     `json:"pinned,omitempty"` // never drained: a hold, a claim, berth run --pinned
+	// Training is a berth train lease: it locks its card, and every other
+	// request there is refused while it holds or waits.
+	Training bool `json:"training,omitempty"`
 	// ParkedSince is how long the engine has been parked, in seconds; 0
 	// when it is not parked.
 	ParkedSince float64 `json:"parked_since,omitempty"`

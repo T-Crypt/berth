@@ -433,6 +433,24 @@ berth's notices are diagnostics on stderr and always print.`,
 		Run: runRun,
 	},
 	{
+		Name:    "train",
+		Summary: "run a training job that nothing automated can interrupt",
+		Args:    "--as NAME [--gpu CARDS] -- CMD [ARGS...]",
+		Help: `Run CMD as a training lease: a pinned hold on the whole card, on every card
+--gpu names. It waits for the card with no deadline, takes it from the engines
+that hold it, and keeps it until CMD exits or you press Ctrl-C.
+
+While a training holds a card or waits for it, berthd refuses every other
+request on that card at once: engines, gateway requests, berth run and berth
+hold. Clients get the refusal right away instead of waiting. Another berth train
+waits in line and starts when the first one ends. Other cards keep serving.
+
+A game or a hold that already has the card is not drained: the training waits
+for it. berth train refuses to start when berthd is not running, because the
+lock lives in berthd.`,
+		Run: runTrain,
+	},
+	{
 		Name:    "skill",
 		Summary: "the agent skills: teach a coding agent to use Berth and ComfyUI",
 		Help: `Berth ships two skill files for coding agents (Claude Code, Codex, Pi, OpenCode,

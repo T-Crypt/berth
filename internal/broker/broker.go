@@ -218,6 +218,10 @@ type Request struct {
 	// app that must not be stopped (berth run --pinned) keeps the card until
 	// it lets go; waiters are told who pins it.
 	Pinned bool
+	// Training: berth train. The lease is a pinned hold on the whole card
+	// with no wait deadline, and it locks the card: while it holds or waits
+	// there, every request that is not a training is refused at once.
+	Training bool
 	// Switched: a person asked for this engine (the wake page's Launch,
 	// /v1/berth/switch). It is the last switch, so it never loses a
 	// juggle, and inside the juggle window a request no person made does
@@ -279,6 +283,9 @@ type lease struct {
 	lostWhy  string
 	reattach bool // re-attached after a daemon restart: granted is the re-attach, not a fresh switch
 	pinned   bool // never drained (Request.Pinned)
+	training bool // locks the card (Request.Training)
+	// lockCh tells a waiter that a training locked its card: it gives up.
+	lockCh   chan string
 	switched bool // a person's switch (Request.Switched)
 	minTurn  time.Duration
 	parkTTL  time.Duration // 0 = the node's
@@ -423,6 +430,8 @@ func newLease(id string, r Request, now time.Time) *lease {
 		prio:         r.Priority,
 		needs:        r.Needs,
 		pinned:       r.Pinned,
+		training:     r.Training,
+		lockCh:       make(chan string, 1),
 		switched:     r.Switched,
 		minTurn:      r.MinTurn,
 		parkTTL:      r.ParkTTL,
@@ -1774,6 +1783,7 @@ func (b *Broker) Reattach(r Request, pid int, start uint64) (*Lease, error) {
 
 // reattach is Reattach under a lease ID the caller picked.
 func (b *Broker) reattach(id string, r Request, pid int, start uint64) (_ *Lease, err error) {
+	r = r.asTraining()
 	defer func() {
 		if err != nil {
 			b.log.Warn("re-attach refused", "engine", r.Engine, "pid", pid, "reason", err)
@@ -1855,6 +1865,10 @@ func IsNotFound(err error) bool {
 // cancelled, or the daemon exits.
 func (b *Broker) waitFor(r Request) time.Duration {
 	switch {
+	case r.Training:
+		// A training waits for the card however long the run before it
+		// takes: the next one queues, it never dies.
+		return -1
 	case r.Wait != 0:
 		return r.Wait
 	case r.Window.Set():
@@ -1869,6 +1883,7 @@ func (b *Broker) waitFor(r Request) time.Duration {
 // Acquire queues for a berth and blocks until it is granted, ctx ends, or
 // the wait runs out. onWait hears each new reason for waiting.
 func (b *Broker) Acquire(ctx context.Context, r Request, onWait func(string)) (*Lease, error) {
+	r = r.asTraining()
 	b.mu.Lock()
 	if err := b.refuse(r); err != nil {
 		b.mu.Unlock()
@@ -1881,6 +1896,9 @@ func (b *Broker) Acquire(ctx context.Context, r Request, onWait func(string)) (*
 	b.queue = append(b.queue, l)
 	b.log.Info("acquire", "lease", l.id, "engine", l.engine, "priority", l.prio, "needs_mib", l.needs/gpu.MiB)
 	b.emit(proto.Event{Kind: proto.EvRequested, Lease: l.id, Engine: l.engine, Bytes: l.needs, Detail: l.prio.String()})
+	if l.training {
+		b.lockOut(l)
+	}
 	b.schedule(b.now())
 	b.mu.Unlock()
 
@@ -1901,6 +1919,8 @@ func (b *Broker) Acquire(ctx context.Context, r Request, onWait func(string)) (*
 			}
 		case <-ctx.Done():
 			return nil, b.abandon(l, ctx.Err().Error())
+		case why := <-l.lockCh:
+			return nil, b.abandon(l, why)
 		case <-timeout:
 			// A grant may have landed in the same instant, possibly after a
 			// holder was already drained for it; keep it rather than waste the drain.
@@ -1914,11 +1934,66 @@ func (b *Broker) Acquire(ctx context.Context, r Request, onWait func(string)) (*
 	}
 }
 
+// asTraining is r as a training lease takes the card: a pinned hold on the
+// whole card, held to no hours and no turn. Any other request is r.
+func (r Request) asTraining() Request {
+	if !r.Training {
+		return r
+	}
+	r.Priority, r.Pinned = Hold, true
+	r.Needs, r.LearnSize = 0, false
+	r.Window, r.MinTurn = proto.Window{}, 0
+	return r
+}
+
+// training is the training lease that locks this card, holding it or
+// waiting for it, nil when none does. b.mu must be held.
+func (b *Broker) training() *lease {
+	for _, l := range b.leases {
+		if l.training {
+			return l
+		}
+	}
+	for _, l := range b.queue {
+		if l.training {
+			return l
+		}
+	}
+	return nil
+}
+
+// lockedFor is the refusal a request that is not a training gets while t
+// locks the card.
+func (b *Broker) lockedFor(t *lease) string {
+	card := b.cfg.Card
+	if card == "" {
+		card = "the card"
+	}
+	return fmt.Sprintf("%s is locked for training by %s; try again after it finishes", card, t.engine)
+}
+
+// lockOut refuses every waiter on the card that is not a training, as a
+// training arrives. b.mu must be held.
+func (b *Broker) lockOut(t *lease) {
+	why := b.lockedFor(t)
+	for _, q := range b.queue {
+		if !q.training {
+			select {
+			case q.lockCh <- why:
+			default:
+			}
+		}
+	}
+}
+
 // refuse is why r can never be granted on this card, nil when it can be.
 // b.mu must be held.
 func (b *Broker) refuse(r Request) error {
 	why := ""
+	t := b.training()
 	switch limit := sat(b.snap.Total, b.cfg.Reserve); {
+	case t != nil && !r.Training:
+		why = b.lockedFor(t)
 	case b.snap.APU && r.Needs > 0:
 		why = "APU requires an exclusive lease; omit needs-mib (VRAM and GTT are separate pools)"
 	case r.Needs > 0 && b.snap.Total > 0 && r.Needs > limit:

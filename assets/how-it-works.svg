@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 980" width="1200" height="980" role="img" aria-labelledby="t d">
 <title id="t">How berth works</title>
-<desc id="d">Clients ask berth for the GPU. Agents such as Hermes and ComfyUI workflows go through the berth gateway, one endpoint that starts engines on demand; engines under berth run, games and a VM passage (berth vfio run) ask directly. berthd queues them by priority, drains the holder at its boundary (saving KV caches or parking it in RAM), waits for the driver to show the memory free, then grants the lease. gpu0 serves strata while gpu1 is passed through to a VM. A timeline of one 24 GiB card shows llama-swap, strata, a game, a VM passage and ComfyUI taking turns with no overlap.</desc>
+<desc id="d">Clients ask berth for the GPU. Agents such as Hermes and ComfyUI workflows go through the berth gateway, one endpoint (and one per card) that starts engines on demand; engines under berth run, games, training runs under berth train and a VM passage (berth vfio run) ask directly. A training run locks its cards, and every other request there is refused at once. berthd queues them by priority, drains the holder at its boundary (saving KV caches or parking it in RAM), waits for the driver to show the memory free, then grants the lease. gpu0 serves strata while gpu1 is passed through to a VM. A timeline of one 24 GiB card shows llama-swap, strata, a game, a VM passage and ComfyUI taking turns with no overlap.</desc>
 <defs>
 <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0b1420"/><stop offset="1" stop-color="#070c13"/></linearGradient>
 <linearGradient id="gcy" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7ad4f2" stop-opacity=".55"/><stop offset="1" stop-color="#7ad4f2" stop-opacity=".08"/></linearGradient>
@@ -26,7 +26,7 @@
 <text x="40" y="130" class="m" font-size="12.5" letter-spacing="2.5" fill="#8ba0b8">WHO ASKS</text>
 <rect x="40" y="148" width="300" height="150" rx="12" fill="#0f1a28" stroke="#2a4e68" stroke-width="1.5"/>
 <text x="56" y="172" class="m" font-size="15" font-weight="700" fill="#7ad4f2">berth gateway</text>
-<text x="324" y="172" text-anchor="end" class="m" font-size="11.5" fill="#8ba0b8">:9799 · one endpoint</text>
+<text x="324" y="172" text-anchor="end" class="m" font-size="11.5" fill="#8ba0b8">:9799 · /cards/gpuN</text>
 <path d="M62 188h22a5 5 0 0 1 5 5v11a5 5 0 0 1-5 5h-12l-7 6v-6h-3a5 5 0 0 1-5-5v-11a5 5 0 0 1 5-5z" fill="none" stroke="#9aa8ff" stroke-width="2"/>
 <text x="102" y="199" class="s" font-size="14.5" font-weight="600" fill="#f0f5fa">Agents · Hermes · chat apps</text>
 <text x="102" y="217" class="m" font-size="12" fill="#8ba0b8">POST /v1/chat/completions</text>
@@ -44,8 +44,8 @@
 <rect x="40" y="382" width="300" height="58" rx="10" fill="#111b28" stroke="#243549"/>
 <rect x="40" y="382" width="4" height="58" rx="2" fill="#fb7185"/>
 <path d="M64 403h22a7 7 0 0 1 7 7v4a7 7 0 0 1-12 5l-2-2h-6l-2 2a7 7 0 0 1-12-5v-4a7 7 0 0 1 7-7z" fill="none" stroke="#fb7185" stroke-width="2"/><path d="M66 411h6M69 408v6" stroke="#fb7185" stroke-width="2" stroke-linecap="round"/><circle cx="82" cy="410" r="1.8" fill="#fb7185"/><circle cx="86" cy="414" r="1.8" fill="#fb7185"/>
-<text x="108" y="407" class="s" font-size="16" font-weight="600" fill="#f0f5fa">A game launches</text>
-<text x="108" y="427" class="m" font-size="12.5" fill="#8ba0b8">claim → hold the card</text>
+<text x="108" y="407" class="s" font-size="16" font-weight="600" fill="#f0f5fa">A game or a training run</text>
+<text x="108" y="427" class="m" font-size="12.5" fill="#8ba0b8">claim or berth train</text>
 <path class="flow" d="M342 411C362 411 356 316 374 316" fill="none" stroke="#fb7185" stroke-opacity=".7" stroke-width="2"/>
 <rect x="40" y="452" width="300" height="58" rx="10" fill="#111b28" stroke="#243549"/>
 <rect x="40" y="452" width="4" height="58" rx="2" fill="#c4a1ff"/>

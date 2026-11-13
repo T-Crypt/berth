@@ -86,7 +86,8 @@ func (b *Broker) Status() proto.Status {
 			GPUPIDs:    pids, Used: l.used(),
 			GTTUsed: l.gttUsed(), GTTContested: l.contestedGTT,
 			Contested: l.contested, Age: now.Sub(since).Seconds(), Pinned: l.pinned,
-			Window: l.window.String(),
+			Window:   l.window.String(),
+			Training: l.training,
 		}
 		if l.state == parked {
 			pl.ParkedSince = parkedAge(l, now)

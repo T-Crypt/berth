@@ -8,6 +8,14 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Added
 
+- `berth train --as NAME [--gpu CARDS] -- CMD` runs a training or fine-tune that nothing automated can interrupt.
+  It takes the whole of each card it names, waits for them with no deadline, and keeps them until the command
+  exits. While it holds a card or waits for it, berthd refuses every other request on that card at once: gateway
+  requests, `berth run`, llama-swap models, scheduled jobs and `berth hold`. Clients get the refusal right away
+  instead of waiting out their timeout. A second `berth train` waits in line and starts when the first one ends.
+  Other cards keep serving. `berth train` refuses to start without berthd, and `berth status` shows the lease as
+  `hold,pinned,training`.
+
 - On Windows, `berth notify` is a tray icon in the taskbar. Its notifications are Windows' own toasts, and a click
   opens the harbor. The tooltip shows the latest event, and keeps it after explorer restarts. The menu opens the
   harbor, turns the toasts off and on, lists the last 10 events and quits. `berth service install --notify`
