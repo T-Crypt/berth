@@ -1069,7 +1069,12 @@ func (b *Broker) runFor(pid int) *runs.Record {
 // found none at its start, while this daemon is young enough that its berth
 // run is still dialling, and it has not re-attached yet.
 func (b *Broker) dueToReattach(r runs.Record, now time.Time) bool {
-	if (r.Reason != runs.ReasonLost && r.Reason != runs.ReasonStart) || now.Sub(b.started) >= b.cfg.ReattachWindow {
+	if r.Reason != runs.ReasonLost && r.Reason != runs.ReasonStart {
+		return false
+	}
+	// A training waits as long as its process lives: the card is its own
+	// until it comes back, however long the restart took.
+	if !r.Training && now.Sub(b.started) >= b.cfg.ReattachWindow {
 		return false
 	}
 	for _, l := range b.leases {
@@ -1962,20 +1967,35 @@ func (b *Broker) training() *lease {
 	return nil
 }
 
-// lockedFor is the refusal a request that is not a training gets while t
-// locks the card.
-func (b *Broker) lockedFor(t *lease) string {
+// lockedBy names the training that locks this card: a training lease, or a
+// training run of the last daemon that has not re-attached yet. "" when
+// none does. b.mu must be held.
+func (b *Broker) lockedBy(now time.Time) string {
+	if t := b.training(); t != nil {
+		return t.engine
+	}
+	for _, r := range b.runs {
+		if r.Training && b.dueToReattach(r, now) {
+			return r.Engine
+		}
+	}
+	return ""
+}
+
+// lockedFor is the refusal a request that is not a training gets while
+// the training engine locks the card.
+func (b *Broker) lockedFor(engine string) string {
 	card := b.cfg.Card
 	if card == "" {
 		card = "the card"
 	}
-	return fmt.Sprintf("%s is locked for training by %s; try again after it finishes", card, t.engine)
+	return fmt.Sprintf("%s is locked for training by %s; try again after it finishes", card, engine)
 }
 
 // lockOut refuses every waiter on the card that is not a training, as a
 // training arrives. b.mu must be held.
 func (b *Broker) lockOut(t *lease) {
-	why := b.lockedFor(t)
+	why := b.lockedFor(t.engine)
 	for _, q := range b.queue {
 		if !q.training {
 			select {
@@ -1990,10 +2010,10 @@ func (b *Broker) lockOut(t *lease) {
 // b.mu must be held.
 func (b *Broker) refuse(r Request) error {
 	why := ""
-	t := b.training()
+	lock := b.lockedBy(b.now())
 	switch limit := sat(b.snap.Total, b.cfg.Reserve); {
-	case t != nil && !r.Training:
-		why = b.lockedFor(t)
+	case lock != "" && !r.Training:
+		why = b.lockedFor(lock)
 	case b.snap.APU && r.Needs > 0:
 		why = "APU requires an exclusive lease; omit needs-mib (VRAM and GTT are separate pools)"
 	case r.Needs > 0 && b.snap.Total > 0 && r.Needs > limit:

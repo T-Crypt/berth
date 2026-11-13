@@ -32,8 +32,9 @@ do not assume any engine is protected.
   gateway), or it can load onto a card that is already full and crash both.
 - A **pinned** lease (a hold, a claim, `berth run --pinned`) is never drained. If a request waits
   "held by ... pinned", the user's game or app has the card. Tell them; do not work around it.
-- A refusal that says a card "is locked for training" means a `berth train` run has it. Do not retry in a
-  loop, start the engine another way, or stop the training. Tell the user, or use another card or node.
+- A refusal that says a card "is locked for training", or that a run "is training on this node", means a
+  `berth train` run has it. Do not retry in a loop, start the engine another way, restart berthd, or stop the
+  training. Tell the user, or use another card or node.
 - Do not edit berth.toml, systemd units or an engine's config without showing the change and its
   undo first. Run `berth config check` after any berth.toml edit.
 
