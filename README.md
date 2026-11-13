@@ -110,8 +110,11 @@ line goes away.
   render farm job, a cracking session, by name, command line or launcher.
 - **`berth hold`** frees the card for a call or a game you start yourself. Ctrl-C gives it back. On a node with
   several cards, `--gpu` names the ones it takes.
-- **`berth run --pinned`** for an app or a training run that must never be stopped mid-work, on one card or
-  several. See [Training runs](docs/leasing.md#training-runs).
+- **`berth train`** runs a training or fine-tune that nothing automated can interrupt, on one card or several.
+  It takes the whole of each card, and berthd refuses every other request on those cards until it exits, so
+  agents and scheduled jobs get an answer at once instead of waiting. A second training waits in line. See
+  [Training runs](docs/leasing.md#training-runs).
+- **`berth run --pinned`** for an app that must never be stopped mid-work but may share the card, such as Blender.
 
 **One API for your engines** *(preview)*
 - **`berth gateway`**: one OpenAI-compatible port. Name a model and Berth starts its engine,

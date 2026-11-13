@@ -20,7 +20,18 @@ import (
 	"github.com/T-Crypt/berth/internal/sysd"
 )
 
-func runRun(c *Context) int {
+func runRun(c *Context) int { return runEngine(c, false) }
+
+// runTrain is berth train: berth run as a training lease, which berthd
+// grants as a pinned hold on the whole card with no wait deadline and which
+// locks its cards against every other request. It refuses to start without
+// berthd, since the lock lives there.
+func runTrain(c *Context) int { return runEngine(c, true) }
+
+// trainSets are the run flags berth train sets itself.
+var trainSets = []string{"priority", "pinned", "needs-mib", "learn-size", "wait", "min-turn", "window", "park", "front", "fail-closed"}
+
+func runEngine(c *Context, training bool) int {
 	fs := c.FlagSet()
 	sock := fs.String("socket", defaultSocket(), "berthd socket ($BERTH_SOCKET)")
 	engine := fs.String("as", "", "engine name shown in status and drain messages (required)")
@@ -59,6 +70,13 @@ func runRun(c *Context) int {
 		WithHint("usage: berth run --as NAME [flags] -- CMD [ARGS...], or give NAME's berth.toml entry a start")
 	if *engine == "" {
 		return c.fail(required)
+	}
+	if training {
+		for _, name := range trainSets {
+			if c.Changed(name) {
+				return c.fail(Systemf("berth train sets --%s itself: a training is a pinned hold on the whole card that waits with no deadline and needs berthd", name))
+			}
+		}
 	}
 	win, err := proto.ParseWindow(*window)
 	if err != nil {
@@ -143,6 +161,10 @@ func runRun(c *Context) int {
 		return c.fail(Systemf("%v", err))
 	}
 	e.Name = *engine
+	if training {
+		e.Priority, *pinned, *failClosed, *wait = "hold", true, true, -1
+		e.NeedsMiB, e.LearnSize, e.Window, e.MinTurn, e.Park = nil, false, proto.Window{}, config.Duration{}, ""
+	}
 	if _, err := broker.ParsePriority(e.Priority); err != nil {
 		return c.fail(Systemf("%v", err))
 	}
@@ -161,7 +183,7 @@ func runRun(c *Context) int {
 	// Nothing here goes to stdout: the engine owns it. berth's own notices are
 	// diagnostics on stderr, and --quiet never hides the unprotected warning.
 	return runner.Run(runner.OptionsFor(&e, runner.Over{
-		Socket: *sock, Front: *frontAddr, Group: *group, Pinned: *pinned, Switched: *switched, Wait: *wait, Grace: *grace,
+		Socket: *sock, Front: *frontAddr, Group: *group, Pinned: *pinned, Training: training, Switched: *switched, Wait: *wait, Grace: *grace,
 		FailClosed: *failClosed, Argv: argv, Stderr: c.Err, Log: c.Log(),
 	}))
 }

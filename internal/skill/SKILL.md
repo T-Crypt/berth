@@ -32,6 +32,8 @@ do not assume any engine is protected.
   gateway), or it can load onto a card that is already full and crash both.
 - A **pinned** lease (a hold, a claim, `berth run --pinned`) is never drained. If a request waits
   "held by ... pinned", the user's game or app has the card. Tell them; do not work around it.
+- A refusal that says a card "is locked for training" means a `berth train` run has it. Do not retry in a
+  loop, start the engine another way, or stop the training. Tell the user, or use another card or node.
 - Do not edit berth.toml, systemd units or an engine's config without showing the change and its
   undo first. Run `berth config check` after any berth.toml edit.
 
@@ -43,7 +45,8 @@ do not assume any engine is protected.
 | Run an engine on one card of several | `berth run --as NAME --gpu gpu1 -- CMD`, or `gpu = "gpu1"` in its engine entry (`berth status` names the cards; the engine gets `CUDA_VISIBLE_DEVICES` for that card unless already set) |
 | Run an engine across several cards | `berth run --as NAME --gpu gpu0,gpu1 -- CMD`: one lease, granted on every card at once. It cannot park or lend yet |
 | Run a configured engine without retyping its command | `berth run --as NAME` with no command runs the `start` of NAME's `[[engine]]` entry |
-| Run an app that must not be drained (Blender, a training job) | `berth run --as NAME --pinned -- CMD` |
+| Train or fine-tune a model (nothing automated may interrupt it) | `berth train --as NAME [--gpu gpu0,gpu1] -- CMD`: the whole card, no wait deadline, and every other request on its cards is refused until it exits. Another `berth train` waits in line |
+| Run an app that must not be drained but may share the card (Blender) | `berth run --as NAME --pinned -- CMD` |
 | Give an engine a minimum turn before a request can drain it | `berth run --as NAME --min-turn 5m -- CMD`, or `min_turn = "5m"` in its engine entry (a hold still wins; `berth status` shows the turn left in the TURN column) |
 | Free the card for the user (game, call) | `berth hold [--for 2h] [--reason game] [--gpu gpu1]` (ends on Ctrl-C; default the first card) |
 | Call a model and let Berth start its engine | the gateway: `http://127.0.0.1:9799/v1`, bearer key from `berth key` |

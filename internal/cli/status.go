@@ -111,6 +111,9 @@ func (v statusView) Human(c *Context, ok bool) error {
 			if l.Pinned {
 				prio += ",pinned"
 			}
+			if l.Training {
+				prio += ",training"
+			}
 			row := fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t%v", cardCol(l.ID, l.Card), l.Engine, prio, state, needs, memoryHeld(l.Used, l.GTTUsed), l.GPUPIDs)
 			if c.Verbose {
 				row += fmt.Sprintf("\t%d", l.PID)

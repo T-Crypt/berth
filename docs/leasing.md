@@ -245,25 +245,32 @@ berth run --as llama-70b --priority foreground --gpu gpu0,gpu1 \
 
 ## Training runs
 
-A training run that loses its cards loses everything since its last checkpoint. Run it under one pinned lease:
+A training run that loses its cards loses everything since its last checkpoint. Start it with `berth train`:
 
 ```sh
-berth run --as train-mymodel --pinned --priority foreground --gpu gpu0,gpu1,gpu2 \
-  -- torchrun --nproc_per_node 3 train.py
+berth train --as train-mymodel --gpu gpu0,gpu1,gpu2 -- torchrun --nproc_per_node 3 train.py
 ```
 
-- `--pinned` keeps every card of the lease. A foreground run, a game's hold, `berth hold` and another lease on
-  several cards all wait until the run exits. A gateway request never drains it, and the gateway's stop answers
-  `409`. `berth stop train-mymodel` still stops it, because a person asked.
-- `--priority` decides only how the run gets its cards. `foreground` drains interactive and batch engines so the
-  run can start. A hold or a pinned app already on a card makes it wait.
+- The run takes the whole of every card `--gpu` names. It drains the engines on them, waits with no deadline, and
+  keeps the cards until the command exits or you press Ctrl-C. Without `--gpu` it takes the node's first card.
+- While a training holds a card or waits for it, berthd locks that card. It refuses every other request there at
+  once: a gateway request, `berth run`, a llama-swap model, a scheduled job and `berth hold`. A client gets the
+  refusal right away and can try another node, instead of waiting out its timeout. Cards the training does not
+  name keep serving.
+- A second `berth train` for the same card waits in line with no deadline and starts when the first one ends.
+- A game or a hold that already has the card is not drained. The training waits for it.
+- `berth train` refuses to start when berthd is not running, because the lock lives in berthd.
 - berthd grants the cards together and starts the command with `CUDA_VISIBLE_DEVICES` set to their UUIDs, in the
   order you named them. Do not set `CUDA_VISIBLE_DEVICES` yourself, since Berth leaves it alone when it is set. Set
   `--nproc_per_node` to the number of cards.
-- Leave `--needs-mib` at 0, the whole card. Training memory grows after the first steps.
 - The workers torchrun or `accelerate launch` starts belong to the lease, so their memory is the run's on every card.
+- `berth status` shows the lease as `hold,pinned,training`. `berth stop train-mymodel` still stops it, because a
+  person asked.
 - A berthd restart or upgrade does not stop the run. It keeps running, and berthd re-attaches it with its pin on
-  every card.
+  every card. The run re-attaches as a training, so the lock comes back with it.
+
+`berth run --pinned --priority foreground` still works for a run that must not be drained but may share its card.
+A pinned run does not lock the card: other requests wait for it until their own deadline.
 
 A pin does not stop memory taken outside Berth. A game started on a leased card waits behind the run in Berth but
 still allocates memory, and that can run the training out of memory. Keep the card that drives your display out of
