@@ -81,7 +81,7 @@ func TestRankRecordedTraining(t *testing.T) {
 	})
 }
 
-// Paths rank resume, free, drain, blocked; engines on one path keep
+// Paths rank running, resume, free, drain, blocked; engines on one path keep
 // berth.toml's order. Starts come from the switch book by tier, unknown
 // where it has no samples.
 func TestRankOrdersByPath(t *testing.T) {
@@ -105,6 +105,15 @@ func TestRankOrdersByPath(t *testing.T) {
 	}
 	check(t, Rank(st, engines("comfyui", "strata"), book), []got{
 		{"strata", Resume, "parked in RAM", swapcost.Warm, contract.Duration{Seconds: 4, Source: contract.Measured}},
+		{"comfyui", Drain, "drains strata and llama-swap (dirk)", swapcost.Cold, contract.Duration{Seconds: 8, Source: contract.Measured}},
+	})
+
+	// The model that holds the card, and the router whose model holds it,
+	// are already there: no drain of themselves, no switch.
+	hot := contract.Duration{Source: contract.Default, Why: "already on the card, no switch"}
+	check(t, Rank(st, engines("comfyui", "dirk", "llama-swap"), book), []got{
+		{"dirk", Running, "already on the card", swapcost.Hot, hot},
+		{"llama-swap", Running, "already on the card", swapcost.Hot, hot},
 		{"comfyui", Drain, "drains strata and llama-swap (dirk)", swapcost.Cold, contract.Duration{Seconds: 8, Source: contract.Measured}},
 	})
 }

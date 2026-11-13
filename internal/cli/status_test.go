@@ -41,6 +41,13 @@ func (emptyCard) Read(context.Context) (gpu.Snapshot, error) {
 // match what the daemon sends.
 func startDaemon(t *testing.T) string {
 	t.Helper()
+	return startDaemonWith(t, server.Extras{})
+}
+
+// startDaemonWith is startDaemon serving x's hooks (the engines berthd
+// found, say); its alerts are the daemon's own.
+func startDaemonWith(t *testing.T, x server.Extras) string {
+	t.Helper()
 	sock := filepath.Join(t.TempDir(), "berth.sock")
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	b := broker.New(broker.Config{
@@ -60,7 +67,8 @@ func startDaemon(t *testing.T) string {
 	ev := alerts.New(alerts.FromConfig(config.AlertsConfig{}), 3, nil)
 	lastAlerts := &atomic.Pointer[proto.Alerts]{}
 	lastAlerts.Store(ev.Snapshot())
-	go server.Serve(ctx, ln, node.One(b), server.Extras{Alerts: lastAlerts.Load}, log)
+	x.Alerts = lastAlerts.Load
+	go server.Serve(ctx, ln, node.One(b), x, log)
 	return sock
 }
 

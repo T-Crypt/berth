@@ -33,6 +33,11 @@ type engineFootprint struct {
 	// name's entry: a group's Peak is its largest model's, and one model of
 	// a llama-swap may fit beside a parked engine while another does not.
 	HotPeak uint64
+	// Priority and MinTurn are what the name's last run asked for, kept on
+	// the name's entry: a llama-swap model's terms sit on its berth run
+	// line, which no berth.toml entry declares. Priority "" = no run yet.
+	Priority string        `json:",omitempty"`
+	MinTurn  time.Duration `json:",omitempty"`
 }
 
 // besideHeadroom is the free card memory a whole-card engine needs past its
@@ -120,6 +125,7 @@ func (b *Broker) foldFootprint(l *lease, now time.Time) {
 		b.footprints[l.engine] = n
 	}
 	n.HotPeak = max(n.HotPeak, l.peak)
+	n.Priority, n.MinTurn = l.prio.String(), l.minTurn
 	b.footprintDirty = true
 }
 
@@ -143,7 +149,8 @@ func (b *Broker) footprintStatus() []proto.EngineFootprint {
 			continue
 		}
 		out = append(out, proto.EngineFootprint{Engine: k, Bytes: f.Last, Runs: f.Runs, At: f.At,
-			HotPeakBytes: f.HotPeak, RAMPeakBytes: f.RAMPeak, ParkedRAMBytes: f.ParkedRAM})
+			HotPeakBytes: f.HotPeak, RAMPeakBytes: f.RAMPeak, ParkedRAMBytes: f.ParkedRAM,
+			Priority: f.Priority, MinTurnS: f.MinTurn.Seconds()})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Engine < out[j].Engine })
 	return out

@@ -64,7 +64,7 @@ func TestBuildMeasuredAndDeclared(t *testing.T) {
 	e := &config.Engine{Type: "llamacpp", Priority: "foreground", MinTurn: config.Duration{Duration: 5 * time.Minute}}
 
 	c := Build("e", e, card(fp), nil)
-	if c.Type != "llamacpp" || !c.InConfig || c.Priority != (Text{"foreground", Declared}) {
+	if c.Type != "llamacpp" || !c.InConfig || c.Priority != (Text{Value: "foreground", Source: Declared}) {
 		t.Fatalf("type %q in_config %v priority %+v", c.Type, c.InConfig, c.Priority)
 	}
 	if c.LastPeak != (Bytes{Bytes: 13000 * mib, Source: Measured, Why: "4 runs measured"}) {
@@ -76,7 +76,7 @@ func TestBuildMeasuredAndDeclared(t *testing.T) {
 	if c.ParkedRAM != (Bytes{Bytes: 20000 * mib, Source: Measured}) {
 		t.Fatalf("ParkedRAM = %+v", c.ParkedRAM)
 	}
-	if c.MinTurn != (Duration{Seconds: 300, Source: Declared}) || c.Window != (Text{"always", Default}) {
+	if c.MinTurn != (Duration{Seconds: 300, Source: Declared}) || c.Window != (Text{Value: "always", Source: Default}) {
 		t.Fatalf("MinTurn %+v Window %+v", c.MinTurn, c.Window)
 	}
 
@@ -86,8 +86,30 @@ func TestBuildMeasuredAndDeclared(t *testing.T) {
 	}
 
 	off := Build("e", nil, nil, nil)
-	if off.LastPeak != (Bytes{Source: Unknown, Why: "berthd did not answer"}) || off.Priority != (Text{"interactive", Default}) {
+	if off.LastPeak != (Bytes{Source: Unknown, Why: "berthd did not answer"}) || off.Priority != (Text{Value: "interactive", Source: Default}) {
 		t.Fatalf("without berthd: LastPeak %+v Priority %+v", off.LastPeak, off.Priority)
+	}
+}
+
+// A llama-swap model has no berth.toml entry and no last-run figure of its
+// own (that sits on its group's entry): its peak and its terms come from
+// what its own runs measured and asked for.
+func TestBuildModelOfAGroup(t *testing.T) {
+	fp := proto.EngineFootprint{Engine: "Dirk-27B", HotPeakBytes: 23738 * mib, Priority: "foreground", MinTurnS: 300}
+	c := Build("Dirk-27B", nil, card(fp), nil)
+	if c.Priority != (Text{Value: "foreground", Source: Measured, Why: "its last run's lease"}) {
+		t.Fatalf("Priority = %+v", c.Priority)
+	}
+	if c.MinTurn != (Duration{Seconds: 300, Source: Measured, Why: "its last run's lease"}) {
+		t.Fatalf("MinTurn = %+v", c.MinTurn)
+	}
+	if c.LastPeak != (Bytes{Bytes: 23738 * mib, Source: Measured, Why: "the most a run under this name held"}) {
+		t.Fatalf("LastPeak = %+v", c.LastPeak)
+	}
+
+	e := &config.Engine{Priority: "batch"}
+	if got := Build("Dirk-27B", e, card(fp), nil).Priority; got != (Text{Value: "batch", Source: Declared}) {
+		t.Fatalf("declared priority = %+v, want berth.toml to win", got)
 	}
 }
 

@@ -42,7 +42,7 @@ func (v contractView) Human(c *Context, ok bool) error {
 	row := func(name, value string, src contract.Source, why string) {
 		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n", name, value, src, why)
 	}
-	row("priority", k.Priority.Value, k.Priority.Source, "")
+	row("priority", k.Priority.Value, k.Priority.Source, k.Priority.Why)
 	row("vram", contractSize(k.VRAM, "whole card"), k.VRAM.Source, k.VRAM.Why)
 	row("last peak", contractSize(k.LastPeak, "-"), k.LastPeak.Source, k.LastPeak.Why)
 	row("ram", contractSize(k.RAM, "-"), k.RAM.Source, k.RAM.Why)
@@ -51,7 +51,11 @@ func (v contractView) Human(c *Context, ok bool) error {
 	if k.MinTurn.Seconds > 0 {
 		minTurn = (time.Duration(k.MinTurn.Seconds) * time.Second).String()
 	}
-	row("min turn", minTurn, k.MinTurn.Source, "")
+	minWhy := ""
+	if k.MinTurn.Source == contract.Measured {
+		minWhy = k.MinTurn.Why
+	}
+	row("min turn", minTurn, k.MinTurn.Source, minWhy)
 	row("window", k.Window.Value, k.Window.Source, "")
 	for _, s := range k.Switch {
 		took, why := "-", s.Took.Why

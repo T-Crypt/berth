@@ -5,10 +5,16 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/T-Crypt/berth/internal/proto"
+	"github.com/T-Crypt/berth/internal/server"
 )
 
 // berth fit for a model ranks every engine that serves it in berth.toml's
@@ -60,6 +66,38 @@ func TestFitAgainstADaemon(t *testing.T) {
 
 	code, _, errOut = runCLI(t, "fit", "nope", "--config", cfg, "--socket", sock)
 	if code == 0 || !strings.Contains(errOut, `no engine named "nope", and none serves it`) || !strings.Contains(errOut, "engines: a, b") {
+		t.Fatalf("unknown (exit %d): %s", code, errOut)
+	}
+}
+
+// A model no berth.toml engine names or serves is still found the way the
+// gateway finds it: a live llama-swap lists it on /v1/models, so berth fit
+// ranks the model itself on llama-swap's card.
+func TestFitFindsAModelALiveEngineLists(t *testing.T) {
+	home := isolate(t)
+	ls := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			http.NotFound(w, r)
+			return
+		}
+		fmt.Fprint(w, `{"object":"list","data":[{"id":"Defiance-27B"},{"id":"Dirk-27B"}]}`)
+	}))
+	t.Cleanup(ls.Close)
+	sock := startDaemonWith(t, server.Extras{Engines: func() []proto.Engine {
+		return []proto.Engine{{Name: "llama-swap", Type: "llama-swap", URL: ls.URL, Up: true, State: "up"}}
+	}})
+	cfg := filepath.Join(home, "berth.toml")
+	if err := os.WriteFile(cfg, []byte("[[engine]]\nname = \"llama-swap\"\ntype = \"llama-swap\"\nurl = \""+ls.URL+"\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	code, out, errOut := runCLI(t, "fit", "Dirk-27B", "--config", cfg, "--socket", sock)
+	if code != 0 || !strings.HasPrefix(out, "Dirk-27B: free, the card is free\n") {
+		t.Fatalf("exit %d:\n%s%s", code, out, errOut)
+	}
+
+	code, _, errOut = runCLI(t, "fit", "nope", "--config", cfg, "--socket", sock)
+	if code == 0 || !strings.Contains(errOut, `no engine named "nope", and none serves it`) {
 		t.Fatalf("unknown (exit %d): %s", code, errOut)
 	}
 }

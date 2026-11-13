@@ -209,12 +209,13 @@ func TestFootprintFoldsAtTheFreeNotTheRelease(t *testing.T) {
 	}
 }
 
-// A llama-swap model's own peak sits on its name's entry, its last run on the
-// group's. The status reply carries both, so a reader of the model's name
-// (berth contract, learn_size) finds the peak the broker sizes it from.
+// A llama-swap model's own peak and terms sit on its name's entry, its last
+// run on the group's. The status reply carries both, so a reader of the
+// model's name (berth contract, learn_size) finds the peak the broker sizes
+// it from and the priority and turn its berth run line asks for.
 func TestFootprintStatusCarriesAModelsOwnPeak(t *testing.T) {
 	b, c, _ := setup(t, procs.Map{101: 100})
-	l := must(t, acquire(b, Request{Engine: "dirk", Group: "llama-swap", Priority: Foreground}))
+	l := must(t, acquire(b, Request{Engine: "dirk", Group: "llama-swap", Priority: Foreground, MinTurn: 5 * time.Minute}))
 	l.Attach(100)
 	c.set(gpu.Proc{PID: 101, Name: "llama-server", Used: 12 * GiB})
 	b.Tick(context.Background())
@@ -227,8 +228,8 @@ func TestFootprintStatusCarriesAModelsOwnPeak(t *testing.T) {
 		f.At = time.Time{}
 		got[f.Engine] = f
 	}
-	if f := got["dirk"]; f != (proto.EngineFootprint{Engine: "dirk", HotPeakBytes: 12 * GiB}) {
-		t.Fatalf("dirk's entry = %+v, want its own 12 GiB peak", f)
+	if f := got["dirk"]; f != (proto.EngineFootprint{Engine: "dirk", HotPeakBytes: 12 * GiB, Priority: "foreground", MinTurnS: 300}) {
+		t.Fatalf("dirk's entry = %+v, want its own 12 GiB peak, foreground, a 300 s turn", f)
 	}
 	if f := got["llama-swap"]; f.Bytes != 12*GiB || f.Runs != 1 {
 		t.Fatalf("llama-swap's entry = %+v, want the last run's 12 GiB", f)

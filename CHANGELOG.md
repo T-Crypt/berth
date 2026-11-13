@@ -49,12 +49,17 @@ has a matching GitHub release whose body comes from its section below.
   it, or nothing is known. ENGINE can be an `[[engine]]` name, a discovered engine, or a llama-swap model's
   `berth run --as` name. Without berthd it prints the declared terms. The status JSON's `footprints` now carry each
   engine's `hot_peak_vram_bytes`, `ram_peak_bytes` and `parked_ram_bytes`. A llama-swap model whose last-run
-  figure sits on its group's entry is now listed under its own name too.
+  figure sits on its group's entry is now listed under its own name too. A llama-swap model has no berth.toml
+  entry, so its priority and minimum turn come from its last run's lease, which carried the flags on its
+  `berth run` line. Its last peak is the most a run under its name held. The footprint entry carries them as
+  `priority` and `min_turn_s`.
 - `berth fit NAME` says where a request for an engine or a model would run right now and what the start costs. It
-  ranks each candidate by path: a resume from RAM, a free card, a drain of the holder, or blocked by a VM, a cordon
-  or a pinned lease. Each candidate names its reason, the tier its weights sit in, and the switch time the gateway
-  measured from that tier, or unknown. For a model, every engine that serves it is ranked the way the gateway picks
-  one. `--explain` lists every candidate. It is read only, and the gateway now picks through the same ranking.
+  ranks each candidate by path: already running on the card, a resume from RAM, a free card, a drain of the holder,
+  or blocked by a VM, a cordon or a pinned lease. Each candidate names its reason, the tier its weights sit in, and
+  the switch time the gateway measured from that tier, or unknown. For a model, every engine that serves it is
+  ranked the way the gateway picks one. A model that no `[[engine]]` names or serves, such as a llama-swap model, is
+  found the way the gateway finds it, on a live engine whose `/v1/models` lists it. `--explain` lists every
+  candidate. It is read only, and the gateway now picks through the same ranking.
 - `berth queue` lists the waiters in the order berthd will grant them, with their lease IDs. `berth queue bump ID`
   moves one to the front of its priority class, `berth queue prio ID batch|interactive|foreground` moves it to
   another class, and `berth queue drop ID` refuses it now. Holds and trainings cannot be changed this way. Each

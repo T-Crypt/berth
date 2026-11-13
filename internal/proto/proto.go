@@ -429,6 +429,11 @@ type EngineFootprint struct {
 	RAMPeakBytes uint64 `json:"ram_peak_bytes,omitempty"`
 	// ParkedRAMBytes is the host RAM the engine last held parked.
 	ParkedRAMBytes uint64 `json:"parked_ram_bytes,omitempty"`
+	// Priority and MinTurnS are what the last run under this exact name
+	// asked for: its berth run line's --priority and --min-turn. Priority
+	// is "" until a run of the name is measured.
+	Priority string  `json:"priority,omitempty"`
+	MinTurnS float64 `json:"min_turn_s,omitempty"`
 }
 
 // Claim is one claim rule and what it matches right now: work Berth does not
