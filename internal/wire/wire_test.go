@@ -465,3 +465,29 @@ func TestLlamaSwapHandFlagBeforeAs(t *testing.T) {
 		t.Fatalf("updated:\n%s\nwant:\n%s", got, want)
 	}
 }
+
+// --update rewrites wire's flags from the berth binary on and keeps the words
+// before it, such as a wrapper that runs berth run.
+func TestLlamaSwapUpdateKeepsWordsBeforeBerth(t *testing.T) {
+	in := `models:
+  "a":
+    cmd: >
+      /usr/bin/clear-first FOO=1 /usr/bin/berth run --as a --drain-post http://127.0.0.1:9090/api/models/unload/a --
+      llama-server -m a.gguf
+`
+	o := options()
+	o.Update = true
+	r, err := LlamaSwap(writeTemp(t, in), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `models:
+  "a":
+    cmd: >
+      /usr/bin/clear-first FOO=1 /usr/bin/berth run --as a --group llama-swap --priority foreground --drain-post http://127.0.0.1:9090/api/models/unload/a --drain-slots http://127.0.0.1:9090/upstream/a --
+      llama-server -m a.gguf
+`
+	if got := r.NewContent(); got != want {
+		t.Fatalf("updated:\n%s\nwant:\n%s", got, want)
+	}
+}
