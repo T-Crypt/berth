@@ -134,6 +134,16 @@ func (v statusView) Human(c *Context, ok bool) error {
 	}
 	lease("LEASE", st.Leases, false)
 	lease("WAITING", st.Waiting, true)
+	if len(st.Schedules) > 0 {
+		fmt.Fprint(tw, "\nSCHEDULE\tHOURS\tNOW\n")
+		for _, s := range st.Schedules {
+			now := c.Style.Warn("closed") + ", opens in " + age(s.ChangeS)
+			if s.Open {
+				now = c.Style.OK("open") + ", closes in " + age(s.ChangeS)
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\n", s.Engine, s.Window, esc(now))
+		}
+	}
 	if len(st.Squatters) > 0 {
 		fmt.Fprint(tw, "\n"+cardCol("SQUATTER", "CARD")+"\tPID\tHOLDS\tSEEN\tUNPROTECTED RUN\n")
 		for _, s := range st.Squatters {

@@ -279,7 +279,11 @@ func runDaemon(c *Context) int {
 	go samplerLoop(ctx, rec, hr, n, watcher, ev, &lastHost, &lastAlerts)
 	x := server.Extras{Engines: watcher.Snapshot, Host: lastHost.Load, History: rec.Get,
 		Insights: func() *proto.Insights { return watcher.Insights(time.Now()) },
-		Requests: watcher.Requests, Alerts: lastAlerts.Load, Finished: watcher.Finished}
+		Requests: watcher.Requests, Alerts: lastAlerts.Load, Finished: watcher.Finished,
+		Windows: map[string]proto.Window{}}
+	for _, e := range cfg.Engine {
+		x.Windows[e.Name] = e.Window
+	}
 	if *devicesFile != "" {
 		x.Pair = &pair.Store{Path: *devicesFile}
 	}

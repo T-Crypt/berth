@@ -23,6 +23,10 @@ has a matching GitHub release whose body comes from its section below.
   without anyone typing `needs_mib` or keeping it up to date. An engine not yet measured takes the whole card, and
   the grant line in `berth events` names the size it used
   ([#311](https://github.com/T-Crypt/berth/issues/311)).
+- `berth status` has a SCHEDULE table and the harbor a SCHEDULES panel. Each lists every engine that has a
+  `window`, with its hours, whether they are open, and how long until they close or open. An engine shows before its
+  window opens, and a `berth run --window` lease shows its own hours. The status JSON carries the same rows as
+  `schedules`, and each lease carries its `window`.
 
 ### Fixed
 
