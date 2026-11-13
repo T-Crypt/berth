@@ -300,7 +300,7 @@ func cardView(engine string, node *proto.Status, wk *wake) guiStatus {
 				ours = true
 				continue
 			}
-			st.Card = append(st.Card, guiHold{Name: holderName(l), State: l.State, Pinned: l.Pinned})
+			st.Card = append(st.Card, guiHold{Name: l.Holder(), State: l.State, Pinned: l.Pinned})
 		}
 	}
 	switch {
@@ -350,14 +350,6 @@ func waitLine(card []guiHold) string {
 		return "Waiting for " + h.Name + " release: it exited but its memory is still held"
 	}
 	return "Waiting for " + h.Name + " release"
-}
-
-// holderName names a lease for people: llama-swap's models by their family.
-func holderName(l proto.Lease) string {
-	if l.Group != "" && l.Group != l.Engine {
-		return l.Group + " (" + l.Engine + ")"
-	}
-	return l.Engine
 }
 
 func names(card []guiHold) string {

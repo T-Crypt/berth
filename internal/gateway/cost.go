@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/T-Crypt/berth/internal/config"
+	"github.com/T-Crypt/berth/internal/fit"
 	"github.com/T-Crypt/berth/internal/pagecache"
 	"github.com/T-Crypt/berth/internal/swapcost"
 )
@@ -51,7 +52,7 @@ type position struct {
 // checked, leaves the share 0: a part of the answer would be a wrong
 // fraction, and cold is the honest reading of not knowing.
 func (g *Gateway) readPosition(e *config.Engine) *position {
-	pos := &position{parked: parkedIn(g.nodeStatus(), e.Name)}
+	pos := &position{parked: fit.Parked(g.nodeStatus(), e.Name)}
 	files, _ := prefetchFiles(e.Prefetch)
 	if len(files) == 0 {
 		return pos

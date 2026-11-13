@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/T-Crypt/berth/internal/config"
+	"github.com/T-Crypt/berth/internal/fit"
 	"github.com/T-Crypt/berth/internal/node"
 	"github.com/T-Crypt/berth/internal/proto"
 )
@@ -30,11 +31,11 @@ func TestCordonedCardIsNotFree(t *testing.T) {
 		st = n.Status()
 		return node.View(&st, "gpu0") != nil && node.View(&st, "gpu1") != nil
 	})
-	if why := outOfReach(nodeView(t, &st, "gpu1")); why != "the card is cordoned" {
-		t.Errorf("outOfReach(gpu1) = %q, want the cordon", why)
+	if why := fit.OutOfReach(nodeView(t, &st, "gpu1")); why != "the card is cordoned" {
+		t.Errorf("OutOfReach(gpu1) = %q, want the cordon", why)
 	}
-	if why := outOfReach(nodeView(t, &st, "gpu0")); why != "" {
-		t.Errorf("outOfReach(gpu0) = %q, want nothing", why)
+	if why := fit.OutOfReach(nodeView(t, &st, "gpu0")); why != "" {
+		t.Errorf("OutOfReach(gpu0) = %q, want nothing", why)
 	}
 
 	addr := freeAddr(t)
