@@ -56,6 +56,10 @@ type Options struct {
 	LearnSize bool
 	Pinned    bool // never drained: an app that must not be stopped (Blender, a capture)
 	Training  bool // berth train: a pinned hold that locks its cards; berthd refuses every other request there
+	// Exclusive: berth train --exclusive puts the granted cards in the
+	// driver's exclusive-process compute mode for the run's life, so no
+	// program outside Berth can open them either.
+	Exclusive bool
 	Switched  bool // a person's switch (the wake page's Launch, /v1/berth/switch): wins a juggle
 	// MinTurn is a minimum turn: while the lease is younger than it after
 	// the grant, no request of equal or lower priority drains it, and
@@ -241,12 +245,24 @@ func Run(o Options) int {
 		conn, raw = nil, nil
 	}
 
+	if o.CLI == nil {
+		o.CLI = execCLI
+	}
 	var cardEnv string
 	if conn != nil {
 		defer raw.Close()
-		var ok bool
-		if cardEnv, ok = acquire(o, conn, say); !ok {
+		granted, ok := acquire(o, conn, say)
+		if !ok {
 			return ExitRefused
+		}
+		cardEnv = visibleDevices(o.Card, granted, os.LookupEnv, say)
+		if o.Exclusive {
+			restore, err := exclusive(o, granted.CardUUID)
+			if err != nil {
+				say("--exclusive: %v; not starting %s", err, o.Engine)
+				return ExitRefused
+			}
+			defer restore(say)
 		}
 	}
 
@@ -269,9 +285,6 @@ func Run(o Options) int {
 
 	done := make(chan struct{})
 
-	if o.CLI == nil {
-		o.CLI = execCLI
-	}
 	var cid containerRef
 	o.container = &cid
 
@@ -424,30 +437,30 @@ func Run(o Options) int {
 
 // acquire asks berthd for the card and waits for the grant. It returns the
 // device entry the engine starts with, and false when there is no grant.
-func acquire(o Options, conn *proto.Conn, say func(string, ...any)) (string, bool) {
+func acquire(o Options, conn *proto.Conn, say func(string, ...any)) (proto.Msg, bool) {
 	if err := conn.Send(proto.Msg{Op: proto.OpAcquire, Card: o.Card, Engine: o.Engine, Group: o.Group, Priority: o.Priority, Needs: largest(o.Needs), NeedsEach: each(o.Needs), LearnSize: o.LearnSize, Wait: o.Wait.Seconds(), Pinned: o.Pinned, Training: o.Training, Switched: o.Switched, Lend: o.Lend != nil, WholeMachine: o.WholeMachine, MinTurn: o.MinTurn.Seconds(), ParkTTL: o.ParkTTL.Seconds(), Window: o.Window.String()}); err != nil {
 		say("acquire: %v", err)
-		return "", false
+		return proto.Msg{}, false
 	}
 	for {
 		m, err := conn.Recv()
 		if err != nil {
 			say("berthd went away while %s was waiting: %v", o.Engine, err)
-			return "", false
+			return proto.Msg{}, false
 		}
 		switch m.Op {
 		case proto.OpWaiting:
 			say("waiting: %s", m.Reason)
 		case proto.OpRefused:
 			say("refused: %s", m.Reason)
-			return "", false
+			return proto.Msg{}, false
 		case proto.OpGranted:
 			if m.Reason != "" {
 				say("granted %s, WARNING: %s", m.Lease, m.Reason)
 			} else {
 				say("granted %s", m.Lease)
 			}
-			return visibleDevices(o.Card, m, os.LookupEnv, say), true
+			return m, true
 		}
 	}
 }

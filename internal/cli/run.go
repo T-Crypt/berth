@@ -62,6 +62,7 @@ func runEngine(c *Context, training bool) int {
 	sliceName := fs.String("slice", "", "NAME.slice to start the engine's scope under (systemd user manager, Linux): the slice unit's CPU, memory and swap policy applies to the engine and everything it forks; over the entry's slice")
 	grace := fs.Duration("grace", 30*time.Second, "time each drain step gets before the next")
 	failClosed := fs.Bool("fail-closed", false, "do not start CMD without berthd or stop it without a safe boundary")
+	exclusiveMode := fs.Bool("exclusive", false, "berth train only: put the cards in exclusive-process compute mode for the run's life, so no program outside Berth can open them (Linux, NVIDIA, needs a sudo rule for nvidia-smi -c)")
 	cfgPath := fs.String("config", config.DefaultPath(), "berth.toml: the engine entry matching --as (or --group) supplies the settings a flag does not set; a set flag wins and says so; missing = no defaults ($BERTH_CONFIG)")
 	if code, done := c.Parse(fs); done {
 		return code
@@ -70,6 +71,9 @@ func runEngine(c *Context, training bool) int {
 		WithHint("usage: berth run --as NAME [flags] -- CMD [ARGS...], or give NAME's berth.toml entry a start")
 	if *engine == "" {
 		return c.fail(required)
+	}
+	if *exclusiveMode && !training {
+		return c.fail(Systemf("--exclusive is for berth train: exclusive mode allows one process on the card, which only a training should claim"))
 	}
 	if training {
 		for _, name := range trainSets {
@@ -183,7 +187,7 @@ func runEngine(c *Context, training bool) int {
 	// Nothing here goes to stdout: the engine owns it. berth's own notices are
 	// diagnostics on stderr, and --quiet never hides the unprotected warning.
 	return runner.Run(runner.OptionsFor(&e, runner.Over{
-		Socket: *sock, Front: *frontAddr, Group: *group, Pinned: *pinned, Training: training, Switched: *switched, Wait: *wait, Grace: *grace,
+		Socket: *sock, Front: *frontAddr, Group: *group, Pinned: *pinned, Training: training, Exclusive: *exclusiveMode, Switched: *switched, Wait: *wait, Grace: *grace,
 		FailClosed: *failClosed, Argv: argv, Stderr: c.Err, Log: c.Log(),
 	}))
 }

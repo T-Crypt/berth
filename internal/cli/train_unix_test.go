@@ -49,3 +49,27 @@ func TestTrainLocksTheCardAgainstBerthRun(t *testing.T) {
 		t.Errorf("berth train exit = %d, want 0", code)
 	}
 }
+
+// --exclusive is part of the run: on a card the driver names no UUID for,
+// berth train --exclusive is refused after the grant and its command never
+// starts, so it never runs without the guard it asked for.
+func TestTrainExclusiveRefusesWithoutAnNVIDIACard(t *testing.T) {
+	isolate(t)
+	sock := startDaemon(t)
+	code, out, errOut := runCLI(t, "train", "--exclusive", "--as", "train-a", "--socket", sock, "--", "echo", "started")
+	if code == ExitOK || strings.Contains(out, "started") {
+		t.Fatalf("exit %d, stdout %q, stderr %q; want a refusal and no start", code, out, errOut)
+	}
+	if !strings.Contains(errOut, "--exclusive") {
+		t.Errorf("stderr %q does not name --exclusive", errOut)
+	}
+}
+
+// --exclusive belongs to berth train alone.
+func TestRunRefusesExclusive(t *testing.T) {
+	isolate(t)
+	code, _, errOut := runCLI(t, "run", "--exclusive", "--as", "x", "--", "true")
+	if code != ExitSystem || !strings.Contains(errOut, "--exclusive is for berth train") {
+		t.Fatalf("exit %d, stderr %q", code, errOut)
+	}
+}
