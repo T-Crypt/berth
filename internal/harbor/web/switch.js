@@ -15,10 +15,12 @@ export function initSwitch({ demo }) {
   const cardsRoot = $("sw-cards");
   const pickRoot = $("sw-picker");
   const enginesRoot = $("sw-engines");
+  const queueRoot = $("sw-queue");
   const noteRoot = $("sw-note");
   const meta = $("sw-meta");
   const pairDlg = $("pair-dlg");
   let board = null;
+  let queue = null; // the waiters in grant order, from the node's status
   let paired = demo;
   let timer = 0;
   let pick = localStorage.getItem(PICK_KEY) || "";
@@ -26,7 +28,18 @@ export function initSwitch({ demo }) {
   const errors = new Map(); // engine -> the last action's error, until the next read
   const open = new Set();   // engines whose model list is unfolded
 
+  async function readQueue() {
+    try {
+      const res = await fetch(demo ? "demo.json" : "/v1/status", { headers: { accept: "application/json" } });
+      const j = await res.json();
+      queue = res.ok ? (j.waiting || []) : null;
+    } catch (e) {
+      queue = null;
+    }
+  }
+
   async function read() {
+    await readQueue();
     try {
       const res = await fetch(demo ? "demo-board.json" : "/v1/board", { headers: { accept: "application/json" } });
       const j = await res.json();
@@ -66,6 +79,77 @@ export function initSwitch({ demo }) {
     await read();
   }
 
+  // queueAct bumps, re-ranks or drops one waiter. It goes to berthd through
+  // the harbor only (never the gateway), and only from a paired device.
+  async function queueAct(action, lease, priority) {
+    if (demo) { toast("demo: " + action + " " + lease + " is not sent", "info"); return; }
+    const key = "queue\u0000" + lease;
+    busy.add(key);
+    errors.delete(key);
+    paint();
+    try {
+      const res = await fetch("/v1/board/queue", {
+        method: "POST",
+        headers: { "X-Berth": "1", "Content-Type": "application/json", accept: "application/json" },
+        body: JSON.stringify(priority ? { lease, action, priority } : { lease, action }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        errors.set(key, j.message || res.statusText);
+        if (res.status === 401) paired = false;
+      }
+    } catch (e) {
+      errors.set(key, e.message);
+    }
+    busy.delete(key);
+    await read();
+  }
+
+  function paintQueue(many) {
+    if (queue === null) { queueRoot.replaceChildren(el("div", "empty-note", "queue not read")); return; }
+    if (queue.length === 0) { queueRoot.replaceChildren(el("div", "empty-note", "nobody is waiting")); return; }
+    queueRoot.replaceChildren(...queue.map((l, i) => queueRow(l, i, many)));
+  }
+
+  function queueRow(l, i, many) {
+    const key = "queue\u0000" + l.id;
+    const who = l.group && l.group !== l.engine ? l.group + " (" + l.engine + ")" : l.engine;
+    const right = el("span", "sw-state", el("span", "sw-chip", (l.priority || "interactive").toUpperCase()));
+    if (l.training) right.append(el("span", "sw-chip sw-pinned", "TRAINING"));
+    if (many && l.card) right.prepend(el("span", "sw-chip", l.card));
+    const row = el("div", "sq sw-engine sw-waiting");
+    row.append(el("div", "top", el("span", "name", (i + 1) + ". " + who), right));
+    row.append(el("div", "meta", l.id + ", waiting " + Math.round(l.age_seconds || 0) + " s"));
+    const err = errors.get(key);
+    if (err) row.append(el("div", "meta sw-error", err));
+    if (paired && !l.training && !l.pinned && l.priority !== "hold") {
+      const actions = el("div", "sw-actions");
+      const first = el("button", "btn sw-btn", busy.has(key) ? "…" : "FIRST");
+      first.type = "button";
+      first.disabled = busy.has(key) || i === 0;
+      first.setAttribute("aria-label", "move " + who + " to the front of its class");
+      first.addEventListener("click", () => queueAct("bump", l.id));
+      const prio = el("select", "sw-prio");
+      prio.setAttribute("aria-label", "priority of " + who);
+      for (const p of ["batch", "interactive", "foreground"]) {
+        const o = el("option", null, p);
+        o.value = p;
+        o.selected = (l.priority || "interactive") === p;
+        prio.append(o);
+      }
+      prio.disabled = busy.has(key);
+      prio.addEventListener("change", () => queueAct("prio", l.id, prio.value));
+      const drop = el("button", "btn sw-btn sw-stop", "DROP");
+      drop.type = "button";
+      drop.disabled = busy.has(key);
+      drop.setAttribute("aria-label", "drop " + who + " from the queue");
+      drop.addEventListener("click", () => queueAct("drop", l.id));
+      actions.append(first, prio, drop);
+      row.append(actions);
+    }
+    return row;
+  }
+
   function pinnedHolders() {
     const names = new Set();
     for (const c of (board && board.cards) || []) for (const h of c.holders || []) if (h.pinned) names.add(h.name);
@@ -79,6 +163,7 @@ export function initSwitch({ demo }) {
     if (pick && !cards.some((c) => c.card === pick)) pick = "";
     meta.textContent = board.reachable ? (board.name || "this node") : "berthd is not answering; cards unknown";
     cardsRoot.replaceChildren(...cards.map(cardItem));
+    paintQueue(cards.length > 1);
     paintPicker(cards);
     noteRoot.replaceChildren(paired ? pairButton() : el("div", "empty-note", "Read only. Run berth pair on the machine to switch from this device."));
     const shown = pick ? engines.filter((e) => (e.cards || []).includes(pick)) : engines;

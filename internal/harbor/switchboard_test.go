@@ -64,10 +64,18 @@ func (f *fakeGateway) last() string {
 // file and a fake gateway, with one paired device's token.
 func switchHarbor(t *testing.T, key string) (base string, gw *fakeGateway, token string) {
 	t.Helper()
+	base, gw, token, _ = brokerHarbor(t, key)
+	return base, gw, token
+}
+
+// brokerHarbor is switchHarbor with the broker behind it, for a test that
+// puts leases on the card.
+func brokerHarbor(t *testing.T, key string) (base string, gw *fakeGateway, token string, b *broker.Broker) {
+	t.Helper()
 	dir := t.TempDir()
 	sock := filepath.Join(dir, "berth.sock")
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	b := broker.New(broker.Config{Poll: 20 * time.Millisecond, Log: log}, idleCard{}, procs.System{})
+	b = broker.New(broker.Config{Poll: 20 * time.Millisecond, Log: log}, idleCard{}, procs.System{})
 	ln, err := server.Listen(sock)
 	if err != nil {
 		t.Fatal(err)
@@ -88,7 +96,7 @@ func switchHarbor(t *testing.T, key string) (base string, gw *fakeGateway, token
 	t.Cleanup(gsrv.Close)
 	srv := httptest.NewServer((&Harbor{Socket: sock, Log: log, Gateway: gsrv.URL, GatewayKey: key}).Handler())
 	t.Cleanup(srv.Close)
-	return srv.URL, gw, token
+	return srv.URL, gw, token, b
 }
 
 func call(t *testing.T, method, url, body string, hdr map[string]string) (int, string) {
