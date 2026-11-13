@@ -1,0 +1,1250 @@
+{
+  "api": 1,
+  "version": "0.5.1-rc.2-next-deploy.1bfd344",
+  "gpus": [
+    {
+      "card": "gpu0",
+      "addr": "0000:01:00.0",
+      "index": 0,
+      "name": "NVIDIA GeForce RTX 4090",
+      "scheduled": true,
+      "total": 25757220864,
+      "used": 13128171520,
+      "free": 12209618944,
+      "baseline": 10485760,
+      "age_seconds": 1.6876834120000002,
+      "util_pct": 100,
+      "temp_c": 52,
+      "power_w": 235.7,
+      "power_limit_w": 350,
+      "fan_pct": 0,
+      "clock_sm_mhz": 2595,
+      "clock_mem_mhz": 10251,
+      "pcie_gen": 4,
+      "pcie_width": 16
+    }
+  ],
+  "leases": [
+    {
+      "card": "gpu0",
+      "id": "training-203",
+      "engine": "training",
+      "priority": "hold",
+      "state": "active",
+      "needs": 0,
+      "pid": 2053292,
+      "pid_start": 41728978,
+      "gpu_pids": [
+        2053292
+      ],
+      "used": 13117685760,
+      "age_seconds": 23739.29616739,
+      "pinned": true,
+      "training": true
+    }
+  ],
+  "waiting": [],
+  "squatters": [],
+  "unprotected": [],
+  "engines": [
+    {
+      "name": "llama-swap",
+      "type": "llama-swap",
+      "url": "http://127.0.0.1:9090",
+      "up": true,
+      "state": "up",
+      "models": [],
+      "metrics": {
+        "prompt_tokens": 0,
+        "output_tokens": 0,
+        "prompt_seconds": 0,
+        "output_seconds": 0,
+        "processing": 0,
+        "waiting": 0
+      },
+      "decode_tps": 0,
+      "prefill_tps": 0,
+      "metrics_reported": false,
+      "at": "2026-11-13T09:21:32.63308401-07:00",
+      "age_seconds": 4.319828335,
+      "kind": "llm"
+    },
+    {
+      "name": "strata",
+      "type": "strata",
+      "url": "http://127.0.0.1:8080",
+      "up": false,
+      "error": "Get \"http://127.0.0.1:8080/health\": dial tcp 127.0.0.1:8080: connect: connection refused",
+      "state": "down",
+      "models": [],
+      "metrics": {
+        "prompt_tokens": 0,
+        "output_tokens": 0,
+        "prompt_seconds": 0,
+        "output_seconds": 0,
+        "processing": 0,
+        "waiting": 0
+      },
+      "decode_tps": 0,
+      "prefill_tps": 0,
+      "metrics_reported": false,
+      "at": "2026-11-13T09:21:32.633853518-07:00",
+      "age_seconds": 4.319059136,
+      "kind": "llm"
+    },
+    {
+      "name": "strata-sc117",
+      "type": "strata",
+      "url": "http://127.0.0.1:8081",
+      "up": false,
+      "error": "Get \"http://127.0.0.1:8081/health\": dial tcp 127.0.0.1:8081: connect: connection refused",
+      "state": "down",
+      "models": [],
+      "metrics": {
+        "prompt_tokens": 0,
+        "output_tokens": 0,
+        "prompt_seconds": 0,
+        "output_seconds": 0,
+        "processing": 0,
+        "waiting": 0
+      },
+      "decode_tps": 0,
+      "prefill_tps": 0,
+      "metrics_reported": false,
+      "at": "2026-11-13T09:21:32.633964241-07:00",
+      "age_seconds": 4.318948621,
+      "kind": "llm"
+    },
+    {
+      "name": "comfyui",
+      "type": "comfyui",
+      "url": "http://127.0.0.1:8188",
+      "up": false,
+      "error": "Get \"http://127.0.0.1:8188/queue\": dial tcp 127.0.0.1:8188: connect: connection refused",
+      "state": "down",
+      "models": [],
+      "metrics": {
+        "prompt_tokens": 0,
+        "output_tokens": 0,
+        "prompt_seconds": 0,
+        "output_seconds": 0,
+        "processing": 0,
+        "waiting": 0
+      },
+      "decode_tps": 0,
+      "prefill_tps": 0,
+      "metrics_reported": false,
+      "at": "2026-11-13T09:21:32.634014252-07:00",
+      "age_seconds": 4.31889875,
+      "kind": "image"
+    },
+    {
+      "name": "acestep",
+      "type": "custom",
+      "url": "http://127.0.0.1:8001",
+      "up": false,
+      "error": "Get \"http://127.0.0.1:8001/health\": dial tcp 127.0.0.1:8001: connect: connection refused",
+      "state": "down",
+      "models": [],
+      "metrics": {
+        "prompt_tokens": 0,
+        "output_tokens": 0,
+        "prompt_seconds": 0,
+        "output_seconds": 0,
+        "processing": 0,
+        "waiting": 0
+      },
+      "decode_tps": 0,
+      "prefill_tps": 0,
+      "metrics_reported": false,
+      "at": "2026-11-13T09:21:32.634061104-07:00",
+      "age_seconds": 4.3188521,
+      "kind": "other"
+    },
+    {
+      "name": "Ollama",
+      "type": "ollama",
+      "url": "http://127.0.0.1:11434",
+      "up": true,
+      "state": "up",
+      "models": [],
+      "metrics": {
+        "prompt_tokens": 0,
+        "output_tokens": 0,
+        "prompt_seconds": 0,
+        "output_seconds": 0,
+        "processing": 0,
+        "waiting": 0
+      },
+      "decode_tps": 0,
+      "prefill_tps": 0,
+      "metrics_reported": false,
+      "at": "2026-11-13T09:21:32.634100694-07:00",
+      "age_seconds": 4.318812787,
+      "kind": "llm"
+    }
+  ],
+  "host": {
+    "supported": true,
+    "cpu_pct": 4.690618762475052,
+    "cores": 32,
+    "ram_total": 67099635712,
+    "ram_used": 19988193280,
+    "swap_total": 4294963200,
+    "swap_used": 4294938624,
+    "load": [
+      3.44,
+      2.78,
+      2.45
+    ]
+  },
+  "insights": {
+    "requests_5m": 0,
+    "rpm": 0,
+    "p50_ms": 0,
+    "p95_ms": 0,
+    "prefill_ms": 0,
+    "tpot_ms": 0,
+    "decode_tps": 0,
+    "prefill_tps": 0,
+    "cache_pct": 0,
+    "reingest_pct": 0,
+    "mtp_pct": 0,
+    "ledger": [
+      {
+        "label": "1h",
+        "requests": 0,
+        "generated": 0,
+        "fresh": 0,
+        "cached": 0
+      },
+      {
+        "label": "24h",
+        "requests": 10031,
+        "generated": 114870,
+        "fresh": 10200544,
+        "cached": 7556
+      },
+      {
+        "label": "since Nov 13 00:58",
+        "requests": 10031,
+        "generated": 114870,
+        "fresh": 10200544,
+        "cached": 7556
+      }
+    ],
+    "leaderboard": [
+      {
+        "engine": "llama-swap",
+        "model": "Dirk-27B",
+        "requests": 290,
+        "prompt_tokens": 9981225,
+        "output_tokens": 72072,
+        "decode_tps_median": 64.2149693436799,
+        "cache_pct": 0,
+        "mtp_pct": 52.065310492505354
+      },
+      {
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "requests": 9741,
+        "prompt_tokens": 226875,
+        "output_tokens": 42798,
+        "decode_tps_median": 220.83870094064787,
+        "cache_pct": 3.3304683195592286,
+        "mtp_pct": 50.13787034320915
+      }
+    ],
+    "recent": [
+      {
+        "id": "llama-swap/10973@1794565611",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:51-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 250,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10974@1794565611",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:51-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10975@1794565611",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:51-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10976@1794565611",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:51-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10969@1794565610",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:50-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10970@1794565610",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:50-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10971@1794565610",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:50-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 250,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10972@1794565610",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:50-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10965@1794565609",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:49-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10966@1794565609",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:49-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10967@1794565609",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:49-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10968@1794565609",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:49-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10961@1794565608",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:48-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10962@1794565608",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:48-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10963@1794565608",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:48-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 250,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10964@1794565608",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:48-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10959@1794565607",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:47-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 250,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10960@1794565607",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:47-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10957@1794565607",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:47-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10958@1794565607",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:47-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10953@1794565606",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:46-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10954@1794565606",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:46-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 250,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10955@1794565606",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:46-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10956@1794565606",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:46-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10949@1794565605",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:45-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10950@1794565605",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:45-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10951@1794565605",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:45-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10952@1794565605",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:45-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10945@1794565604",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:44-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10946@1794565604",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:44-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10947@1794565604",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:44-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 250,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10948@1794565604",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:44-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 250,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10941@1794565603",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:43-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10942@1794565603",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:43-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 250,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10943@1794565603",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:43-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10944@1794565603",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:43-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 250,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10939@1794565602",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:42-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 250,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10940@1794565602",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:42-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 250,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10937@1794565602",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:42-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 250,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10938@1794565602",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:42-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 250,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10933@1794565601",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:41-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10934@1794565601",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:41-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10935@1794565601",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:41-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 250,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10936@1794565601",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:41-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 250,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10929@1794565600",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:40-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 250,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10930@1794565600",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:40-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10931@1794565600",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:40-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10932@1794565600",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:40-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 250,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10925@1794565599",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:39-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      },
+      {
+        "id": "llama-swap/10926@1794565599",
+        "engine": "llama-swap",
+        "model": "Qwen3.6-35B-A3B-IQ4-Agent",
+        "t": "2026-11-13T03:26:39-07:00",
+        "status": 500,
+        "prompt_tokens": 0,
+        "cache_tokens": 0,
+        "output_tokens": 0,
+        "prefill_tps": 0,
+        "decode_tps": 0,
+        "duration_ms": 251,
+        "prefill_ms": 0
+      }
+    ],
+    "since": "2026-11-13T00:58:47.64393093-07:00"
+  },
+  "counters": {
+    "collisions_avoided": 1399,
+    "vram_handed_off": 32646610550784,
+    "drains": 903,
+    "stuck_caught": 4,
+    "squatters_caught": 573,
+    "contested_grants": 198,
+    "refused": 9788,
+    "juggles_stopped": 57,
+    "send_timeouts": 0,
+    "dropped_consumers": 0,
+    "since": "2026-10-12T06:45:03.131986561-06:00"
+  },
+  "last_event": 10780,
+  "alerts": {
+    "table": {
+      "probe": {
+        "warn": 1,
+        "crit": 1
+      },
+      "stuck": {
+        "warn": 1,
+        "crit": 1
+      }
+    }
+  },
+  "priority": {
+    "source": "order",
+    "order": [
+      "llama-swap",
+      "strata",
+      "strata-sc117",
+      "comfyui",
+      "acestep"
+    ],
+    "juggle_window": 15,
+    "engines": [
+      {
+        "engine": "llama-swap",
+        "rank": 1,
+        "hours_7d": 41.22
+      },
+      {
+        "engine": "strata",
+        "rank": 2,
+        "hours_7d": 8.69
+      },
+      {
+        "engine": "strata-sc117",
+        "rank": 3,
+        "hours_7d": 4.03
+      },
+      {
+        "engine": "comfyui",
+        "rank": 4,
+        "hours_7d": 73.27
+      },
+      {
+        "engine": "acestep",
+        "rank": 5,
+        "hours_7d": 0.12
+      },
+      {
+        "engine": "training",
+        "rank": 6,
+        "hours_7d": 6.59
+      },
+      {
+        "engine": "hf-eval",
+        "rank": 7,
+        "hours_7d": 6.08
+      },
+      {
+        "engine": "heretic",
+        "rank": 8,
+        "hours_7d": 4.85
+      },
+      {
+        "engine": "mem-heal",
+        "rank": 9,
+        "hours_7d": 1.89
+      },
+      {
+        "engine": "mem-smf",
+        "rank": 10,
+        "hours_7d": 1.76
+      },
+      {
+        "engine": "tool-sft",
+        "rank": 11,
+        "hours_7d": 1.37
+      },
+      {
+        "engine": "lora-base",
+        "rank": 12,
+        "hours_7d": 0.72
+      },
+      {
+        "engine": "tool-grpo",
+        "rank": 13,
+        "hours_7d": 0.51
+      },
+      {
+        "engine": "bench-27b",
+        "rank": 14,
+        "hours_7d": 0.2
+      },
+      {
+        "engine": "heretic-export",
+        "rank": 15,
+        "hours_7d": 0.2
+      },
+      {
+        "engine": "smoke-27b",
+        "rank": 16,
+        "hours_7d": 0.09
+      },
+      {
+        "engine": "studio-finish",
+        "rank": 17,
+        "hours_7d": 0.09
+      },
+      {
+        "engine": "bench-4b",
+        "rank": 18,
+        "hours_7d": 0.08
+      },
+      {
+        "engine": "idol",
+        "rank": 19,
+        "hours_7d": 0.07
+      },
+      {
+        "engine": "studio-flashvsr",
+        "rank": 20,
+        "hours_7d": 0.04
+      },
+      {
+        "engine": "mem-smoke",
+        "rank": 21,
+        "hours_7d": 0.02
+      },
+      {
+        "engine": "claim",
+        "rank": 22,
+        "hours_7d": 0.01
+      },
+      {
+        "engine": "studio-nr",
+        "rank": 23,
+        "hours_7d": 0.01
+      },
+      {
+        "engine": "studio-diag",
+        "rank": 24,
+        "hours_7d": 0
+      }
+    ]
+  },
+  "claims": [
+    {
+      "name": "steam-game",
+      "action": "hold",
+      "active": false
+    },
+    {
+      "name": "lutris-game",
+      "action": "hold",
+      "builtin": true,
+      "active": false
+    },
+    {
+      "name": "gamescope",
+      "action": "hold",
+      "builtin": true,
+      "active": false
+    },
+    {
+      "name": "steam-library",
+      "action": "hold",
+      "builtin": true,
+      "active": false
+    },
+    {
+      "name": "epic-game",
+      "action": "hold",
+      "builtin": true,
+      "active": false
+    },
+    {
+      "name": "gog-game",
+      "action": "hold",
+      "builtin": true,
+      "active": false
+    },
+    {
+      "name": "ea-game",
+      "action": "hold",
+      "builtin": true,
+      "active": false
+    },
+    {
+      "name": "ubisoft-game",
+      "action": "hold",
+      "builtin": true,
+      "active": false
+    },
+    {
+      "name": "xbox-game",
+      "action": "hold",
+      "builtin": true,
+      "active": false
+    },
+    {
+      "name": "battlenet-game",
+      "action": "hold",
+      "builtin": true,
+      "active": false
+    },
+    {
+      "name": "blender",
+      "action": "track",
+      "builtin": true,
+      "active": false
+    },
+    {
+      "name": "davinci-resolve",
+      "action": "track",
+      "builtin": true,
+      "active": false
+    },
+    {
+      "name": "obs",
+      "action": "track",
+      "builtin": true,
+      "active": false
+    },
+    {
+      "name": "premiere",
+      "action": "track",
+      "builtin": true,
+      "active": false
+    },
+    {
+      "name": "after-effects",
+      "action": "track",
+      "builtin": true,
+      "active": false
+    },
+    {
+      "name": "kdenlive",
+      "action": "track",
+      "builtin": true,
+      "active": false
+    }
+  ],
+  "footprints": [
+    {
+      "engine": "acestep",
+      "estimated_vram_bytes": 22559064064,
+      "runs": 13,
+      "at": "2026-11-07T12:05:22.120250212-07:00"
+    },
+    {
+      "engine": "comfyui",
+      "estimated_vram_bytes": 478150656,
+      "runs": 146,
+      "at": "2026-11-12T09:52:22.309629621-07:00"
+    },
+    {
+      "engine": "llama-swap",
+      "estimated_vram_bytes": 24882708480,
+      "runs": 688,
+      "at": "2026-11-13T02:45:57.656694691-07:00"
+    },
+    {
+      "engine": "strata",
+      "estimated_vram_bytes": 24823988224,
+      "runs": 96,
+      "at": "2026-11-12T23:46:19.489608747-07:00"
+    },
+    {
+      "engine": "strata-sc117",
+      "estimated_vram_bytes": 24918360064,
+      "runs": 70,
+      "at": "2026-11-09T16:24:01.584090665-07:00"
+    }
+  ]
+}

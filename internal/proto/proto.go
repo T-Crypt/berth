@@ -611,6 +611,15 @@ type Lease struct {
 	Window string `json:"window,omitempty"`
 }
 
+// Holder names the lease for people: its engine, or "group (engine)" for a
+// model under a router (llama-swap (qwen)).
+func (l Lease) Holder() string {
+	if l.Group != "" && l.Group != l.Engine {
+		return l.Group + " (" + l.Engine + ")"
+	}
+	return l.Engine
+}
+
 type Squatter struct {
 	Card     string `json:"card,omitempty"` // the card's name on its node (gpu0)
 	PID      int    `json:"pid"`

@@ -37,6 +37,7 @@ import (
 
 	"github.com/T-Crypt/berth/internal/apikey"
 	"github.com/T-Crypt/berth/internal/config"
+	"github.com/T-Crypt/berth/internal/fit"
 	"github.com/T-Crypt/berth/internal/host"
 	"github.com/T-Crypt/berth/internal/node"
 	"github.com/T-Crypt/berth/internal/proto"
@@ -448,7 +449,7 @@ func (g *Gateway) resolve(ctx context.Context, model, card string) (target, bool
 	for _, e := range g.live() {
 		// A parked engine answers its list with the weights in RAM; the
 		// resume, not the list, says when it may be proxied.
-		if e.Up && g.engineOn(st, e.Name, card) && !parkedIn(st, e.Name) && slices.Contains(g.listed(ctx, e.URL), model) {
+		if e.Up && g.engineOn(st, e.Name, card) && !fit.Parked(st, e.Name) && slices.Contains(g.listed(ctx, e.URL), model) {
 			return target{url: e.URL, live: true}, true
 		}
 	}
@@ -461,27 +462,10 @@ func (g *Gateway) resolve(ctx context.Context, model, card string) (target, bool
 	if len(serving) == 0 {
 		return target{}, false
 	}
-	// One engine per card serves the model: the cheapest card to reach
+	// One engine per card serves the model: the cheapest path to a card
 	// wins, and berth.toml's order breaks a tie.
-	e := slices.MinFunc(serving, func(a, b *config.Engine) int { return reach(st, a) - reach(st, b) })
+	e := fit.Rank(st, serving, nil)[0].Entry
 	return target{url: e.URL, engine: e}, true
-}
-
-// reach ranks what it takes to bring e up on its card, cheapest first: a
-// resume from RAM, a free card, a drain of the holder, then a wait for a
-// card a VM or a pinned lease (a game, a hold) keeps.
-func reach(st *proto.Status, e *config.Engine) int {
-	v := node.View(st, e.GPU)
-	switch {
-	case parkedIn(st, e.Name):
-		return 0
-	case cardFree(v):
-		return 1
-	case v != nil && outOfReach(v) == "":
-		return 2
-	default:
-		return 3
-	}
 }
 
 // notServed is the 404 for a model no engine serves, on card when one is
@@ -806,7 +790,7 @@ func (g *Gateway) startFailed(w http.ResponseWriter, engine, what string, err er
 func (g *Gateway) comfyTarget(ctx context.Context) (target, bool) {
 	st := g.nodeStatus()
 	for _, e := range g.live() {
-		if e.Up && e.Type == "comfyui" && !parkedIn(st, e.Name) && g.comfyAnswers(ctx, e.URL) {
+		if e.Up && e.Type == "comfyui" && !fit.Parked(st, e.Name) && g.comfyAnswers(ctx, e.URL) {
 			return target{url: e.URL, live: true}, true
 		}
 	}
@@ -868,7 +852,7 @@ func (g *Gateway) comfyPrompt(w http.ResponseWriter, r *http.Request, switched b
 		return
 	}
 	if e := g.queueingComfy(); e != nil {
-		if why := outOfReach(node.View(g.nodeStatus(), e.GPU)); why != "" {
+		if why := fit.OutOfReach(node.View(g.nodeStatus(), e.GPU)); why != "" {
 			g.deferPrompt(w, r, e, why)
 			return
 		}

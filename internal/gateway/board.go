@@ -135,7 +135,7 @@ func boardOf(host string, status *proto.Status, rows []guiRow, listed map[string
 				c.Base = "/cards/" + gp.Card + "/v1"
 			}
 			for _, l := range node.View(status, gp.Card).Leases {
-				c.Holders = append(c.Holders, guiHold{Name: holderName(l), State: l.State, Pinned: l.Pinned})
+				c.Holders = append(c.Holders, guiHold{Name: l.Holder(), State: l.State, Pinned: l.Pinned})
 				if c.State == "free" {
 					c.State = "held"
 				}
