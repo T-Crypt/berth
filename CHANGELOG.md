@@ -43,8 +43,16 @@ has a matching GitHub release whose body comes from its section below.
   `window`, with its hours, whether they are open, and how long until they close or open. An engine shows before its
   window opens, and a `berth run --window` lease shows its own hours. The status JSON carries the same rows as
   `schedules`, and each lease carries its `window`.
+- `berth wire llama-swap` names each llama-swap group where llama-swap swaps two or more wired models itself.
+  There llama-swap unloads the old model before Berth sees the request, so `min_turn`, the engine ranking and the
+  juggle guard never apply between them. The JSON carries the groups as `swapping`. The llama-swap section of
+  contrib/INTEGRATION.md shows the `swap: false` group and the `healthCheckTimeout` that let Berth decide the turns.
 
 ### Fixed
+
+- `berth wire llama-swap` now finds a `berth run` line with a flag written before `--as`, such as
+  `berth run --min-turn 5m --as qwen ...`. Before, it took the model for unwired, and `--write` added a second
+  `berth run` in front of the first.
 
 - A model that fills the card no longer loads beside a parked engine it cannot fit next to. Berth granted any
   whole-card engine the card beside a parked residual under `residual_max_gib`, so a 23.4 GiB model on a 24 GiB
