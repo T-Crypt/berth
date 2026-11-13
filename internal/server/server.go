@@ -193,6 +193,8 @@ func handle(ctx context.Context, c net.Conn, n *node.Node, x Extras, log *slog.L
 		cordon(conn, log, first, n)
 	case proto.OpBatch:
 		batch(conn, log, first, n)
+	case proto.OpQueue:
+		queue(conn, log, first, n)
 	case proto.OpYield:
 		yield(conn, log, first, n)
 	case proto.OpPairCode, proto.OpPairRedeem, proto.OpPairCheck, proto.OpPairList, proto.OpPairRevoke:

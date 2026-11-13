@@ -55,6 +55,10 @@ has a matching GitHub release whose body comes from its section below.
   or a pinned lease. Each candidate names its reason, the tier its weights sit in, and the switch time the gateway
   measured from that tier, or unknown. For a model, every engine that serves it is ranked the way the gateway picks
   one. `--explain` lists every candidate. It is read only, and the gateway now picks through the same ranking.
+- `berth queue` lists the waiters in the order berthd will grant them, with their lease IDs. `berth queue bump ID`
+  moves one to the front of its priority class, `berth queue prio ID batch|interactive|foreground` moves it to
+  another class, and `berth queue drop ID` refuses it now. Holds and trainings cannot be changed this way. Each
+  change is a `lease.queue_override` event.
 - `berth wire llama-swap` names each llama-swap group where llama-swap swaps two or more wired models itself.
   There llama-swap unloads the old model before Berth sees the request, so `min_turn`, the engine ranking and the
   juggle guard never apply between them. The JSON carries the groups as `swapping`. The llama-swap section of

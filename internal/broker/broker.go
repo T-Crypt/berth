@@ -333,6 +333,9 @@ type lease struct {
 	// two leases granted in one quantum would otherwise tie, and which one
 	// is older, and so drained first, would be arbitrary.
 	arrivedN, grantedN, parkedN uint64
+	// bumpedN is set by berth queue bump: within its priority class the
+	// latest bump goes first, ahead of every waiter never bumped.
+	bumpedN uint64
 	// parkedAt is when the lease became parked; parkedCall is when the
 	// runner said its park call was done (the parked transition waits for
 	// a later card read). resumed marks a waiting lease that came from
@@ -1251,12 +1254,16 @@ func (b *Broker) grant(w *lease, now time.Time) {
 	b.log.Info("granted", "lease", w.id, "engine", w.engine, "priority", w.prio, "needs_mib", w.needs/gpu.MiB, "waited", now.Sub(w.arrived).Round(time.Millisecond))
 }
 
-// sortQueue orders the waiters: higher priority first, then by arrival on
-// the node. b.mu must be held.
+// sortQueue orders the waiters: higher priority first, then the operator's
+// latest bump (berth queue bump), then by arrival on the node. b.mu must be
+// held.
 func (b *Broker) sortQueue() {
 	sort.SliceStable(b.queue, func(i, j int) bool {
 		if b.queue[i].prio != b.queue[j].prio {
 			return b.queue[i].prio > b.queue[j].prio
+		}
+		if b.queue[i].bumpedN != b.queue[j].bumpedN {
+			return b.queue[i].bumpedN > b.queue[j].bumpedN
 		}
 		return b.queue[i].arrivedN < b.queue[j].arrivedN
 	})

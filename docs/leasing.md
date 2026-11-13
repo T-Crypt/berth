@@ -163,6 +163,22 @@
 - A hold cannot free memory held by something outside Berth: that memory is still reported,
   as contested.
 
+## Reorder the queue
+
+Berth grants waiters by priority first, then in the order they arrived. Many devices can send work to one
+card and nobody has to sort it out. When you want a different order, `berth queue` changes it:
+
+```sh
+berth queue                          # the waiters in grant order, with their lease IDs
+berth queue bump llama-swap-41       # first in its priority class
+berth queue prio comfyui-12 foreground
+berth queue drop tagger-7            # refuse it now, as a timeout would
+```
+
+A bump puts the waiter ahead of everyone else in its priority class. To go ahead of a higher class, change its
+priority with `prio`. Holds and trainings cannot be changed here: a hold is a pin, not a place in the queue, and
+a training's place is fixed by the card's lock. Each change is a `lease.queue_override` event in `berth events`.
+
 ## Cordon a card
 
 On a node with several cards, `berth cordon gpu1` stops new grants on that card while the others keep serving, for

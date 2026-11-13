@@ -255,6 +255,30 @@ func (n *Node) Stop(engine string) ([]string, error) {
 	return slices.Compact(ids), nil
 }
 
+// Queue applies the operator's change to the waiter id on every card it
+// waits on (a lease on several cards waits on each under one ID), and
+// returns the change. A card that has no such waiter is skipped; any other
+// refusal is the answer.
+func (n *Node) Queue(id string, action broker.QueueAction, prio string) (string, error) {
+	var detail string
+	var first error
+	for _, c := range n.cards {
+		d, err := c.B.Queue(id, action, prio)
+		if err != nil {
+			if !broker.IsNotFound(err) {
+				return "", err
+			}
+			first = cmpErr(first, err)
+			continue
+		}
+		detail = d
+	}
+	if detail == "" {
+		return "", first
+	}
+	return detail, nil
+}
+
 // Batch starts or renews engine's batch on every card (see Broker.Batch).
 func (n *Node) Batch(engine string, grace, max time.Duration) {
 	for _, c := range n.cards {
