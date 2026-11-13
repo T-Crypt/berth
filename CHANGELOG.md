@@ -50,6 +50,11 @@ has a matching GitHub release whose body comes from its section below.
   `berth run --as` name. Without berthd it prints the declared terms. The status JSON's `footprints` now carry each
   engine's `hot_peak_vram_bytes`, `ram_peak_bytes` and `parked_ram_bytes`. A llama-swap model whose last-run
   figure sits on its group's entry is now listed under its own name too.
+- `berth fit NAME` says where a request for an engine or a model would run right now and what the start costs. It
+  ranks each candidate by path: a resume from RAM, a free card, a drain of the holder, or blocked by a VM, a cordon
+  or a pinned lease. Each candidate names its reason, the tier its weights sit in, and the switch time the gateway
+  measured from that tier, or unknown. For a model, every engine that serves it is ranked the way the gateway picks
+  one. `--explain` lists every candidate. It is read only, and the gateway now picks through the same ranking.
 - `berth wire llama-swap` names each llama-swap group where llama-swap swaps two or more wired models itself.
   There llama-swap unloads the old model before Berth sees the request, so `min_turn`, the engine ranking and the
   juggle guard never apply between them. The JSON carries the groups as `swapping`. The llama-swap section of
