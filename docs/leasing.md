@@ -273,6 +273,34 @@ berth train --as train-mymodel --gpu gpu0,gpu1,gpu2 -- torchrun --nproc_per_node
   back as a training.
 
 `berth run --pinned --priority foreground` still works for a run that must not be drained but may share its card.
+
+### Lock the card in the driver too
+
+The training lock covers everything that asks Berth for the card. A program that opens CUDA without Berth only
+shows up as a stowaway. `berth train --exclusive` closes that gap on Linux with an NVIDIA card. After the grant, it
+puts the cards in the driver's exclusive-process compute mode, so the training's process is the only one that can
+open a CUDA context there. When the run ends, it puts them back to the default mode.
+
+```sh
+berth train --exclusive --as train-mymodel -- python train.py
+```
+
+- Setting the mode needs root. Give your user a sudo rule for `nvidia-smi -c` alone, with `sudo visudo -f
+  /etc/sudoers.d/berth-exclusive`:
+
+  ```
+  YOUR_USER ALL=(root) NOPASSWD: /usr/bin/nvidia-smi -i * -c EXCLUSIVE_PROCESS, /usr/bin/nvidia-smi -i * -c DEFAULT
+  ```
+
+  Without the rule, `berth train --exclusive` refuses to start instead of running without the guard.
+- The run refuses to start when another compute process is already on the card, because that process would own
+  the card's one context and the training could not open it.
+- Exclusive mode allows one process per card. A training that opens CUDA from several processes on one card
+  (DataLoader workers that use CUDA, two ranks on one card) fails to start in it. One rank per card, as torchrun
+  gives each card, works.
+- Graphics are not compute: the desktop and games keep drawing on the card.
+- If the `berth train` process is killed with SIGKILL, the mode stays set. `sudo nvidia-smi -c DEFAULT` puts it
+  back.
 A pinned run does not lock the card: other requests wait for it until their own deadline.
 
 A pin does not stop memory taken outside Berth. A game started on a leased card waits behind the run in Berth but

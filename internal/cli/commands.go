@@ -447,7 +447,11 @@ waits in line and starts when the first one ends. Other cards keep serving.
 
 A game or a hold that already has the card is not drained: the training waits
 for it. berth train refuses to start when berthd is not running, because the
-lock lives in berthd.`,
+lock lives in berthd.
+
+--exclusive (Linux, NVIDIA) also puts the cards in the driver's exclusive-process
+compute mode for the run's life, so a program that opens CUDA without Berth
+cannot open them. It needs a sudo rule for nvidia-smi -c (see docs/leasing.md).`,
 		Run: runTrain,
 	},
 	{

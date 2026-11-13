@@ -15,6 +15,10 @@ has a matching GitHub release whose body comes from its section below.
   instead of waiting out their timeout. A second `berth train` waits in line and starts when the first one ends.
   Other cards keep serving. `berth train` refuses to start without berthd, and `berth status` shows the lease as
   `hold,pinned,training`.
+- `berth train --exclusive` also locks the card in the driver on Linux with an NVIDIA card. It puts the granted cards
+  in exclusive-process compute mode for the run's life, so a program that opens CUDA without Berth cannot open
+  them, and puts them back to the default mode when the run ends. It needs a sudo rule for `nvidia-smi -c`, and
+  refuses to start without one, or when another compute process is already on the card.
 - A `berth train` run keeps its lock while berthd is away. With berthd down, `berth run` refuses to start an engine
   while a training runs on the node, instead of starting it without a lease. A berthd that starts while a training
   runs refuses every other request until the training re-attaches, with no time limit, where other engines get
