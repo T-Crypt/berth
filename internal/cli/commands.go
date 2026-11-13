@@ -224,6 +224,22 @@ tray icon whose notifications are Windows' own toasts; a click opens the harbor.
 		Run: runNotify,
 	},
 	{
+		Name:    "fit",
+		Summary: "where a request for an engine or model would run now, and what the start costs",
+		Args:    "NAME [--explain] [--config PATH] [--costs PATH] [--socket P] [--format F]",
+		Help: `Rank what it takes to bring NAME up right now, cheapest first: a resume from
+RAM, a free card, a drain of what holds the card, or a wait while a VM, a
+cordon or a pinned lease (a game, a hold, a training) keeps it. NAME is an
+engine, or a model that engines list in serves; for a model every engine that
+serves it is ranked in berth.toml's order, the way the gateway picks one.
+
+Each candidate names its reason, the tier its weights sit in, and the start
+time the gateway measured from that tier, or unknown when it has none.
+--explain lists every candidate. Read only: Fit advises, berthd decides.`,
+		Formats: []Format{FormatHuman, FormatJSON, FormatYAML},
+		Run:     runFit,
+	},
+	{
 		Name:    "export",
 		Summary: "dump the harbor's stored history: requests and samples",
 		Args:    "[--db P] [--range R] [--as csv|json] [--out DIR] [--format F]",
