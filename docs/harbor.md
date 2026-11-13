@@ -2,10 +2,9 @@
 
 ## Preview
 
-The harbor UI (basic mode, served from the built-in demo fixture - every number on the screen
-comes from `demo.json`). The tide shows the card's memory by holder over six hours; the
-hatched stretch is a stowaway the fixture replays: a model that ran without a lease after a
-daemon restart, reported and left alone.
+The harbor UI in basic mode, served from the built-in demo fixture. Every number on the screen comes from
+`demo.json`. The tide shows the card's memory by holder over the last hour. The hatched stretch is a stowaway the
+fixture replays: a model that ran without a lease after a daemon restart, which Berth reported and left alone.
 
 <p align="center"><img src="https://raw.githubusercontent.com/T-Crypt/berth/main/assets/preview-harbor.png" alt="Berth harbor: the CARD tab with ticket counter, request KPIs, the tide of card memory by holder, and the model timeline" width="900"></p>
 
@@ -15,10 +14,10 @@ decode throughput, the token ledger, the per-model leaderboard, storage and resi
 
 <p align="center"><img src="https://raw.githubusercontent.com/T-Crypt/berth/main/assets/preview-requests.png" alt="Berth harbor Engines tab, advanced mode: decode throughput per engine, the token ledger, the per-model leaderboard, storage and residency" width="900"></p>
 
-On a phone, the harbor fits the screen: the tabs move to a bar at the bottom and the panels
-stack. This is the CARD tab on an iPhone, read from a live node on the reference workstation.
+On a phone, the harbor fits the screen. The tabs move to a bar at the bottom and the panels stack. This is the
+CARD tab at phone width, from the same demo fixture.
 
-<p align="center"><img src="https://raw.githubusercontent.com/T-Crypt/berth/main/assets/preview-mobile.png" alt="Berth harbor on an iPhone: the CARD tab with the ticket counter, collisions avoided, the collision tiles and the decode and TPOT KPIs, with CARD, ENGINES and ABOUT in a bottom bar" width="300"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/T-Crypt/berth/main/assets/preview-mobile.png" alt="Berth harbor at phone width: the CARD tab with the ticket counter, collisions avoided, the collision tiles and the decode and TPOT KPIs, with CARD, SWITCH, ENGINES and ABOUT in a bottom bar" width="300"></p>
 
 ### The harbor on your iPhone's Home Screen
 
