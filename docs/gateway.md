@@ -18,6 +18,13 @@
   every retry: for 15 s, doubling to 5 min, the gateway answers at once with the same cause,
   and `Retry-After` says when the next start is allowed. A start that answers clears it. A
   model listed under `serves` by two engines fails `berth config check`.
+- **Queue position.** A `not_ready` start whose lease is still in line for the card says where it
+  stands. `X-Berth-Queue-Position` is its place in line, 1 for next. `X-Berth-Start-Estimate:
+  45; lower-bound` is the seconds berthd expects the start to take once the card frees. It counts
+  only the measured starts ahead in the queue and not the holder's time left, so treat it as a
+  minimum. It is missing when nothing was measured. `Retry-After` is then the larger of that
+  estimate and 30 s. A streaming request gets the same error as an SSE event, without these
+  headers.
 - **API key.** Bearer token on every route; `berth key` prints it (created on first use, mode
   600). Loopback only; browser origins and non-loopback Host names are refused.
 

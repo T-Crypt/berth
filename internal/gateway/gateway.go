@@ -580,6 +580,11 @@ type startError struct {
 	code  string // no_start, outranked, drained_while_starting, no_berth, start_failed, engine_oom, not_ready, no_headroom
 	msg   string
 	retry time.Duration // when set, the client is told to try again after this (Retry-After)
+	// queue is the engine's lease's place in line when the start timed out
+	// waiting for the card, 0 when it was not waiting; estimate is the
+	// broker's lower-bound start estimate for it, 0 for unknown.
+	queue    int
+	estimate time.Duration
 }
 
 func (e *startError) Error() string { return e.msg }
@@ -790,6 +795,12 @@ func (g *Gateway) startFailed(w http.ResponseWriter, engine, what string, err er
 	g.log().Warn("gateway start failed", "engine", engine, "request", what, "code", code, "err", err)
 	if se != nil && se.retry > 0 {
 		w.Header().Set("Retry-After", strconv.Itoa(int((se.retry+time.Second-1)/time.Second)))
+	}
+	if se != nil && se.queue > 0 {
+		w.Header().Set("X-Berth-Queue-Position", strconv.Itoa(se.queue))
+		if se.estimate > 0 {
+			w.Header().Set("X-Berth-Start-Estimate", fmt.Sprintf("%d; lower-bound", int((se.estimate+time.Second-1)/time.Second)))
+		}
 	}
 	apiErrorCode(w, http.StatusServiceUnavailable, code, err.Error())
 }
@@ -1011,9 +1022,30 @@ func (g *Gateway) ensure(ctx context.Context, e *config.Engine, switched bool) e
 		case <-time.After(250 * time.Millisecond):
 		}
 		if time.Now().After(deadline) {
-			return &startError{code: "not_ready", msg: fmt.Sprintf("%s did not answer within %s", e.Name, ready)}
+			return g.queued(e, &startError{code: "not_ready", msg: fmt.Sprintf("%s did not answer within %s", e.Name, ready)})
 		}
 	}
+}
+
+// queued adds where the engine's lease waits to a start that timed out: its
+// place in line and the broker's start estimate. The estimate counts only the
+// measured starts ahead of it, never the holder's time left, so it is a lower
+// bound, and the client is told to retry no sooner than it or 30 s.
+func (g *Gateway) queued(e *config.Engine, se *startError) *startError {
+	v := node.View(g.nodeStatus(), e.GPU)
+	if v == nil {
+		return se
+	}
+	for _, l := range v.Waiting {
+		if l.Engine == e.Name && l.Position > 0 && (se.queue == 0 || l.Position < se.queue) {
+			se.queue, se.estimate = l.Position, time.Duration(l.EstimateS*float64(time.Second))
+		}
+	}
+	if se.queue > 0 {
+		se.retry = max(30*time.Second, se.estimate)
+		se.msg += fmt.Sprintf("; its lease is number %d in line for the card", se.queue)
+	}
+	return se
 }
 
 func (g *Gateway) ready() time.Duration {

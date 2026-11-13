@@ -31,6 +31,7 @@ import (
 	"github.com/T-Crypt/berth/internal/gpu"
 	"github.com/T-Crypt/berth/internal/node"
 	"github.com/T-Crypt/berth/internal/procs"
+	"github.com/T-Crypt/berth/internal/proto"
 	"github.com/T-Crypt/berth/internal/runner"
 	"github.com/T-Crypt/berth/internal/server"
 )
@@ -1006,5 +1007,60 @@ func TestComfyPromptResolves(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusServiceUnavailable || !strings.Contains(string(body), "POST /prompt first") {
 		t.Fatalf("queue with comfyui down = %d %s, want the 503", resp.StatusCode, body)
+	}
+}
+
+// A start that times out while its lease still waits for the card tells the
+// client where it stands: its place in line, and a Retry-After of at least
+// 30 s. Here a pinned hold keeps the card, so the gateway's run waits.
+func TestNotReadyCarriesTheQueue(t *testing.T) {
+	sock, b := daemon(t)
+	hold, err := b.Acquire(context.Background(), broker.Request{Engine: "game", Priority: broker.Hold, Pinned: true, Wait: time.Second}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hold.Release()
+	g := &Gateway{Socket: sock, Key: testKey, Ready: 500 * time.Millisecond, Log: slogDiscard(),
+		Engines: []config.Engine{{Name: "e", URL: "http://" + freeAddr(t), Start: []string{os.Args[0]}, Serves: []string{"m"}}}}
+	gw := httptest.NewServer(g.Handler())
+	defer gw.Close()
+
+	resp := call(t, "POST", gw.URL+"/v1/chat/completions", `{"model":"m"}`)
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable || resp.Header.Get("X-Berth-Queue-Position") != "1" ||
+		resp.Header.Get("Retry-After") != "30" || !strings.Contains(string(body), "number 1 in line") {
+		t.Fatalf("status %d, queue %q, Retry-After %q: %s", resp.StatusCode,
+			resp.Header.Get("X-Berth-Queue-Position"), resp.Header.Get("Retry-After"), body)
+	}
+}
+
+// The broker's start estimate for the engine's lease reaches the client
+// rounded up and marked as a lower bound, and Retry-After waits for the
+// larger of it and 30 s. Another engine's place in line is not this one's.
+func TestQueuedStartHeaders(t *testing.T) {
+	for _, tc := range []struct {
+		estimate            float64
+		retry, queue, start string
+	}{
+		{44.2, "45", "2", "45; lower-bound"},
+		{5, "30", "2", "5; lower-bound"},
+		{0, "30", "2", ""},
+	} {
+		sock := statusDaemon(t, proto.Status{
+			GPUs: []proto.GPU{{Card: "gpu0", Scheduled: true}},
+			Waiting: []proto.Lease{
+				{Card: "gpu0", Engine: "other", Position: 1, EstimateS: 900},
+				{Card: "gpu0", Engine: "e", Position: 2, EstimateS: tc.estimate},
+			},
+		})
+		g := &Gateway{Socket: sock, Log: slogDiscard()}
+		w := httptest.NewRecorder()
+		g.startFailed(w, "e", "m", g.queued(&config.Engine{Name: "e"}, &startError{code: "not_ready", msg: "e did not answer"}))
+		h := w.Result().Header
+		got := [...]string{h.Get("Retry-After"), h.Get("X-Berth-Queue-Position"), h.Get("X-Berth-Start-Estimate")}
+		if got != [...]string{tc.retry, tc.queue, tc.start} {
+			t.Errorf("estimate %v s: Retry-After, queue, start = %q", tc.estimate, got)
+		}
 	}
 }
