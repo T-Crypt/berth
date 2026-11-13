@@ -4,6 +4,7 @@
 package wire
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -364,5 +365,103 @@ func TestWriteBacksUpAndReplaces(t *testing.T) {
 	}
 	if b, err := Write(clean); err != nil || b != "" {
 		t.Errorf("Write on a clean result = (%q, %v), want (\"\", nil)", b, err)
+	}
+}
+
+// llama-swap swaps the members of a swap group itself, out of Berth's turns.
+// The result names each group holding two or more wired models that swap: the
+// default group when no group names them, a group without swap: false, the
+// older top-level groups: form too. Unwired models and swap: false groups are
+// left out.
+func TestLlamaSwapNamesTheGroupsItSwaps(t *testing.T) {
+	models := `models:
+  "a":
+    cmd: >
+      llama-server -m a.gguf
+  "b":
+    cmd: >
+      llama-server -m b.gguf
+  "c":
+    cmd: >
+      llama-server -m c.gguf
+  "d":
+    proxy: http://127.0.0.1:8000
+`
+	cases := []struct {
+		name, groups, want string
+	}{
+		{"no groups", "", `[{ [a b c]}]`},
+		{"routing group swaps", `routing:
+  router:
+    use: group
+    settings:
+      groups:
+        "chat":
+          members: ["a", "b", "d"]
+        "solo":
+          swap: true
+          members: ["c"]
+`, `[{chat [a b]}]`},
+		{"routing group swap off", `routing:
+  router:
+    use: group
+    settings:
+      groups:
+        "chat":
+          swap: false
+          exclusive: false
+          members: ["a", "b", "c"]
+`, `[]`},
+		{"top-level groups", `groups:
+  "chat":
+    swap: true
+    members: ["b", "c"]
+`, `[{chat [b c]}]`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r, err := LlamaSwap(writeTemp(t, models+tc.groups), options())
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := fmt.Sprint(r.Swapping)
+			if got != tc.want {
+				t.Fatalf("Swapping = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+// A hand flag before --as still names the wrapped model: the line counts as
+// wired, and --update keeps the flag on one wrapper instead of wrapping the
+// model a second time.
+func TestLlamaSwapHandFlagBeforeAs(t *testing.T) {
+	in := `models:
+  "a":
+    cmd: >
+      /usr/bin/berth run --min-turn 5m --as a --drain-post http://127.0.0.1:9090/api/models/unload/a --
+      llama-server -m a.gguf
+`
+	r, err := LlamaSwap(writeTemp(t, in), options())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := r.Models[0].Action; got != "wired" {
+		t.Fatalf("action = %q, want wired", got)
+	}
+	o := options()
+	o.Update = true
+	r, err = LlamaSwap(writeTemp(t, in), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `models:
+  "a":
+    cmd: >
+      /usr/bin/berth run --as a --group llama-swap --priority foreground --min-turn 5m --drain-post http://127.0.0.1:9090/api/models/unload/a --drain-slots http://127.0.0.1:9090/upstream/a --
+      llama-server -m a.gguf
+`
+	if got := r.NewContent(); got != want {
+		t.Fatalf("updated:\n%s\nwant:\n%s", got, want)
 	}
 }

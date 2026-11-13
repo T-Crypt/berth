@@ -5,6 +5,7 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 
@@ -25,6 +26,9 @@ type wireDoc struct {
 	Skipped int          `json:"skipped" yaml:"skipped"`
 	Models  []wire.Model `json:"models" yaml:"models"`
 	Backup  string       `json:"backup,omitempty" yaml:"backup,omitempty"`
+	// Swapping is the groups whose wired models llama-swap swaps itself,
+	// out of Berth's turns. A setting to change, not drift: --check passes.
+	Swapping []wire.SwapGroup `json:"swapping,omitempty" yaml:"swapping,omitempty"`
 }
 
 // wireView is one run over one llama-swap config.
@@ -74,6 +78,13 @@ func (v wireView) Human(c *Context, ok bool) error {
 				c.Bullet("skip %s: %s", m.Name, m.Reason)
 			}
 		}
+	}
+	for _, s := range d.Swapping {
+		group := "the default group (models no group names)"
+		if s.Group != "" {
+			group = fmt.Sprintf("group %q", s.Group)
+		}
+		c.Bullet("llama-swap swaps %d wired models in %s itself, so min_turn and the ranking never decide between them: set swap: false on it (contrib/INTEGRATION.md#llama-swap)", len(s.Members), group)
 	}
 	if d.Skipped > 0 && !c.Verbose {
 		c.Bullet("%d skipped (--verbose lists them)", d.Skipped)
@@ -160,7 +171,7 @@ func runWireLlamaSwap(c *Context) int {
 	doc := wireDoc{
 		Status: "ok", Server: "llama-swap", Path: *pathArg, Mode: mode, Changed: res.Changed,
 		Wired: res.Count("wired"), Add: res.Count("add"), Update: res.Count("update"),
-		Skipped: res.Count("skip"), Models: res.Models,
+		Skipped: res.Count("skip"), Models: res.Models, Swapping: res.Swapping,
 	}
 	if *write && res.Changed {
 		backup, err := wire.Write(res)
