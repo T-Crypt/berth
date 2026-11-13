@@ -55,6 +55,7 @@ type Options struct {
 	// engine has been measured holding, not the whole card.
 	LearnSize bool
 	Pinned    bool // never drained: an app that must not be stopped (Blender, a capture)
+	Training  bool // berth train: a pinned hold that locks its cards; berthd refuses every other request there
 	Switched  bool // a person's switch (the wake page's Launch, /v1/berth/switch): wins a juggle
 	// MinTurn is a minimum turn: while the lease is younger than it after
 	// the grant, no request of equal or lower priority drains it, and
@@ -418,7 +419,7 @@ func Run(o Options) int {
 // acquire asks berthd for the card and waits for the grant. It returns the
 // device entry the engine starts with, and false when there is no grant.
 func acquire(o Options, conn *proto.Conn, say func(string, ...any)) (string, bool) {
-	if err := conn.Send(proto.Msg{Op: proto.OpAcquire, Card: o.Card, Engine: o.Engine, Group: o.Group, Priority: o.Priority, Needs: largest(o.Needs), NeedsEach: each(o.Needs), LearnSize: o.LearnSize, Wait: o.Wait.Seconds(), Pinned: o.Pinned, Switched: o.Switched, Lend: o.Lend != nil, WholeMachine: o.WholeMachine, MinTurn: o.MinTurn.Seconds(), ParkTTL: o.ParkTTL.Seconds(), Window: o.Window.String()}); err != nil {
+	if err := conn.Send(proto.Msg{Op: proto.OpAcquire, Card: o.Card, Engine: o.Engine, Group: o.Group, Priority: o.Priority, Needs: largest(o.Needs), NeedsEach: each(o.Needs), LearnSize: o.LearnSize, Wait: o.Wait.Seconds(), Pinned: o.Pinned, Training: o.Training, Switched: o.Switched, Lend: o.Lend != nil, WholeMachine: o.WholeMachine, MinTurn: o.MinTurn.Seconds(), ParkTTL: o.ParkTTL.Seconds(), Window: o.Window.String()}); err != nil {
 		say("acquire: %v", err)
 		return "", false
 	}
@@ -504,7 +505,7 @@ func reattach(o Options, cmd *exec.Cmd, done <-chan struct{}, cid *containerRef,
 // waiters behind memory that is already gone.
 func reattachMsg(o Options, pid int, start uint64, cid *containerRef, parked bool, line *leaseLine) proto.Msg {
 	m := proto.Msg{Op: proto.OpReattach, Card: o.Card, Engine: o.Engine, Group: o.Group, Priority: o.Priority,
-		Needs: largest(o.Needs), NeedsEach: each(o.Needs), LearnSize: o.LearnSize, Pinned: o.Pinned, Lend: o.Lend != nil, WholeMachine: o.WholeMachine,
+		Needs: largest(o.Needs), NeedsEach: each(o.Needs), LearnSize: o.LearnSize, Pinned: o.Pinned, Training: o.Training, Lend: o.Lend != nil, WholeMachine: o.WholeMachine,
 		MinTurn: o.MinTurn.Seconds(), ParkTTL: o.ParkTTL.Seconds(), Window: o.Window.String(),
 		PID: pid, PIDStart: start, Containers: cid.list(), Parked: parked}
 	if t, ok := line.openLend(); ok {

@@ -24,6 +24,7 @@ type Over struct {
 	Front      string
 	Group      string
 	Pinned     bool
+	Training   bool
 	Switched   bool
 	Wait       time.Duration
 	Grace      time.Duration
@@ -61,7 +62,7 @@ func OptionsFor(e *config.Engine, o Over) Options {
 	}
 	opts := Options{
 		Socket: o.Socket, Engine: e.Name, Card: e.GPU, Group: o.Group, Priority: prio,
-		Needs: e.NeedsMiB.Bytes(), Pinned: o.Pinned, Switched: o.Switched, Wait: o.Wait,
+		Needs: e.NeedsMiB.Bytes(), Pinned: o.Pinned, Training: o.Training, Switched: o.Switched, Wait: o.Wait,
 		DrainPost: e.DrainPost, DrainSlots: e.DrainSlots, DrainComfyUI: e.DrainComfyUI,
 		DrainMax: e.DrainMax.Duration, MinTurn: e.MinTurn.Duration, ParkTTL: e.ParkTTL.Duration, Window: e.Window, Container: e.Container, Compose: e.Compose,
 		APIKeyEnv: e.APIKeyEnv, APIKeyFile: e.APIKeyFile,

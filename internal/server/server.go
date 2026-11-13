@@ -266,6 +266,7 @@ func hold(ctx context.Context, conn *proto.Conn, req proto.Msg, n *node.Node, fi
 		LearnSize:    req.LearnSize,
 		Wait:         time.Duration(req.Wait * float64(time.Second)),
 		Pinned:       req.Pinned,
+		Training:     req.Training,
 		Switched:     req.Switched,
 		Parked:       req.Parked,
 		Lend:         req.Lend,
