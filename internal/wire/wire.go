@@ -290,11 +290,11 @@ func planModel(lines []string, keyRow, end int, name string, o Options) (Model, 
 		if !o.Update {
 			return Model{Name: name, Action: "wired", Reason: "already runs under berth run"}, nil
 		}
-		kept, ok := handFlags(lines[wrapRow], o)
+		lead, kept, ok := handFlags(lines[wrapRow], o)
 		if !ok {
 			return Model{Name: name, Action: "wired", Reason: "the berth run line does not end at --; edit it by hand"}, nil
 		}
-		desired := wrapperLine(name, o, wrapIndent, lineEnding(lines[wrapRow]), kept...)
+		desired := wrapperLine(name, o, wrapIndent, lineEnding(lines[wrapRow]), lead, kept...)
 		if lines[wrapRow] == desired {
 			return Model{Name: name, Action: "wired", Reason: "already runs under berth run with these flags"}, nil
 		}
@@ -317,16 +317,21 @@ func planModel(lines []string, keyRow, end int, name string, o Options) (Model, 
 	if at < len(lines) {
 		ending = lineEnding(lines[at])
 	}
-	line := wrapperLine(name, o, insertIndent, ending)
+	line := wrapperLine(name, o, insertIndent, ending, nil)
 	return Model{Name: name, Action: "add", Line: line}, &editPlan{at: at, line: line}
 }
 
-// wrapperLine is the full line inserted into the block: berth run, the flags,
-// the operator's own flags (kept), and the -- that ends berth's own flag
-// list. The model's original cmd follows on the next line.
-func wrapperLine(name string, o Options, indent int, ending string, kept ...string) string {
+// wrapperLine is the full line inserted into the block: the operator's words
+// before berth (lead), berth run, the flags, the operator's own flags (kept),
+// and the -- that ends berth's own flag list. The model's original cmd
+// follows on the next line.
+func wrapperLine(name string, o Options, indent int, ending string, lead []string, kept ...string) string {
 	var b strings.Builder
 	b.WriteString(strings.Repeat(" ", indent))
+	for _, w := range lead {
+		b.WriteString(shellWord(w))
+		b.WriteString(" ")
+	}
 	b.WriteString(shellWord(o.Bin))
 	b.WriteString(" run --as ")
 	b.WriteString(shellWord(name))
@@ -358,18 +363,20 @@ func wrapperLine(name string, o Options, indent int, ending string, kept ...stri
 	return b.String()
 }
 
-// handFlags is the words of a berth run line that wire did not write: every
-// word between run and the closing --, less the flags wire writes and their
-// values (each of them takes one). A --wait is wire's only when o.Wait is
-// set. ok is false when the line has no closing --.
-func handFlags(line string, o Options) (kept []string, ok bool) {
+// handFlags is the words of a berth run line that wire did not write: lead,
+// the words before the berth binary (a wrapper that runs berth run), and
+// kept, every word between run and the closing --, less the flags wire
+// writes and their values (each of them takes one). A --wait is wire's only
+// when o.Wait is set. ok is false when the line has no closing --.
+func handFlags(line string, o Options) (lead, kept []string, ok bool) {
 	owned := map[string]bool{"as": true, "group": true, "priority": true, "drain-post": true, "drain-slots": true, "wait": o.Wait > 0}
 	fields := shellFields(line)
 	run := slices.Index(fields, "run")
 	end := slices.Index(fields, "--")
-	if run < 0 || end < run {
-		return nil, false
+	if run < 1 || end < run {
+		return nil, nil, false
 	}
+	lead = fields[:run-1]
 	for i := run + 1; i < end; i++ {
 		name, _, eq := strings.Cut(strings.TrimLeft(fields[i], "-"), "=")
 		if strings.HasPrefix(fields[i], "-") && owned[name] {
@@ -380,7 +387,7 @@ func handFlags(line string, o Options) (kept []string, ok bool) {
 		}
 		kept = append(kept, fields[i])
 	}
-	return kept, true
+	return lead, kept, true
 }
 
 // wrappedAs names the model a line wraps in `berth run --as NAME`, or "". The

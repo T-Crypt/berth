@@ -53,6 +53,8 @@ has a matching GitHub release whose body comes from its section below.
 - `berth wire llama-swap` now finds a `berth run` line with a flag written before `--as`, such as
   `berth run --min-turn 5m --as qwen ...`. Before, it took the model for unwired, and `--write` added a second
   `berth run` in front of the first.
+- `berth wire llama-swap --write --update` keeps the words before the berth binary on a `berth run` line, such as
+  a wrapper script or `env FOO=1`. Before, it rewrote the line from the berth binary on and dropped them.
 
 - A model that fills the card no longer loads beside a parked engine it cannot fit next to. Berth granted any
   whole-card engine the card beside a parked residual under `residual_max_gib`, so a 23.4 GiB model on a 24 GiB
