@@ -187,8 +187,9 @@ maintenance or before a VM takes it. Name the card by its name or its PCI addres
   [Run an engine whenever the card is free](gateway.md#run-an-engine-whenever-the-card-is-free).
 - **A window puts either on the clock.** `window = "23:00-07:00"` on the entry, or `berth run --window 23:00-07:00`,
   holds the lease to those hours on the node's wall clock. It may cross midnight. A lease that asks outside them
-  waits for them with no deadline (unless `--wait` sets one) and holds up nobody behind it. `berth status` says when
-  the window opens, and a background engine is not started at all. When the window closes its holder drains at its usual boundary, so a slot or a job boundary comes first and a
+  waits for them with no deadline (unless `--wait` sets one) and holds up nobody behind it. A background engine is
+  not started at all outside its hours. `berth status` (SCHEDULE) and the harbor (SCHEDULES) list every engine that
+  has a window, whether or not it runs, with its hours and when it next opens or closes. When the window closes its holder drains at its usual boundary, so a slot or a job boundary comes first and a
   request in flight finishes.
 
   ```toml

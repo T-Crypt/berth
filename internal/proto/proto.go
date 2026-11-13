@@ -377,6 +377,10 @@ type Status struct {
 	Priority    *PriorityStatus   `json:"priority,omitempty"`
 	Claims      []Claim           `json:"claims,omitempty"`
 	Footprints  []EngineFootprint `json:"footprints,omitempty"`
+	// Schedules are the engines held to hours, by engine name: each
+	// configured window, and a lease's own (berth run --window) in place of
+	// its engine's, whether or not anything runs now.
+	Schedules []Schedule `json:"schedules,omitempty"`
 	// ParkedBytes is the RAM the parked engines hold: each one's Berth
 	// scope's anon plus shmem, or its VRAM footprint where Berth reads no
 	// scope. A reading, never a reservation.
@@ -595,6 +599,9 @@ type Lease struct {
 	// expects the waiting engine to start, from the measured starts in
 	// its queue chain only; 0 = unknown (no book, or nothing measured).
 	EstimateS float64 `json:"estimate_start_s,omitempty"`
+	// Window is the hours the broker holds the lease to, "23:00-07:00";
+	// "" = none.
+	Window string `json:"window,omitempty"`
 }
 
 type Squatter struct {

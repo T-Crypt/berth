@@ -118,6 +118,8 @@ type Extras struct {
 	// Finished hears that a run's engine ended on purpose (exit 0, or a
 	// stop the run carried out), by the lease's engine name.
 	Finished func(engine string)
+	// Windows are the configured engines' hours, by engine name.
+	Windows map[string]proto.Window
 }
 
 // Serve answers clients on ln.
@@ -168,6 +170,7 @@ func handle(ctx context.Context, c net.Conn, n *node.Node, x Extras, log *slog.L
 		st := n.Status()
 		st.Engines, st.Host, st.Insights = x.Engines(), x.Host(), x.Insights()
 		st.Alerts = x.Alerts()
+		st.Schedules = schedules(x.Windows, &st, time.Now())
 		st.Counters.SendTimeouts = sendTimeouts.Load()
 		st.Counters.DroppedConsumers = droppedConsumers.Load()
 		reply(conn, log, proto.Msg{Op: proto.OpStatus, Status: &st})

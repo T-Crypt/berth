@@ -89,6 +89,37 @@ func (w Window) Opens(t time.Time) time.Duration {
 	return time.Duration(left)*time.Minute - time.Duration(t.Second())*time.Second - time.Duration(t.Nanosecond())*time.Nanosecond
 }
 
+// Closes is how long a lease inside w keeps its hours: 0 outside, and with
+// no window, which never closes.
+func (w Window) Closes(t time.Time) time.Duration {
+	if !w.Set() || !w.Contains(t) {
+		return 0
+	}
+	left := (w.End - minuteOf(t) + minutesPerDay) % minutesPerDay
+	return time.Duration(left)*time.Minute - time.Duration(t.Second())*time.Second - time.Duration(t.Nanosecond())*time.Nanosecond
+}
+
+// Schedule is one engine's hours as the node's clock reads them now.
+type Schedule struct {
+	Engine string `json:"engine"`
+	Window string `json:"window"`
+	Open   bool   `json:"open"`
+	// ChangeS is the seconds until the window closes when Open, else until
+	// it opens.
+	ChangeS float64 `json:"change_s"`
+}
+
+// ScheduleAt reads w for engine at t.
+func ScheduleAt(engine string, w Window, t time.Time) Schedule {
+	s := Schedule{Engine: engine, Window: w.String(), Open: w.Contains(t)}
+	if s.Open {
+		s.ChangeS = w.Closes(t).Seconds()
+	} else {
+		s.ChangeS = w.Opens(t).Seconds()
+	}
+	return s
+}
+
 func minuteOf(t time.Time) int { return t.Hour()*60 + t.Minute() }
 
 // String is the window as a config file writes it, "23:00-07:00". The zero

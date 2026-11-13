@@ -1036,6 +1036,10 @@ body.ready #panel-engines > :nth-child(n+2) { animation-delay: 60ms; }
 .sq.sw-up { border-left-color: var(--green); }
 .sq.sw-waiting, .sq.sw-starting { border-left-color: var(--amber); }
 .sq.sw-failed { border-left-color: var(--magenta); }
+/* A schedule row: green while its hours are open, dim while shut. */
+.sq.sched { border-left-color: var(--dim-2); }
+.sq.sched .name { color: var(--ink-strong); }
+.sq.sched-open { border-left-color: var(--green); }
 .sw-state { display: inline-flex; align-items: center; gap: var(--s1); white-space: nowrap; }
 .sw-chip { border: 1px solid var(--hair-2); border-radius: var(--r-pill); padding: 0 var(--s2); font-size: var(--fs-micro); color: var(--dim); }
 .sw-cordon, .sw-pinned { color: var(--amber); border-color: var(--amber-dim); }

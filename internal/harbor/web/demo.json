@@ -127,6 +127,10 @@
    "age_seconds": 40
   }
  ],
+ "schedules": [
+  {"engine": "nightly-train", "window": "23:00-07:00", "open": false, "change_s": 10800},
+  {"engine": "render", "window": "18:00-22:00", "open": true, "change_s": 8100}
+ ],
  "waiting": [
   {
    "id": "LIT-0145",

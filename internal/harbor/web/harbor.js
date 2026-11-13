@@ -133,7 +133,7 @@ let shortcutsDlg, railMenuDlg;
 let lastLogSig = null; // filter+query+pause signature: repaint only on change, append otherwise
 let clearLogFilter = null; // set by buildLogSearch: the page's Esc reaches it (R-07)
 let lastTick = 0; // the relative-time ticker's own 1 s cadence
-let berthsRoot, claimsRoot, claimsMeta, stowRoot, notickRoot, machineRoot, machineCharts, machineMeta, socketLine;
+let berthsRoot, schedulesRoot, schedulesMeta, claimsRoot, claimsMeta, stowRoot, notickRoot, machineRoot, machineCharts, machineMeta, socketLine;
 let kpiStripEl, tideEl, tideLegend, tideMeta;
 let boardMeta, berthsMeta, stowMeta, noticketMeta, enginesMeta;
 let throughputMeta, throughputDecode, throughputRpm;
@@ -168,6 +168,8 @@ function main() {
   shortcutsDlg = $("shortcuts");
   railMenuDlg = $("rail-menu");
   berthsRoot = $("berths");
+  schedulesRoot = $("schedules");
+  schedulesMeta = $("schedules-meta");
   claimsRoot = $("claims");
   claimsMeta = $("claims-meta");
   stowRoot = $("stowaways");
@@ -508,7 +510,7 @@ let pendingSection = null;
 const HARBOR_SECTIONS = [
   ["sec-counter", "Counter"], ["sec-tide", "Tide"], ["sec-timeline", "Timeline"],
   ["sec-board", "Board"], ["sec-log", "Log"], ["sec-berths", "Berths"],
-  ["sec-machine", "Machine"], ["sec-claims", "Claims"], ["sec-stow", "Stowaways"], ["sec-noticket", "No ticket"],
+  ["sec-machine", "Machine"], ["sec-schedules", "Schedules"], ["sec-claims", "Claims"], ["sec-stow", "Stowaways"], ["sec-noticket", "No ticket"],
 ];
 const ENGINES_SECTIONS = [
   ["sec-engines", "Engines"], ["sec-library", "Library"], ["priority-panel", "Ranking"], ["sec-pool", "KV pool"],
@@ -2097,6 +2099,22 @@ function claimLine(cl) {
 function memoryWord(cl) {
   return fmtGiB(cl.used || 0) + " GiB" + (cl.gtt_used ? " + " + fmtGiB(cl.gtt_used) + " GiB GTT" : "");
 }
+// renderSchedules lists the engines held to hours, by the node's clock, as
+// berth status does: an engine shows here before its window opens.
+function renderSchedules(s) {
+  const list = el("div", "squatter-list");
+  const all = s.schedules || [];
+  const open = all.filter((sc) => sc.open);
+  schedulesMeta.textContent = all.length ? open.length + " open of " + all.length : "none";
+  if (all.length === 0) list.append(el("div", "empty-note", "no engine is held to hours: set window = \"23:00-07:00\" on an [[engine]]"));
+  for (const sc of all) {
+    const row = el("div", "sq sched" + (sc.open ? " sched-open" : ""));
+    const now = sc.open ? "open, closes in " + fmtAge(sc.change_s) : "closed, opens in " + fmtAge(sc.change_s);
+    row.append(el("div", "top", el("span", "name", sc.engine), el("span", null, sc.window)), el("div", "meta", now));
+    list.append(row);
+  }
+  schedulesRoot.replaceChildren(list);
+}
 function renderClaims(s) {
   const list = el("div", "squatter-list");
   const all = s.claims || [];
@@ -2469,6 +2487,7 @@ function renderLight(s) {
   paintTabCounts(entries.length, (s.engines || []).length);
   renderBerths(s);
   paintAlerts(s);
+  renderSchedules(s);
   renderClaims(s);
   renderStowaways(s);
   renderNoTicket(s);

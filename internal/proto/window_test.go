@@ -83,3 +83,39 @@ func TestWindowContainsAndOpens(t *testing.T) {
 		}
 	}
 }
+
+func TestWindowCloses(t *testing.T) {
+	at := func(h, m int) time.Time { return time.Date(2026, 11, 2, h, m, 0, 0, zone) }
+	night := Window{Start: 23 * 60, End: 7 * 60}
+	work := Window{Start: 9*60 + 30, End: 17 * 60}
+	for _, tc := range []struct {
+		name   string
+		w      Window
+		at     time.Time
+		closes time.Duration
+	}{
+		{"night at its start", night, at(23, 0), 8 * time.Hour},
+		{"night past midnight", night, at(0, 30), 6*time.Hour + 30*time.Minute},
+		{"night half a minute before its end", night, at(6, 59).Add(30 * time.Second), 30 * time.Second},
+		{"night at its end", night, at(7, 0), 0},
+		{"work at noon", work, at(12, 0), 5 * time.Hour},
+		{"work the evening after", work, at(18, 0), 0},
+		{"no window", Window{}, at(12, 0), 0},
+	} {
+		if got := tc.w.Closes(tc.at); got != tc.closes {
+			t.Errorf("%s: Closes = %v, want %v", tc.name, got, tc.closes)
+		}
+	}
+}
+
+func TestScheduleAt(t *testing.T) {
+	night := Window{Start: 23 * 60, End: 7 * 60}
+	open := ScheduleAt("agent", night, time.Date(2026, 11, 2, 1, 0, 0, 0, zone))
+	if want := (Schedule{Engine: "agent", Window: "23:00-07:00", Open: true, ChangeS: 6 * 3600}); open != want {
+		t.Errorf("inside: %+v, want %+v", open, want)
+	}
+	shut := ScheduleAt("agent", night, time.Date(2026, 11, 2, 20, 0, 0, 0, zone))
+	if want := (Schedule{Engine: "agent", Window: "23:00-07:00", Open: false, ChangeS: 3 * 3600}); shut != want {
+		t.Errorf("outside: %+v, want %+v", shut, want)
+	}
+}
