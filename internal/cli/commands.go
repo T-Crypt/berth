@@ -53,6 +53,22 @@ materialised, and the environment that decides which file that is.
 		},
 	},
 	{
+		Name:    "contract",
+		Summary: "one engine's terms: what berth.toml declares and what Berth measured",
+		Args:    "ENGINE [--config PATH] [--costs PATH] [--socket P] [--format F]",
+		Help: `Print one engine's terms in one place: its priority, the VRAM a lease asks for,
+the last run's measured peak, the RAM it needs and holds parked, its minimum
+turn and window, and how long a switch to it takes from each tier. Every
+number says where it came from: declared in berth.toml, Berth's default,
+measured on the card or by the gateway, or unknown.
+
+ENGINE is an [[engine]] name, an engine berthd discovered, or a name Berth
+measured leases under (a llama-swap model's berth run --as). Read only: it
+changes nothing, and without berthd it prints the declared terms.`,
+		Formats: []Format{FormatHuman, FormatJSON, FormatYAML},
+		Run:     runContract,
+	},
+	{
 		Name:    "civitai",
 		Summary: "search and browse CivitAI, for finding things to pull",
 		Help: `CivitAI is a search and a listing, not a pull: search finds a model and its

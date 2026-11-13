@@ -183,7 +183,9 @@ func (v statusView) Human(c *Context, ok bool) error {
 		// of what a run needs; it is never a reservation.
 		est := map[string]uint64{}
 		for _, f := range st.Footprints {
-			est[f.Engine] = f.Bytes
+			if f.Bytes > 0 {
+				est[f.Engine] = f.Bytes
+			}
 		}
 		fmt.Fprint(tw, "\nENGINE\tTYPE\tUP\tMODELS\tDECODE\tPREFILL\tOUT TOKENS\tQUEUE\tEST. VRAM\n")
 		for _, e := range st.Engines {

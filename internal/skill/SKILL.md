@@ -18,6 +18,7 @@ berth status            # the card, leases, waiters, stowaways, claims, the boar
 berth status --format json | jq '.leases, .waiting, .squatters'
 berth claims            # games and apps Berth holds the card for, or names
 berth engine check -v   # what every engine reports right now
+berth contract ENGINE   # one engine's VRAM, RAM, turn and switch times, each declared, measured or unknown
 berth events -f         # live: grants, drains, refusals, stowaways
 ```
 

@@ -414,6 +414,13 @@ type EngineFootprint struct {
 	Bytes  uint64    `json:"estimated_vram_bytes"`
 	Runs   int       `json:"runs"`
 	At     time.Time `json:"at"`
+	// HotPeakBytes is the most VRAM a run under this exact name held, the
+	// figure learn_size sizes a lease from.
+	HotPeakBytes uint64 `json:"hot_peak_vram_bytes,omitempty"`
+	// RAMPeakBytes is the most host RAM a run held while active.
+	RAMPeakBytes uint64 `json:"ram_peak_bytes,omitempty"`
+	// ParkedRAMBytes is the host RAM the engine last held parked.
+	ParkedRAMBytes uint64 `json:"parked_ram_bytes,omitempty"`
 }
 
 // Claim is one claim rule and what it matches right now: work Berth does not
