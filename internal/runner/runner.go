@@ -228,6 +228,12 @@ func Run(o Options) int {
 			say("berthd unreachable (%v); not starting %s", err, o.Engine)
 			return ExitRefused
 		}
+		// A training that lost berthd still owns the card: nothing starts
+		// beside it unprotected.
+		if t, ok := runs.Training(runs.Dir(o.Socket), procs.System{}.StartTime); ok {
+			say("berthd unreachable (%v) and %s is training on this node; not starting %s", err, t.Engine, o.Engine)
+			return ExitRefused
+		}
 		// The engine starts unleased and the line below dials on, so a
 		// daemon that comes up later (berthd starting beside this service
 		// at boot) re-attaches it the way it would a run it lost.
@@ -753,7 +759,7 @@ func record(o Options, cmd *exec.Cmd, reason string) func() {
 	pid, self := cmd.Process.Pid, os.Getpid()
 	remove, err := runs.Write(runs.Dir(o.Socket), runs.Record{
 		Engine: o.Engine, PID: pid, Start: procs.System{}.StartTime(pid), Started: time.Now(), Reason: reason,
-		Wrapper: self, WrapperStart: procs.System{}.StartTime(self),
+		Wrapper: self, WrapperStart: procs.System{}.StartTime(self), Training: o.Training,
 	})
 	if err != nil {
 		fmt.Fprintf(o.Stderr, "berth: could not record the unprotected run: %v\n", err)

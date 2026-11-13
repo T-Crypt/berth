@@ -15,6 +15,10 @@ has a matching GitHub release whose body comes from its section below.
   instead of waiting out their timeout. A second `berth train` waits in line and starts when the first one ends.
   Other cards keep serving. `berth train` refuses to start without berthd, and `berth status` shows the lease as
   `hold,pinned,training`.
+- A `berth train` run keeps its lock while berthd is away. With berthd down, `berth run` refuses to start an engine
+  while a training runs on the node, instead of starting it without a lease. A berthd that starts while a training
+  runs refuses every other request until the training re-attaches, with no time limit, where other engines get
+  15 seconds.
 
 - On Windows, `berth notify` is a tray icon in the taskbar. Its notifications are Windows' own toasts, and a click
   opens the harbor. The tooltip shows the latest event, and keeps it after explorer restarts. The menu opens the

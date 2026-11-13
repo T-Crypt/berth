@@ -267,8 +267,10 @@ berth train --as train-mymodel --gpu gpu0,gpu1,gpu2 -- torchrun --nproc_per_node
 - The workers torchrun or `accelerate launch` starts belong to the lease, so their memory is the run's on every card.
 - `berth status` shows the lease as `hold,pinned,training`. `berth stop train-mymodel` still stops it, because a
   person asked.
-- A berthd restart or upgrade does not stop the run. It keeps running, and berthd re-attaches it with its pin on
-  every card. The run re-attaches as a training, so the lock comes back with it.
+- A berthd restart or upgrade does not stop the run, and the lock holds while berthd is away. With berthd down,
+  `berth run` refuses to start an engine while the training runs, instead of starting it without a lease. A new
+  berthd refuses every other request until the training re-attaches, with no time limit, and the training comes
+  back as a training.
 
 `berth run --pinned --priority foreground` still works for a run that must not be drained but may share its card.
 A pinned run does not lock the card: other requests wait for it until their own deadline.
