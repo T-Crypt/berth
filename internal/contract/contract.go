@@ -22,7 +22,7 @@ type Source string
 const (
 	Declared Source = "declared" // berth.toml says so
 	Default  Source = "default"  // berth.toml is silent; Berth's default applies
-	Measured Source = "measured" // Berth saw it on the card or in a switch
+	Measured Source = "measured" // Berth saw it on the card, in a switch or on the last run's lease
 	Unknown  Source = "unknown"  // nothing declares it and nothing measured it
 )
 
@@ -48,6 +48,7 @@ type Duration struct {
 type Text struct {
 	Value  string `json:"value" yaml:"value"`
 	Source Source `json:"source" yaml:"source"`
+	Why    string `json:"why,omitempty" yaml:"why,omitempty"`
 }
 
 // Switch is how long a switch to the engine takes from one tier: the median of
@@ -114,16 +115,26 @@ func Build(name string, e *config.Engine, st *proto.Status, book *swapcost.Book)
 		c.Type = e.Type
 	}
 
+	// A llama-swap model has no berth.toml entry: its terms are the flags on
+	// its berth run line, which the last run's lease carried.
+	ran := fp != nil && fp.Priority != ""
 	c.Priority = Text{Value: "interactive", Source: Default}
-	if e != nil && e.Priority != "" {
+	switch {
+	case e != nil && e.Priority != "":
 		c.Priority = Text{Value: e.Priority, Source: Declared}
+	case ran:
+		c.Priority = Text{Value: fp.Priority, Source: Measured, Why: "its last run's lease"}
 	}
 
 	c.VRAM = vram(e, fp, card, st != nil)
 
 	c.LastPeak = measured(fp, func(f *proto.EngineFootprint) uint64 { return f.Bytes }, st != nil)
-	if fp != nil && fp.Bytes > 0 {
+	switch {
+	case fp != nil && fp.Bytes > 0:
 		c.LastPeak.Why = fmt.Sprintf("%d runs measured", fp.Runs)
+	case fp != nil && fp.HotPeakBytes > 0:
+		// A model of a group: its last-run figure sits on the group's entry.
+		c.LastPeak = Bytes{Bytes: fp.HotPeakBytes, Source: Measured, Why: "the most a run under this name held"}
 	}
 
 	c.RAM = measured(fp, func(f *proto.EngineFootprint) uint64 { return f.RAMPeakBytes }, st != nil)
@@ -136,8 +147,11 @@ func Build(name string, e *config.Engine, st *proto.Status, book *swapcost.Book)
 	c.ParkedRAM = measured(fp, func(f *proto.EngineFootprint) uint64 { return f.ParkedRAMBytes }, st != nil)
 
 	c.MinTurn = Duration{Source: Default, Why: "off"}
-	if e != nil && e.MinTurn.Duration > 0 {
+	switch {
+	case e != nil && e.MinTurn.Duration > 0:
 		c.MinTurn = Duration{Seconds: e.MinTurn.Seconds(), Source: Declared}
+	case ran:
+		c.MinTurn = Duration{Seconds: fp.MinTurnS, Source: Measured, Why: "its last run's lease"}
 	}
 	c.Window = Text{Value: "always", Source: Default}
 	if e != nil && e.Window.Set() {

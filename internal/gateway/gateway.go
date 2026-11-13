@@ -371,11 +371,27 @@ func (g *Gateway) listed(ctx context.Context, base string) []string {
 		return c.models
 	}
 	g.mu.Unlock()
+	out := ListModels(ctx, g.client(), base)
+	if out == nil {
+		return nil
+	}
+	g.mu.Lock()
+	if g.lists == nil {
+		g.lists = map[string]cached{}
+	}
+	g.lists[base] = cached{time.Now(), out}
+	g.mu.Unlock()
+	return out
+}
+
+// ListModels is the model names an engine's /v1/models lists, nil when it
+// does not answer with a list. A GET there loads nothing.
+func ListModels(ctx context.Context, c *http.Client, base string) []string {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+"/v1/models", nil)
 	if err != nil {
 		return nil
 	}
-	resp, err := g.client().Do(req)
+	resp, err := c.Do(req)
 	if err != nil {
 		return nil
 	}
@@ -392,12 +408,6 @@ func (g *Gateway) listed(ctx context.Context, base string) []string {
 	for _, d := range r.Data {
 		out = append(out, d.ID)
 	}
-	g.mu.Lock()
-	if g.lists == nil {
-		g.lists = map[string]cached{}
-	}
-	g.lists[base] = cached{time.Now(), out}
-	g.mu.Unlock()
 	return out
 }
 

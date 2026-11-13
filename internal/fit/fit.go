@@ -24,13 +24,14 @@ import (
 type Path int
 
 const (
-	Resume  Path = iota // parked in RAM: a resume puts it back
+	Running Path = iota // its own lease holds the card: nothing to switch
+	Resume              // parked in RAM: a resume puts it back
 	Free                // nothing holds, uses or waits for the card
 	Drain               // the holder is drained first
 	Blocked             // a VM, a cordon or a pinned lease keeps the card
 )
 
-var pathNames = [...]string{Resume: "resume", Free: "free", Drain: "drain", Blocked: "blocked"}
+var pathNames = [...]string{Running: "running", Resume: "resume", Free: "free", Drain: "drain", Blocked: "blocked"}
 
 func (p Path) String() string { return pathNames[p] }
 
@@ -67,6 +68,8 @@ func candidate(st *proto.Status, e *config.Engine, book *swapcost.Book) Candidat
 	c := Candidate{Engine: e.Name, Entry: e, Tier: swapcost.Cold}
 	v := node.View(st, e.GPU)
 	switch {
+	case running(v, e.Name):
+		c.Path, c.Tier, c.Why = Running, swapcost.Hot, "already on the card"
 	case Parked(st, e.Name):
 		c.Path, c.Tier, c.Why = Resume, swapcost.Warm, "parked in RAM"
 	case CardFree(v):
@@ -105,6 +108,14 @@ func holders(st *proto.Status) string {
 	default:
 		return "the waiters ahead"
 	}
+}
+
+// running is whether a lease of the engine, or of a model in its group (a
+// llama-swap's), is active on the card: a request for it needs no switch.
+func running(st *proto.Status, name string) bool {
+	return st != nil && slices.ContainsFunc(st.Leases, func(l proto.Lease) bool {
+		return l.State == "active" && (l.Engine == name || l.Group == name)
+	})
 }
 
 // Parked is whether the engine's own lease sits parked in RAM. A parked model

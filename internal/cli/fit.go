@@ -4,14 +4,18 @@
 package cli
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"slices"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/T-Crypt/berth/internal/config"
 	"github.com/T-Crypt/berth/internal/contract"
 	"github.com/T-Crypt/berth/internal/fit"
+	"github.com/T-Crypt/berth/internal/gateway"
 	"github.com/T-Crypt/berth/internal/proto"
 	"github.com/T-Crypt/berth/internal/swapcost"
 )
@@ -92,6 +96,9 @@ func runFit(c *Context) int {
 		cands = []*config.Engine{{Name: name}}
 	}
 	if len(cands) == 0 {
+		cands = listedBy(context.Background(), st, cfg, name)
+	}
+	if len(cands) == 0 {
 		e := Failf("no engine named %q, and none serves it", name)
 		var known []string
 		for _, en := range cfg.Engine {
@@ -116,6 +123,28 @@ func runFit(c *Context) int {
 	}
 	ranked := fit.Rank(st, cands, book)
 	return c.Write(fitView{doc: fitDoc{Name: name, Pick: ranked[0], Candidates: ranked}, explain: *explain, offline: offline}, nil)
+}
+
+// listedBy is a model no berth.toml engine names or serves, the way the
+// gateway resolves it: an engine that is up, not parked, and lists it on its
+// /v1/models. llama-swap lists every model it can load and starts the model
+// under the model's own lease, on the lister's card.
+func listedBy(ctx context.Context, st *proto.Status, cfg config.Config, name string) []*config.Engine {
+	if st == nil {
+		return nil
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	for _, e := range st.Engines {
+		if !e.Up || fit.Parked(st, e.Name) || !slices.Contains(gateway.ListModels(ctx, client, e.URL), name) {
+			continue
+		}
+		m := &config.Engine{Name: name}
+		if i := slices.IndexFunc(cfg.Engine, func(c config.Engine) bool { return c.Name == e.Name }); i >= 0 {
+			m.GPU = cfg.Engine[i].GPU
+		}
+		return []*config.Engine{m}
+	}
+	return nil
 }
 
 // fitCandidates is the engines a name means: the [[engine]] of that name, else
