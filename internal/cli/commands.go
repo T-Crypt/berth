@@ -399,6 +399,24 @@ Gated and private models read a token from $HF_TOKEN or $CIVITAI_API_KEY.`,
 		Run:     runPull,
 	},
 	{
+		Name:    "queue",
+		Summary: "the waiters in grant order; bump, re-rank or drop one",
+		Args:    "[bump ID | prio ID batch|interactive|foreground | drop ID] [--socket P] [--format F]",
+		Help: `Without arguments, list every waiter in the order berthd will grant them:
+priority first, then arrival. Nobody has to manage the queue; these are for
+when you want it otherwise.
+
+  bump ID    move the waiter to the front of its priority class
+  prio ID P  move it to another class: batch, interactive or foreground
+  drop ID    refuse it now, the way a timeout would
+
+A hold is a pin, not a queue place, and a training's place is fixed by the
+card's lock, so neither can be set here. Every change is journaled as a
+lease.queue_override event (berth events).`,
+		Formats: []Format{FormatHuman, FormatJSON, FormatYAML},
+		Run:     runQueue,
+	},
+	{
 		Name:    "reclaim",
 		Summary: "what a stuck lease left on the card; --yes stops it",
 		Args:    "[LEASE] [--yes] [--grace D] [--socket P] [--format F]",

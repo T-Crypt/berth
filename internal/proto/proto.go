@@ -68,6 +68,11 @@ const (
 	// defaults). With End set, end Engine's batch now. The server answers
 	// with the same op, or OpRefused when End finds no batch.
 	OpBatch = "batch"
+	// OpQueue: client: the operator changes the waiter Lease: Action bump
+	// (front of its priority class), prio (to Priority: batch, interactive
+	// or foreground) or drop (refuse it). The server answers with the same
+	// op and Reason naming the change, or OpRefused.
+	OpQueue = "queue"
 	// OpYield: client: the running job of Engine (by name or group) let go
 	// of the card from inside for Yield seconds, or took it back (Yield 0),
 	// so a drain treats the job as at its boundary while it lasts (#299).
@@ -194,6 +199,8 @@ type Msg struct {
 	// daemon with it, so the daemon still reads it; nothing sends it now.
 	Container string `json:"container,omitempty"`
 	Lease     string `json:"lease,omitempty"`
+	// OpQueue: Action is bump, prio or drop; prio reads Priority.
+	Action string `json:"action,omitempty"`
 	// OpStop: Leases is the reply, the leases the daemon asked to drain.
 	// OpUnpark, OpParkMode: the leases evicted.
 	Leases []string `json:"leases,omitempty"`
@@ -281,7 +288,8 @@ const (
 	EvStuck          = "lease.stuck"
 	EvRefused        = "lease.refused"
 	EvReattached     = "lease.reattached"
-	EvOrphaned       = "lease.orphaned" // the attached process is gone and the broker released the lease itself
+	EvOrphaned       = "lease.orphaned"       // the attached process is gone and the broker released the lease itself
+	EvQueueOverride  = "lease.queue_override" // the operator bumped, re-ranked or dropped a waiter (berth queue)
 	EvSquatter       = "squatter.appeared"
 	EvSquatterGone   = "squatter.gone"
 	EvProbeFailed    = "probe.failed"
