@@ -208,3 +208,29 @@ func TestFootprintFoldsAtTheFreeNotTheRelease(t *testing.T) {
 		t.Fatalf("Footprint(llama) = %d, %v after the free; want %d, true", last, ok, 9*GiB)
 	}
 }
+
+// A llama-swap model's own peak sits on its name's entry, its last run on the
+// group's. The status reply carries both, so a reader of the model's name
+// (berth contract, learn_size) finds the peak the broker sizes it from.
+func TestFootprintStatusCarriesAModelsOwnPeak(t *testing.T) {
+	b, c, _ := setup(t, procs.Map{101: 100})
+	l := must(t, acquire(b, Request{Engine: "dirk", Group: "llama-swap", Priority: Foreground}))
+	l.Attach(100)
+	c.set(gpu.Proc{PID: 101, Name: "llama-server", Used: 12 * GiB})
+	b.Tick(context.Background())
+	l.Release()
+	c.set()
+	b.Tick(context.Background())
+
+	got := map[string]proto.EngineFootprint{}
+	for _, f := range b.Status().Footprints {
+		f.At = time.Time{}
+		got[f.Engine] = f
+	}
+	if f := got["dirk"]; f != (proto.EngineFootprint{Engine: "dirk", HotPeakBytes: 12 * GiB}) {
+		t.Fatalf("dirk's entry = %+v, want its own 12 GiB peak", f)
+	}
+	if f := got["llama-swap"]; f.Bytes != 12*GiB || f.Runs != 1 {
+		t.Fatalf("llama-swap's entry = %+v, want the last run's 12 GiB", f)
+	}
+}

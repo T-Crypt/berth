@@ -43,6 +43,13 @@ has a matching GitHub release whose body comes from its section below.
   `window`, with its hours, whether they are open, and how long until they close or open. An engine shows before its
   window opens, and a `berth run --window` lease shows its own hours. The status JSON carries the same rows as
   `schedules`, and each lease carries its `window`.
+- `berth contract ENGINE` prints one engine's terms in one place: its priority, the VRAM a lease asks for, the last
+  run's measured peak, the RAM it needs and holds parked, its minimum turn and window, and how long a switch to it
+  takes from each tier. Each number says whether berth.toml declares it, Berth's default applies, Berth measured
+  it, or nothing is known. ENGINE can be an `[[engine]]` name, a discovered engine, or a llama-swap model's
+  `berth run --as` name. Without berthd it prints the declared terms. The status JSON's `footprints` now carry each
+  engine's `hot_peak_vram_bytes`, `ram_peak_bytes` and `parked_ram_bytes`. A llama-swap model whose last-run
+  figure sits on its group's entry is now listed under its own name too.
 - `berth wire llama-swap` names each llama-swap group where llama-swap swaps two or more wired models itself.
   There llama-swap unloads the old model before Berth sees the request, so `min_turn`, the engine ranking and the
   juggle guard never apply between them. The JSON carries the groups as `swapping`. The llama-swap section of

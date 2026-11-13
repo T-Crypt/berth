@@ -132,15 +132,18 @@ func sizeHuman(n uint64) string {
 	return fmt.Sprintf("%d MiB", n/gpu.MiB)
 }
 
-// footprintStatus is the table as the status reply carries it: the last
-// run's peak per engine, sorted by name. b.mu must be held.
+// footprintStatus is the table as the status reply carries it: per engine
+// key, the last run's peak and the peaks learn_size and RAM figures read,
+// sorted by name. A llama-swap model's entry may carry only its own peaks;
+// the last-run figure sits on its group's. b.mu must be held.
 func (b *Broker) footprintStatus() []proto.EngineFootprint {
 	out := []proto.EngineFootprint{}
 	for k, f := range b.footprints {
-		if f == nil || f.Last == 0 {
+		if f == nil || f.Last == 0 && f.HotPeak == 0 && f.RAMPeak == 0 && f.ParkedRAM == 0 {
 			continue
 		}
-		out = append(out, proto.EngineFootprint{Engine: k, Bytes: f.Last, Runs: f.Runs, At: f.At})
+		out = append(out, proto.EngineFootprint{Engine: k, Bytes: f.Last, Runs: f.Runs, At: f.At,
+			HotPeakBytes: f.HotPeak, RAMPeakBytes: f.RAMPeak, ParkedRAMBytes: f.ParkedRAM})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Engine < out[j].Engine })
 	return out
