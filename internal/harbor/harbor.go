@@ -132,6 +132,7 @@ func (h *Harbor) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/board/switch", h.boardAction("switch"))
 	mux.HandleFunc("POST /v1/board/stop", h.boardAction("stop"))
 	mux.HandleFunc("POST /v1/board/load", h.boardAction("load"))
+	mux.HandleFunc("POST /v1/board/queue", h.boardQueue)
 	mux.HandleFunc("POST /v1/pair/code", h.pairCode)
 	return h.guard(mux)
 }
@@ -190,7 +191,7 @@ func (h *Harbor) guard(next http.Handler) http.Handler {
 }
 
 // writePaths are the only paths the harbor takes a POST on.
-var writePaths = map[string]bool{"/pair": true, "/v1/board/switch": true, "/v1/board/stop": true, "/v1/board/load": true, "/v1/pair/code": true}
+var writePaths = map[string]bool{"/pair": true, "/v1/board/switch": true, "/v1/board/stop": true, "/v1/board/load": true, "/v1/board/queue": true, "/v1/pair/code": true}
 
 // mode tells the page which guard this harbor runs under. It is a harbor
 // fact, stable for the process lifetime, so the page fetches it once: unlike

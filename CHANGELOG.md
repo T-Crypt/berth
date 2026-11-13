@@ -59,6 +59,9 @@ has a matching GitHub release whose body comes from its section below.
   moves one to the front of its priority class, `berth queue prio ID batch|interactive|foreground` moves it to
   another class, and `berth queue drop ID` refuses it now. Holds and trainings cannot be changed this way. Each
   change is a `lease.queue_override` event.
+- The harbor's SWITCH tab has a QUEUE panel. It lists the waiters in grant order, and a paired device gets FIRST, a
+  priority picker and DROP on each one. These buttons go from the harbor straight to berthd, never through the
+  gateway, because agents hold the gateway's API key and a queue change is the operator's to make.
 - `berth wire llama-swap` names each llama-swap group where llama-swap swaps two or more wired models itself.
   There llama-swap unloads the old model before Berth sees the request, so `min_turn`, the engine ranking and the
   juggle guard never apply between them. The JSON carries the groups as `swapping`. The llama-swap section of

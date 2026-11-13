@@ -517,7 +517,7 @@ const ENGINES_SECTIONS = [
   ["sec-throughput", "Throughput"], ["sec-ledger", "Ledger"], ["sec-lb", "Leaderboard"],
   ["sec-recent", "Recent"], ["sec-residency", "Residency"], ["sec-storage", "Storage"],
 ];
-const SWITCH_SECTIONS = [["sec-switch-cards", "Cards"], ["sec-switch-engines", "Engines"]];
+const SWITCH_SECTIONS = [["sec-switch-cards", "Cards"], ["sec-switch-queue", "Queue"], ["sec-switch-engines", "Engines"]];
 const ABOUT_SECTIONS = [
   ["about-top", "Berth"], ["about-cards", "Cards"], ["about-modes", "Modes"], ["about-nav", "Getting around"],
   ["about-keys", "Keyboard"], ["about-states", "Status words"], ["about-kpis", "KPIs"], ["about-counters", "Counters"],
