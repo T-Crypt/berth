@@ -21,10 +21,10 @@ type View interface {
 // Context is one command's run: the streams, the globals parsed once, and the
 // format decided for the whole run.
 type Context struct {
-	Out     io.Writer // stdout, quiet-filtered once the flags are parsed
-	Err     io.Writer // stderr: diagnostics, never suppressed by --quiet
-	Args    []string  // the command's own args
-	Cmd     *Command
+	Out  io.Writer // stdout, quiet-filtered once the flags are parsed
+	Err  io.Writer // stderr: diagnostics, never suppressed by --quiet
+	Args []string  // the command's own args
+	Cmd  *Command
 	// Path is the command as typed after "berth": "status", or "engine
 	// show" for a subcommand, whose Cmd.Name is only "show".
 	Path    string
