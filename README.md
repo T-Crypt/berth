@@ -42,7 +42,7 @@ claim. When another engine holds it, Berth:
 The numbered markers on the timeline are those four steps. A process that holds VRAM without a lease
 shows up as a stowaway: Berth reports its PID and memory and leaves it running.
 
-> **Status: alpha, v0.5.0.** Runs daily on an RTX 4090 workstation beside llama-swap, NInfer,
+> **Status: alpha, v0.6.0.** Runs daily on an RTX 4090 workstation beside llama-swap, NInfer,
 > Strata, ComfyUI and games, and testers run it on Windows. The [docs](docs/README.md) cover what works and has tests; the
 > [roadmap](docs/roadmap.md) lists the phases and what is still missing.
 
@@ -116,6 +116,16 @@ line goes away.
   [Training runs](docs/leasing.md#training-runs).
 - **`berth run --pinned`** for an app that must never be stopped mid-work but may share the card, such as Blender.
 
+**Plans the card's hours**
+- **A schedule per card.** `berth schedule book` gives an engine the card for set hours, changes its priority for
+  them, or books downtime, up to 14 days ahead. A booked run goes first and keeps the card against everything but
+  a hold. Hours nobody booked run by priority, then arrival. See [Book the card](docs/leasing.md#book-the-card).
+- **Agents book their own runs** through `/v1/berth/schedule` on the gateway, and the harbor's SCHEDULE tab shows
+  the week to the minute. A paired phone books by clicking an empty hour.
+- **`berth queue`** lists the waiters in grant order. `bump`, `prio` and `drop` change one by hand.
+- **`learn_size = true`** sizes a lease from what the engine held last time, so engines that fit together share
+  the card without anyone typing `needs_mib`.
+
 **One API for your engines** *(preview)*
 - **`berth gateway`**: one OpenAI-compatible port. Name a model and Berth starts its engine,
   unloads whatever holds the card, waits for the load and streams the answer.
@@ -161,6 +171,10 @@ line goes away.
   leaderboard; 30 days of history on disk.
 - **The harbor web UI** (`berth harbor`): a departures board of leases, a collisions-avoided
   counter, charts and the event log. Read-only, loopback by default.
+- **Explains itself.** `berth why ENGINE` tells that engine's last lease in plain words: each wait and its
+  reason, the grant, each drain and who it was for, and the restarts it lived through. `berth fit MODEL` says where
+  a request would run now and what the start costs, and `berth contract ENGINE` prints an engine's VRAM, RAM, turn
+  and switch times, each marked declared, measured or unknown. The event log is kept on disk across restarts.
 - **Alerts** to the desktop or a webhook, `/metrics` for Prometheus, and `berth export` for
   CSV or JSON.
 

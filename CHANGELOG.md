@@ -6,6 +6,15 @@ has a matching GitHub release whose body comes from its section below.
 
 ## [Unreleased]
 
+## [v0.6.0] - 2026-11-14
+
+v0.6.0 gives each card a schedule and makes Berth explain its choices. `berth schedule` books an engine's hours,
+a priority change or downtime up to 14 days ahead, agents book their own runs through the gateway, and the
+harbor's SCHEDULE tab shows the week. `berth train` runs a training that nothing automated can interrupt.
+`berth fit`, `berth contract`, `berth queue` and `berth why` say where a request would run, what an engine costs,
+who is next and why a lease waited or was drained. The event log now survives restarts. It was tagged first as
+`v0.6.0-rc.1`.
+
 ### Added
 
 - `berth why ID` tells one lease's story in plain words: when it asked for the card, each reason it waited, the
