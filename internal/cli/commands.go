@@ -224,6 +224,22 @@ tray icon whose notifications are Windows' own toasts; a click opens the harbor.
 		Run: runNotify,
 	},
 	{
+		Name:    "why",
+		Summary: "one lease's story: why it waited, was granted, drained or refused",
+		Args:    "ID|ENGINE [--socket P] [--format F]",
+		Help: `Print every event berthd kept about one lease, oldest first, in plain words:
+when it asked for the card, each reason it waited, the grant, each drain and
+who it was for, the release, and the berthd restarts it lived through. ENGINE
+picks that engine's newest lease. A lease that berthd still holds ends with
+where it stands now; one a restart cut off names the lease its engine
+re-attached as.
+
+berthd keeps its events in events.jsonl in the state directory (--events), so
+the story reads across restarts and deploys, back to the last 1000 events.`,
+		Formats: []Format{FormatHuman, FormatJSON, FormatYAML},
+		Run:     runWhy,
+	},
+	{
 		Name:    "fit",
 		Summary: "where a request for an engine or model would run now, and what the start costs",
 		Args:    "NAME [--explain] [--config PATH] [--costs PATH] [--socket P] [--format F]",
