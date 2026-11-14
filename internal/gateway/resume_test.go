@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -155,12 +156,12 @@ func TestGatewayResumesAParkedEngine(t *testing.T) {
 		t.Fatal("the vllm adapter is missing")
 	}
 	engineLog := &syncBuf{}
-	go runner.Run(runner.Options{Socket: sock, Engine: "vllm", Priority: "interactive", Needs: []uint64{8 << 30},
+	var pid int
+	runUntilEnd(t, &pid, runner.Options{Socket: sock, Engine: "vllm", Priority: "interactive", Needs: []uint64{8 << 30},
 		Park: &adapter, ParkBase: srv.URL, ParkProbe: "/v1/models",
 		Grace: 200 * time.Millisecond, Argv: []string{"sleep", "30"}, Stderr: engineLog})
 
 	// Measure, then park it behind a foreground holder that stays.
-	var pid int
 	deadline := time.Now().Add(5 * time.Second)
 	for pid == 0 {
 		if time.Now().After(deadline) {
@@ -265,6 +266,25 @@ func TestGatewayResumesAParkedEngine(t *testing.T) {
 	if n != 0 {
 		t.Fatalf("the gateway started %d engine(s) for a parked one", n)
 	}
+}
+
+// runUntilEnd starts a berth run on its own goroutine. At cleanup it kills
+// the engine's process group (*pid, once the test has read it) and waits for
+// Run to return: a Run left going sees its daemon close at cleanup and
+// writes its unprotected-run record into a temp dir that is being removed.
+func runUntilEnd(t *testing.T, pid *int, o runner.Options) {
+	t.Helper()
+	exited := make(chan int, 1)
+	go func() { exited <- runner.Run(o) }()
+	t.Cleanup(func() {
+		if *pid > 0 {
+			_ = syscall.Kill(-*pid, syscall.SIGKILL)
+		}
+		select {
+		case <-exited:
+		case <-time.After(5 * time.Second):
+		}
+	})
 }
 
 func slogDiscard() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
