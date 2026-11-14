@@ -179,6 +179,51 @@ A bump puts the waiter ahead of everyone else in its priority class. To go ahead
 priority with `prio`. Holds and trainings cannot be changed here: a hold is a pin, not a place in the queue, and
 a training's place is fixed by the card's lock. Each change is a `lease.queue_override` event in `berth events`.
 
+## Book the card
+
+The queue decides who goes next. A booking decides whose hours they are, up to 14 days ahead. A booking has one of
+three kinds:
+
+- `run` is an engine's turn. While it lasts, the engine's waiter goes first in line and runs at the booking's
+  priority (foreground when the booking names none). It wins a tie against a holder that has no booking. Once it
+  holds the card, nothing but a hold drains it until the booking ends. A minimum turn (`min_turn`) still protects
+  the holder it takes over from.
+- `priority` moves an engine to another class for set hours, such as llama-swap at batch while a training runs. It
+  claims no time on the card, so it may overlap a run.
+- `down` is downtime. No new work starts, and holders drain at their usual boundary when it begins. A hold and a
+  training stay.
+
+An hour nobody booked runs by priority, then arrival. A booked engine that does not ask for the card leaves it to
+everyone else, so a booking never keeps the card idle.
+
+```sh
+berth schedule                       # what holds each card, the waiters in grant order, every booking
+berth schedule book --who pi-pocket --engine pocket-train --at 23:00 --for 5h --days 7 --priority batch
+berth schedule book --who training --engine sft --at "sun 18:00" --for 3h
+berth schedule book --who operator --kind priority --engine llama-swap --priority batch --at "sun 18:00" --for 3h
+berth schedule book --who operator --kind down --at "tue 04:00" --for 1h --note "driver update"
+berth schedule move b4 --at 01:00    # new hours, same ID; --for, --priority and --note change those
+berth schedule cancel b4
+```
+
+`--at` takes `now`, `22:00` (the next time the clock reads it), `tue 22:00`, `2026-11-14 22:00` or RFC 3339, on the
+node's clock. `--days 7` books the same hours on 7 days in a row, all of them or none. `--earliest` moves the
+booking to the first free hours at or after `--at`. `--engine` takes an engine or a group, such as `llama-swap`
+for every model it serves.
+
+Two runs or downtimes on one card may not overlap, and neither may two priority changes for the same engine. A
+clash is refused with the booking it hits. A class set with `berth queue prio` wins over a booking, and a booking
+never moves a hold or a training.
+
+berthd keeps the bookings in `schedule.json` in its state directory (`berth daemon --schedule`). Each change is a
+`schedule.booked` event, and each class a booking moves, or moves back at its end, is a `lease.booking_priority`
+event. A lease that a booking governs shows the booking's ID in `berth status --format json` (`booking`).
+
+The harbor's SCHEDULE tab shows the same scheduler. NOW lists what holds each card, the waiters and the booking in
+force. 7 DAYS draws one 24-hour track per day with every booking to the minute, each engine's window and the live
+holder. A paired device books by clicking an empty hour, and moves or cancels a booking by clicking it. Agents
+book over the gateway: read [Book the card from an agent](gateway.md#book-the-card-from-an-agent).
+
 ## Cordon a card
 
 On a node with several cards, `berth cordon gpu1` stops new grants on that card while the others keep serving, for

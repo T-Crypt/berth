@@ -89,9 +89,9 @@ func parkCall(sock string, req proto.Msg, want string) (proto.Msg, *Error) {
 	return m, nil
 }
 
-func nonNil(s []string) []string {
+func nonNil[T any](s []T) []T {
 	if s == nil {
-		return []string{}
+		return []T{}
 	}
 	return s
 }

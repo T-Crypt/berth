@@ -575,3 +575,11 @@ func add(a, b proto.Counters) proto.Counters {
 	}
 	return a
 }
+
+// SetBookings hands every card the schedule; each keeps the bookings that
+// name it.
+func (n *Node) SetBookings(bs []proto.Booking) {
+	for _, c := range n.cards {
+		c.B.SetBookings(slices.DeleteFunc(slices.Clone(bs), func(x proto.Booking) bool { return x.Card != c.Name }))
+	}
+}

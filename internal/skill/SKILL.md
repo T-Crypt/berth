@@ -21,6 +21,7 @@ berth engine check -v   # what every engine reports right now
 berth contract ENGINE   # one engine's VRAM, RAM, turn and switch times, each declared, measured or unknown
 berth fit MODEL --explain   # where a request would run now (running, resume, free, drain, blocked) and why
 berth queue             # waiters in grant order; bump/prio/drop are the operator's, never an agent's own call
+berth schedule          # what holds the card, the queue, and every booking for the next 14 days
 berth events -f         # live: grants, drains, refusals, stowaways
 ```
 
@@ -52,6 +53,7 @@ do not assume any engine is protected.
 | Train or fine-tune a model (nothing automated may interrupt it) | `berth train --as NAME [--gpu gpu0,gpu1] -- CMD`: the whole card, no wait deadline, and every other request on its cards is refused until it exits. Another `berth train` waits in line |
 | Run an app that must not be drained but may share the card (Blender) | `berth run --as NAME --pinned -- CMD` |
 | Give an engine a minimum turn before a request can drain it | `berth run --as NAME --min-turn 5m -- CMD`, or `min_turn = "5m"` in its engine entry (a hold still wins; `berth status` shows the turn left in the TURN column) |
+| Plan your own turn on the card (a nightly job, a long run) | `POST /v1/berth/schedule` on the gateway with `{"who":"ME","engine":"NAME","start":"23:00","for":"5h"}`, or `berth schedule book --who ME --engine NAME --at 23:00 --for 5h`. Read `berth schedule` first and pick free hours; a clash is a 409 naming the booking it hits. Book only your own runs: downtime and priority changes are the operator's |
 | Free the card for the user (game, call) | `berth hold [--for 2h] [--reason game] [--gpu gpu1]` (ends on Ctrl-C; default the first card) |
 | Call a model and let Berth start its engine | the gateway: `http://127.0.0.1:9799/v1`, bearer key from `berth key` |
 | Wrap every llama-swap model at once | `berth wire llama-swap --config CFG` (plan), `--write` (apply, keeps a backup), `--write --update` (rewrite wire's flags on lines it wrote, keeping flags added by hand), `--wait 10m` (every model waits that long for the card) |

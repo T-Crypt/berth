@@ -8,6 +8,19 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Added
 
+- A schedule for each card, up to 14 days ahead. `berth schedule` shows what holds each card, the waiters in grant
+  order and every booking. `berth schedule book` books an engine's run (it goes first, runs at the booking's
+  priority, and keeps the card against everything but a hold), a priority change for set hours, or downtime (no
+  new work, holders drain at the start). `move` and `cancel` change a booking, and `--days` and `--earliest`
+  repeat one or find free hours. Hours nobody booked run by priority, then arrival, as before. berthd keeps the
+  bookings in `schedule.json`.
+- The gateway's `GET`, `POST`, `PATCH` and `DELETE /v1/berth/schedule` let agents and devices read the scheduler
+  and book, move or cancel their own runs. Downtime and priority changes stay the operator's.
+- The harbor's SCHEDULE tab: what runs and waits now, a 7-day board of 24-hour tracks with every booking to the
+  minute, each engine's window and the live holder, and a list of bookings. A paired device books by clicking an
+  empty hour and moves or cancels a booking by clicking it. Each booking form says what the booking will do before
+  you save it.
+
 - `berth train --as NAME [--gpu CARDS] -- CMD` runs a training or fine-tune that nothing automated can interrupt.
   It takes the whole of each card it names, waits for them with no deadline, and keeps them until the command
   exits. While it holds a card or waits for it, berthd refuses every other request on that card at once: gateway

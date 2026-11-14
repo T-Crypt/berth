@@ -24,6 +24,7 @@ import (
 	"github.com/T-Crypt/berth/internal/node"
 	"github.com/T-Crypt/berth/internal/pair"
 	"github.com/T-Crypt/berth/internal/proto"
+	"github.com/T-Crypt/berth/internal/schedule"
 )
 
 // Listen opens the socket, refusing if another berthd already answers on it
@@ -120,6 +121,9 @@ type Extras struct {
 	Finished func(engine string)
 	// Windows are the configured engines' hours, by engine name.
 	Windows map[string]proto.Window
+	// Schedule is the cards' booking file; nil turns OpBook and its
+	// siblings off.
+	Schedule *schedule.Store
 }
 
 // Serve answers clients on ln.
@@ -171,6 +175,9 @@ func handle(ctx context.Context, c net.Conn, n *node.Node, x Extras, log *slog.L
 		st.Engines, st.Host, st.Insights = x.Engines(), x.Host(), x.Insights()
 		st.Alerts = x.Alerts()
 		st.Schedules = schedules(x.Windows, &st, time.Now())
+		if x.Schedule != nil {
+			st.Bookings = x.Schedule.List(time.Now())
+		}
 		st.Counters.SendTimeouts = sendTimeouts.Load()
 		st.Counters.DroppedConsumers = droppedConsumers.Load()
 		reply(conn, log, proto.Msg{Op: proto.OpStatus, Status: &st})
@@ -195,6 +202,8 @@ func handle(ctx context.Context, c net.Conn, n *node.Node, x Extras, log *slog.L
 		batch(conn, log, first, n)
 	case proto.OpQueue:
 		queue(conn, log, first, n)
+	case proto.OpBook, proto.OpUnbook, proto.OpRebook:
+		bookings(conn, log, first, n, x.Schedule)
 	case proto.OpYield:
 		yield(conn, log, first, n)
 	case proto.OpPairCode, proto.OpPairRedeem, proto.OpPairCheck, proto.OpPairList, proto.OpPairRevoke:

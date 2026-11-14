@@ -278,6 +278,12 @@ func daemon(t *testing.T) (string, *broker.Broker) {
 // daemonWith is daemon with cfg's fields on top of the test defaults.
 func daemonWith(t *testing.T, cfg broker.Config) (string, *broker.Broker) {
 	t.Helper()
+	return daemonServing(t, cfg, server.Extras{})
+}
+
+// daemonServing is daemonWith serving x as well (a schedule, say).
+func daemonServing(t *testing.T, cfg broker.Config, x server.Extras) (string, *broker.Broker) {
+	t.Helper()
 	sock := filepath.Join(t.TempDir(), "berth.sock")
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	cfg.Poll, cfg.DefaultWait, cfg.Log = 20*time.Millisecond, 10*time.Second, log
@@ -289,7 +295,7 @@ func daemonWith(t *testing.T, cfg broker.Config) (string, *broker.Broker) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	go b.Run(ctx)
-	go func() { _ = server.Serve(ctx, ln, node.One(b), server.Extras{}, log) }()
+	go func() { _ = server.Serve(ctx, ln, node.One(b), x, log) }()
 	// Cleanups run last first, so this runs before the cancel above. An
 	// engine a test's gateway started may still be up; stopping the daemon
 	// under it makes its berth run write an unprotected-run record beside

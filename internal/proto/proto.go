@@ -129,15 +129,32 @@ const (
 	OpPairCheck  = "pair_check"
 	OpPairList   = "pair_list"
 	OpPairRevoke = "pair_revoke"
+
+	// The card's schedule; berthd owns the file. OpBook puts Booking on
+	// the schedule, Days times on consecutive days (0 or 1 = once), and
+	// with Earliest moves it to the first free hours at or after its Start
+	// with the same length; it answers the same op with the Bookings made.
+	// OpUnbook takes Booking.ID off; OpRebook replaces the booking with
+	// Booking.ID by Booking. Both answer the same op with the Bookings
+	// changed. Any refusal is OpRefused with the reason.
+	OpBook   = "book"
+	OpUnbook = "unbook"
+	OpRebook = "rebook"
 )
 
 // Msg is every message in both directions; unused fields are omitted.
 type Msg struct {
-	Op       string `json:"op"`
-	Engine   string `json:"engine,omitempty"`
-	Group    string `json:"group,omitempty"` // the engine family the lease counts for in juggles and usage
-	Priority string `json:"priority,omitempty"`
-	Needs    uint64 `json:"needs,omitempty"` // bytes; 0 = the whole card
+	Op string `json:"op"`
+	// Booking, Bookings, Days and Earliest belong to OpBook, OpUnbook and
+	// OpRebook.
+	Booking  *Booking  `json:"booking,omitempty"`
+	Bookings []Booking `json:"bookings,omitempty"`
+	Days     int       `json:"days,omitempty"`
+	Earliest bool      `json:"earliest,omitempty"`
+	Engine   string    `json:"engine,omitempty"`
+	Group    string    `json:"group,omitempty"` // the engine family the lease counts for in juggles and usage
+	Priority string    `json:"priority,omitempty"`
+	Needs    uint64    `json:"needs,omitempty"` // bytes; 0 = the whole card
 	// NeedsEach is the size in bytes on each card Card names, in that
 	// order, when the cards differ. Needs is then the largest, so a berthd
 	// that predates NeedsEach reserves too much on a small card, never too
@@ -288,8 +305,10 @@ const (
 	EvStuck          = "lease.stuck"
 	EvRefused        = "lease.refused"
 	EvReattached     = "lease.reattached"
-	EvOrphaned       = "lease.orphaned"       // the attached process is gone and the broker released the lease itself
-	EvQueueOverride  = "lease.queue_override" // the operator bumped, re-ranked or dropped a waiter (berth queue)
+	EvOrphaned       = "lease.orphaned"         // the attached process is gone and the broker released the lease itself
+	EvQueueOverride  = "lease.queue_override"   // the operator bumped, re-ranked or dropped a waiter (berth queue)
+	EvBooked         = "schedule.booked"        // a booking went on, came off or changed on the card's schedule
+	EvBookingPrio    = "lease.booking_priority" // a booking moved a lease to another priority class, or its end moved it back
 	EvSquatter       = "squatter.appeared"
 	EvSquatterGone   = "squatter.gone"
 	EvProbeFailed    = "probe.failed"
@@ -389,6 +408,8 @@ type Status struct {
 	// configured window, and a lease's own (berth run --window) in place of
 	// its engine's, whether or not anything runs now.
 	Schedules []Schedule `json:"schedules,omitempty"`
+	// Bookings are every card's schedule that has not ended, by start.
+	Bookings []Booking `json:"bookings,omitempty"`
 	// ParkedBytes is the RAM the parked engines hold: each one's Berth
 	// scope's anon plus shmem, or its VRAM footprint where Berth reads no
 	// scope. A reading, never a reservation.
@@ -622,6 +643,9 @@ type Lease struct {
 	// Window is the hours the broker holds the lease to, "23:00-07:00";
 	// "" = none.
 	Window string `json:"window,omitempty"`
+	// Booking is the ID of the booking that sets Priority now; "" = the
+	// lease's own class.
+	Booking string `json:"booking,omitempty"`
 }
 
 // Holder names the lease for people: its engine, or "group (engine)" for a
