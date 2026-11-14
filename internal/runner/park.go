@@ -62,6 +62,26 @@ type leaseLine struct {
 	// a drain treats the job as at its boundary (#299). A deadline and not a
 	// flag, so a node that dies mid-yield cannot leave it on.
 	yieldUntil time.Time
+	// turn is when the lease last got the card, at its grant or a resume. A
+	// re-attach tells the new daemon how long ago that was.
+	turn time.Time
+}
+
+// startTurn records that the lease got the card now.
+func (l *leaseLine) startTurn() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.turn = time.Now()
+}
+
+// held is how long the lease has had the card in this turn, 0 before any.
+func (l *leaseLine) held() time.Duration {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.turn.IsZero() {
+		return 0
+	}
+	return time.Since(l.turn)
 }
 
 // setYield starts a yield that lasts d, or ends it when d is not positive.

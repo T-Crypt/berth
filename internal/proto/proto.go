@@ -192,6 +192,10 @@ type Msg struct {
 	// younger than it after the grant, no waiter drains it but a hold.
 	// OpAcquire and OpReattach; 0 = off.
 	MinTurn float64 `json:"min_turn,omitempty"`
+	// Held is how long, in seconds, an OpReattach's engine had held the card
+	// since its last grant or resume, so the new daemon goes on with that
+	// turn instead of starting a fresh one.
+	Held float64 `json:"held,omitempty"`
 	// Max and End are an OpBatch's cap, in seconds, and its end request;
 	// its idle grace travels in Grace.
 	Max float64 `json:"max,omitempty"`

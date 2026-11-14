@@ -291,6 +291,9 @@ func Run(o Options) int {
 	// line is the lease's live conn and park state; the drain, the resume
 	// and the container resolver ride it across reattach loops.
 	line := newLine(conn)
+	if conn != nil {
+		line.startTurn()
+	}
 	go forwardSignals(cmd, done, func() bool { return o.Checkpoint && line.isParked() }, line.askStop)
 
 	// A container engine resolves its containers to their full IDs and names
@@ -382,6 +385,7 @@ func Run(o Options) int {
 					case m.Op == proto.OpReturn:
 						go line.returnStep(o, m.LendID, say)
 					case m.Op == proto.OpGranted && m.Resume:
+						line.startTurn()
 						go line.resume(o, cmd, done, say)
 					case m.Op == proto.OpYield:
 						line.setYield(time.Duration(m.Yield * float64(time.Second)))
@@ -525,7 +529,7 @@ func reattach(o Options, cmd *exec.Cmd, done <-chan struct{}, cid *containerRef,
 func reattachMsg(o Options, pid int, start uint64, cid *containerRef, parked bool, line *leaseLine) proto.Msg {
 	m := proto.Msg{Op: proto.OpReattach, Card: o.Card, Engine: o.Engine, Group: o.Group, Priority: o.Priority,
 		Needs: largest(o.Needs), NeedsEach: each(o.Needs), LearnSize: o.LearnSize, Pinned: o.Pinned, Training: o.Training, Lend: o.Lend != nil, WholeMachine: o.WholeMachine,
-		MinTurn: o.MinTurn.Seconds(), ParkTTL: o.ParkTTL.Seconds(), Window: o.Window.String(),
+		MinTurn: o.MinTurn.Seconds(), Held: line.held().Seconds(), ParkTTL: o.ParkTTL.Seconds(), Window: o.Window.String(),
 		PID: pid, PIDStart: start, Containers: cid.list(), Parked: parked}
 	if t, ok := line.openLend(); ok {
 		m.LendID, m.Lent = t.ID, t.MiB<<20

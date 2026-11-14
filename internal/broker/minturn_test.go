@@ -221,3 +221,21 @@ func holderDrains(b *Broker, engine string) <-chan string {
 	}
 	return nil
 }
+
+// A re-attach after a daemon restart keeps the turn the engine was in: a
+// deploy that restarts berthd must not hand every holder a fresh minimum turn.
+func TestReattachKeepsTheTurnItWasIn(t *testing.T) {
+	b, _, _ := setup(t, procs.Fake{Starts: map[int]uint64{100: 7}})
+	clk := newMinClock(turnBase)
+	b.nowFn = clk.now
+	if _, err := b.Reattach(Request{Engine: "comfyui", Priority: Interactive, MinTurn: 5 * time.Minute, Held: 4 * time.Minute}, 100, 7); err != nil {
+		t.Fatal(err)
+	}
+	clk.set(turnBase.Add(30 * time.Second))
+
+	w := acquireW(b, Request{Engine: "strata", Priority: Interactive})
+	pending(t, w.ch)
+	if got, want := firstReason(t, w), "next in line: comfyui has its minimum turn, 30s left"; got != want {
+		t.Errorf("reason = %q, want %q", got, want)
+	}
+}

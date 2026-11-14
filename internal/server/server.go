@@ -288,6 +288,7 @@ func hold(ctx context.Context, conn *proto.Conn, req proto.Msg, n *node.Node, fi
 		LendID:       req.LendID,
 		LentBytes:    req.Lent,
 		MinTurn:      time.Duration(req.MinTurn * float64(time.Second)),
+		Held:         time.Duration(req.Held * float64(time.Second)),
 		ParkTTL:      time.Duration(req.ParkTTL * float64(time.Second)),
 		Window:       win,
 		Containers:   req.ContainerIDs(),
