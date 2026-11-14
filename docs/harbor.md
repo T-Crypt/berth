@@ -65,7 +65,11 @@ for a phone.
   first-seen time; optional desktop notification and webhook. Report-only by design.
 - **Contested grants:** a grant made while stowaways hold memory is flagged, not hidden.
 - **Event log:** every request, wait, drain, release, free, stuck lease, stowaway and
-  probe change, with gap-free sequence numbers; `berth events -f` follows it live.
+  probe change, with gap-free sequence numbers; `berth events -f` follows it live. berthd keeps the
+  stream in `~/.local/state/berth/events.jsonl` (`--events`), so the numbers and the last 1000 events carry
+  on across a restart. `berth why ID` tells one lease's part of it in plain words: why it waited, the
+  grant, each drain and who it was for, and the restarts it lived through. `berth why ENGINE` reads that
+  engine's newest lease.
 - **The collisions board:** collisions avoided, VRAM handed off, drains, stuck releases
   caught, stowaways caught, contested grants, refusals. Each count links back to a
   recorded event. berthd keeps the board in `~/.local/state/berth/counters.json`

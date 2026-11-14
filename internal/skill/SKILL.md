@@ -23,6 +23,7 @@ berth fit MODEL --explain   # where a request would run now (running, resume, fr
 berth queue             # waiters in grant order; bump/prio/drop are the operator's, never an agent's own call
 berth schedule          # what holds the card, the queue, and every booking for the next 14 days
 berth events -f         # live: grants, drains, refusals, stowaways
+berth why ID|ENGINE     # one lease's story: why it waited, was drained or refused, across restarts
 ```
 
 If `berth status` says berthd is unreachable, Berth is not coordinating this card: say so and
@@ -150,7 +151,8 @@ builtin = true            # false turns the built-in pack off
 1. `berth status`: is something else leased, waiting, or a stowaway?
 2. A refusal reason names who holds the card and why the request could not fit
    ("needs 20480 MiB; at most 14336 MiB can be freed; claims hold 10240 MiB").
-3. `berth events --format json` after the failure shows the drain and grant sequence.
+3. `berth why ENGINE` after the failure tells that engine's last lease, wait by wait; `berth events --format json`
+   shows the whole drain and grant sequence.
 4. Fix the cause (a smaller quant, `--needs-mib`, a priority, the user's hold ending), never by
    killing the holder.
 5. A lease stuck after its engine exited: `berth reclaim` lists what the lease recorded. Only with
