@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -110,20 +109,15 @@ func TestYieldEndWaitsForTheCardBack(t *testing.T) {
 		t.Fatal("the comfyui adapter is missing")
 	}
 	engineLog := &syncBuf{}
-	go runner.Run(runner.Options{Socket: sock, Engine: "comfyui", Priority: "interactive", Needs: []uint64{8 << 30},
+	var pid int
+	runUntilEnd(t, &pid, runner.Options{Socket: sock, Engine: "comfyui", Priority: "interactive", Needs: []uint64{8 << 30},
 		DrainComfyUI: comfy.URL, Park: &adapter, ParkBase: comfy.URL, ParkProbe: "/system_stats",
 		Retry: 10 * time.Millisecond, Grace: 200 * time.Millisecond, Argv: []string{"sleep", "30"}, Stderr: engineLog})
-	var pid int
 	until(t, "the run to attach", func() bool {
 		if st := b.Status(); len(st.Leases) > 0 && st.Leases[0].PID != 0 {
 			pid = st.Leases[0].PID
 		}
 		return pid != 0
-	})
-	t.Cleanup(func() {
-		if p, err := os.FindProcess(pid); err == nil {
-			_ = p.Kill()
-		}
 	})
 	card.set(gpu.Proc{PID: pid, Name: "sleep", Used: 8 << 30})
 	until(t, "the broker to measure ComfyUI", func() bool {
