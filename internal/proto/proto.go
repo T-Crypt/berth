@@ -343,6 +343,9 @@ const (
 	// host driver. Each fires once per transition.
 	EvCardPassthrough = "card.passthrough"
 	EvCardReturned    = "card.returned"
+	// EvNodeStarted: berthd started. Its detail is the version. The events
+	// before it are the last daemon's, read back from the event file.
+	EvNodeStarted = "node.started"
 )
 
 // Card states, the values Status.Passthrough.State takes. Normal is the

@@ -8,6 +8,15 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Added
 
+- `berth why ID` tells one lease's story in plain words: when it asked for the card, each reason it waited, the
+  grant, each drain and who it was for, the release, and the berthd restarts it lived through. `berth why ENGINE`
+  reads that engine's newest lease. A lease berthd still holds ends with where it stands now, and one a restart
+  cut off names the lease its engine re-attached as.
+- berthd keeps its event stream in `events.jsonl` in the state directory (`--events`, `""` for memory only). A
+  restart reads the last 1000 events back, goes on numbering after them, and goes on with the lease numbers, so
+  `berth events --since N` and `berth why` read across restarts and deploys. The file moves to `events.jsonl.1`
+  at 8 MiB. Each start is a `node.started` event that names the version.
+
 - A schedule for each card, up to 14 days ahead. `berth schedule` shows what holds each card, the waiters in grant
   order and every booking. `berth schedule book` books an engine's run (it goes first, runs at the booking's
   priority, and keeps the card against everything but a hold), a priority change for set hours, or downtime (no

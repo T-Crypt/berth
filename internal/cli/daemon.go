@@ -21,6 +21,7 @@ import (
 	"github.com/T-Crypt/berth/internal/claims"
 	"github.com/T-Crypt/berth/internal/config"
 	"github.com/T-Crypt/berth/internal/engines"
+	"github.com/T-Crypt/berth/internal/eventlog"
 	"github.com/T-Crypt/berth/internal/gpu"
 	"github.com/T-Crypt/berth/internal/history"
 	"github.com/T-Crypt/berth/internal/host"
@@ -54,6 +55,7 @@ func runDaemon(c *Context) int {
 	scheduleFile := fs.String("schedule", defaultStateFile("schedule.json"), "the cards' bookings (berth schedule): runs, priority changes, downtime; \"\" = no schedule")
 	usageFile := fs.String("usage", defaultStateFile("usage.json"), "card-hours per engine, the default juggle ranking; \"\" = memory only")
 	footprintFile := fs.String("footprint", defaultStateFile("footprint.json"), "VRAM measured per engine across restarts, the estimate behind EST. VRAM; \"\" = memory only")
+	eventsFile := fs.String("events", defaultStateFile("events.jsonl"), "the event stream across restarts, what berth events and berth why read; \"\" = memory only")
 	if code, done := c.Parse(fs); done {
 		return code
 	}
@@ -127,6 +129,16 @@ func runDaemon(c *Context) int {
 		allowList = splitList(*allow)
 	}
 	events, ids, seq, ledger := node.Shared()
+	if *eventsFile != "" {
+		if kept, err := eventlog.Open(*eventsFile); err != nil {
+			log.Error("event file; events are kept in memory only", "path", *eventsFile, "err", err)
+		} else {
+			events = kept
+			defer kept.Close()
+			ids.Store(kept.LastLease())
+		}
+	}
+	events.Emit(proto.Event{At: time.Now(), Kind: proto.EvNodeStarted, Detail: "berth " + c.Version})
 	procTable := procs.Shared(procs.List, *poll/2)
 	var cards []*node.Card
 	var snaps []gpu.Snapshot
