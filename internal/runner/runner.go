@@ -386,7 +386,9 @@ func Run(o Options) int {
 						go line.returnStep(o, m.LendID, say)
 					case m.Op == proto.OpGranted && m.Resume:
 						line.startTurn()
-						go line.resume(o, cmd, done, say)
+						if waking, ok := line.beginWake(); ok {
+							go line.resume(o, cmd, done, waking, say)
+						}
 					case m.Op == proto.OpYield:
 						line.setYield(time.Duration(m.Yield * float64(time.Second)))
 						if m.Yield > 0 {
@@ -867,6 +869,7 @@ func drainWait(o Options) time.Duration {
 
 func drain(o Options, cmd *exec.Cmd, line *leaseLine, done <-chan struct{}, reason string, say func(string, ...any)) {
 	say("draining %s: %s", o.Engine, reason)
+	line.awaitWake(o.Engine, done, say)
 	if o.DrainComfyUI != "" {
 		boundary := o
 		boundary.ExitComfyUIIdle = false
