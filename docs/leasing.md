@@ -92,7 +92,7 @@
     minimum turn, 3m12s left"), and `berth status` shows the time a lease has left in the
     TURN column. When the turn ends the normal rules apply: a drain still starts at the slot
     or job boundary, and a minimum turn never cuts a request off. After a daemon restart, a
-    re-attach starts a fresh turn.
+    re-attach goes on with the turn it was in.
 
   - **A batch.** A minimum turn is a fixed time; a batch lasts as long as the work. Before an
     agent or a script queues many jobs on one engine, `berth batch comfyui` (or

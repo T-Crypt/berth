@@ -91,6 +91,9 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Fixed
 
+- A berthd restart no longer gives every running engine a fresh minimum turn. `berth run` now tells the new berthd
+  how long its engine had held the card, and the re-attached lease goes on with the turn it was in. Before, each
+  deploy reset the TURN column to the full `min_turn` and kept waiters out for that long again.
 - `berth wire llama-swap` now finds a `berth run` line with a flag written before `--as`, such as
   `berth run --min-turn 5m --as qwen ...`. Before, it took the model for unwired, and `--write` added a second
   `berth run` in front of the first.

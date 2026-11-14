@@ -248,9 +248,12 @@ type Request struct {
 	// MinTurn is a minimum turn: while the lease is younger than it after
 	// the grant, no waiter drains it, whatever the waiter's priority,
 	// except a hold (a game, a call, the operator's own berth hold). When
-	// the turn ends the normal rules apply. A re-attach starts a fresh
-	// turn. 0 = off.
+	// the turn ends the normal rules apply. A re-attach goes on with the
+	// turn it was in (Held). 0 = off.
 	MinTurn time.Duration
+	// Held is how long a re-attach's engine had held the card since its
+	// last grant or resume, under the daemon that went away.
+	Held time.Duration
 	// ParkTTL is how long the lease may stay parked before the broker
 	// stops its engine, in place of the node's ParkTTL. 0 = the node's.
 	ParkTTL time.Duration
@@ -1842,7 +1845,7 @@ func (b *Broker) reattach(id string, r Request, pid int, start uint64) (_ *Lease
 	l.state, l.reattach = active, true
 	l.pid, l.pidStart = pid, start
 	l.scope = scope
-	l.granted = now
+	l.granted = now.Add(-max(r.Held, 0))
 	l.grantedN = b.order()
 	l.releaseBaseline = b.snap.Baseline()
 	l.releaseGTTBaseline = b.snap.GTTBaseline()

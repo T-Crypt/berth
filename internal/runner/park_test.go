@@ -667,3 +667,32 @@ func TestParkedEngineReattachesParked(t *testing.T) {
 		t.Fatalf("the parked engine was drained after the restart; log:\n%s", log.String())
 	}
 }
+
+// A run whose berthd restarts re-attaches inside the turn it was in: the
+// new daemon counts the minimum turn from the old grant, so a deploy does
+// not give every holder a fresh turn.
+func TestReattachGoesOnWithTheTurn(t *testing.T) {
+	card := &parkCard{total: 24 << 30}
+	sock := filepath.Join(t.TempDir(), "berth.sock")
+	b, stop := parkDaemonAt(t, sock, card, 16<<30)
+	log := &syncBuf{}
+	exited := make(chan int, 1)
+	go func() {
+		exited <- Run(Options{Socket: sock, Engine: "vllm", Priority: "interactive", Needs: []uint64{8 << 30},
+			MinTurn: time.Hour, Grace: 200 * time.Millisecond, Argv: []string{"sleep", "30"}, Stderr: log})
+	}()
+	pid := attachAndMeasure(t, b, card)
+	stopAtEnd(t, pid, exited)
+
+	time.Sleep(2 * time.Second)
+	stop()
+	b2, _ := parkDaemonAt(t, sock, card, 16<<30)
+	waitFor(t, "the re-attach", func() bool { return strings.Contains(log.String(), "re-attached vllm") })
+	st := b2.Status().Leases
+	if len(st) != 1 {
+		t.Fatalf("leases after the restart = %+v", st)
+	}
+	if left := time.Duration(st[0].TurnS * float64(time.Second)); left > time.Hour-2*time.Second {
+		t.Fatalf("turn left after the restart = %s, want the 2s already held taken off the hour", left)
+	}
+}
