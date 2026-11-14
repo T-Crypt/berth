@@ -65,6 +65,25 @@ type leaseLine struct {
 	// turn is when the lease last got the card, at its grant or a resume. A
 	// re-attach tells the new daemon how long ago that was.
 	turn time.Time
+	// waking is open while a resume loads the engine back and closes when
+	// it ends; nil when none runs. A drain waits on it (#275).
+	waking chan struct{}
+}
+
+// awaitWake holds a drain until a resume in flight has ended, so the park
+// or stop never reaches an engine in the middle of its load.
+func (l *leaseLine) awaitWake(engine string, done <-chan struct{}, say func(string, ...any)) {
+	l.mu.Lock()
+	w := l.waking
+	l.mu.Unlock()
+	if w == nil {
+		return
+	}
+	say("waiting for %s to finish its resume before the drain", engine)
+	select {
+	case <-w:
+	case <-done:
+	}
 }
 
 // startTurn records that the lease got the card now.
@@ -273,14 +292,26 @@ func (l *leaseLine) park(o Options, say func(string, ...any)) bool {
 // resume drives the wake-up the runner hears as a grant with Resume set:
 // the adapter's call, the readiness probe, the engine serving again. A
 // wake that never answers stops the engine, which hands the card back:
-// a wedged engine must not keep the lease.
-func (l *leaseLine) resume(o Options, cmd *exec.Cmd, done <-chan struct{}, say func(string, ...any)) {
-	if !l.isParked() {
-		return
-	}
+// a wedged engine must not keep the lease. beginWake starts it, on the
+// goroutine that reads berthd's messages, so a drain right behind the
+// grant already sees the wake; resume then runs it and ends it.
+func (l *leaseLine) beginWake() (chan struct{}, bool) {
 	l.mu.Lock()
-	l.parked = false
-	l.mu.Unlock()
+	defer l.mu.Unlock()
+	if !l.parked {
+		return nil, false
+	}
+	l.parked, l.waking = false, make(chan struct{})
+	return l.waking, true
+}
+
+func (l *leaseLine) resume(o Options, cmd *exec.Cmd, done <-chan struct{}, waking chan struct{}, say func(string, ...any)) {
+	defer func() {
+		l.mu.Lock()
+		l.waking = nil
+		l.mu.Unlock()
+		close(waking)
+	}()
 	start := time.Now()
 	adapter, hasWake := l.adapterFor(o)
 	if hasWake && adapter.Resume != nil {

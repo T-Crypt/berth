@@ -147,6 +147,9 @@ type parkStub struct {
 	resumes   int
 	wakeDelay time.Duration
 	failSleep bool
+	// waking is set while a /wake_up call runs; a /sleep that lands then
+	// answers 409, as an engine still loading does (#275).
+	waking bool
 }
 
 func (s *parkStub) count(what string) int {
@@ -171,7 +174,12 @@ func (s *parkStub) handler() http.Handler {
 		s.mu.Lock()
 		s.sleeps++
 		fail := s.failSleep
+		busy := s.waking
 		s.mu.Unlock()
+		if busy {
+			http.Error(w, "a load is running", http.StatusConflict)
+			return
+		}
 		if fail {
 			http.Error(w, "sleep mode is off", http.StatusInternalServerError)
 			return
@@ -182,8 +190,12 @@ func (s *parkStub) handler() http.Handler {
 		s.mu.Lock()
 		delay := s.wakeDelay
 		s.wakes++
+		s.waking = true
 		s.mu.Unlock()
 		time.Sleep(delay)
+		s.mu.Lock()
+		s.waking = false
+		s.mu.Unlock()
 		fmt.Fprint(w, `{}`)
 	})
 	mux.HandleFunc("/berth/park", func(w http.ResponseWriter, r *http.Request) {
@@ -694,5 +706,46 @@ func TestReattachGoesOnWithTheTurn(t *testing.T) {
 	}
 	if left := time.Duration(st[0].TurnS * float64(time.Second)); left > time.Hour-2*time.Second {
 		t.Fatalf("turn left after the restart = %s, want the 2s already held taken off the hour", left)
+	}
+}
+
+// #275: a drain that lands while a resume is still loading the engine waits
+// for the load, then parks. Before, the park call reached the engine
+// mid-load, the engine answered 409, and the runner stopped it.
+func TestDrainWaitsForAResumeInFlight(t *testing.T) {
+	card := &parkCard{total: 24 << 30}
+	sock, b := parkDaemon(t, card, 16<<30)
+	stub := &parkStub{wakeDelay: 1500 * time.Millisecond}
+	srv := httptest.NewServer(stub.handler())
+	defer srv.Close()
+	exited, log := runPark(t, sock, "vllm", srv.URL, false)
+	pid := attachAndMeasure(t, b, card)
+	stopAtEnd(t, pid, exited)
+
+	holder := acquireIn(b, broker.Request{Engine: "game", Priority: broker.Foreground})
+	waitFor(t, "the park call", func() bool { return stub.count("sleep") == 1 })
+	card.set(gpu.Proc{PID: pid, Name: "sleep", Used: 512 << 20})
+	waitFor(t, "parked", func() bool { return b.Status().Leases[0].State == "parked" })
+	(<-holder).Release()
+	if err := b.Resume("vllm", false); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the wake call", func() bool { return stub.count("wake") == 1 })
+	card.set(gpu.Proc{PID: pid, Name: "sleep", Used: 8 << 30})
+
+	second := acquireIn(b, broker.Request{Engine: "game2", Priority: broker.Foreground})
+	waitFor(t, "the second park call", func() bool { return stub.count("sleep") == 2 })
+	card.set(gpu.Proc{PID: pid, Name: "sleep", Used: 512 << 20})
+	if hold := <-second; hold != nil {
+		hold.Release()
+	}
+	waitFor(t, "parked again", func() bool { return b.Status().Leases[0].State == "parked" })
+	select {
+	case code := <-exited:
+		t.Fatalf("the engine was stopped by a drain during its resume (exit %d); log:\n%s", code, log.String())
+	default:
+	}
+	if out := log.String(); strings.Contains(out, "409") {
+		t.Fatalf("the park reached the engine mid-load; log:\n%s", out)
 	}
 }

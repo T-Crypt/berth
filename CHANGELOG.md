@@ -100,6 +100,10 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Fixed
 
+- A drain that arrives while a parked engine is still loading back no longer stops it. `berth run` now waits for
+  the resume to finish, then parks or drains as usual. Before, the park call reached the engine in the middle of
+  its load, the engine answered 409, and the run fell back to stopping it. That cold-started the LLM on its next
+  request and could leave it marked unresponsive ([#275](https://github.com/T-Crypt/berth/issues/275)).
 - The swap bench (`contrib/bench/swap`) no longer reports `OUTPUT IDENTICAL yes` for thinking models that ran out
   of tokens before answering. It now compares the reasoning a model streams as well as its answer, prints
   `n/a (empty)` when every run came back empty, asks for 256 tokens by default (`-max-tokens`), and can ask the
