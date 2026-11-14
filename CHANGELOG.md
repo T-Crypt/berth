@@ -100,6 +100,8 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Fixed
 
+- A subcommand's help and error hints name its group. `berth engine show --help` printed `berth show`, which is no
+  command, and a bad flag said to run `berth show -h`.
 - A berthd restart no longer gives every running engine a fresh minimum turn. `berth run` now tells the new berthd
   how long its engine had held the card, and the re-attached lease goes on with the turn it was in. Before, each
   deploy reset the TURN column to the full `min_turn` and kept waiters out for that long again.
