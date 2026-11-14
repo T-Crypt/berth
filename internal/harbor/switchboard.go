@@ -106,6 +106,39 @@ func (h *Harbor) boardQueue(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// boardSchedule is POST /v1/board/schedule: a paired device books, moves or
+// cancels any booking, downtime and priority changes included. Like the
+// queue, it goes to berthd's socket: agents holding the gateway's key book
+// only their own runs there.
+func (h *Harbor) boardSchedule(w http.ResponseWriter, r *http.Request) {
+	if !h.writeOK(w, r) {
+		return
+	}
+	var req struct {
+		Action   string         `json:"action"`
+		Booking  *proto.Booking `json:"booking"`
+		Days     int            `json:"days,omitempty"`
+		Earliest bool           `json:"earliest,omitempty"`
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<16))
+	op := map[string]string{"book": proto.OpBook, "move": proto.OpRebook, "cancel": proto.OpUnbook}
+	if err != nil || json.Unmarshal(body, &req) != nil || op[req.Action] == "" || req.Booking == nil ||
+		(req.Action != "book") != (req.Booking.ID != "") {
+		apiError(w, http.StatusBadRequest, "bad_body", `the body must be JSON like {"action":"book","booking":{...}} or {"action":"move|cancel","booking":{"id":"b1",...}}`)
+		return
+	}
+	m, err := h.ask(proto.Msg{Op: op[req.Action], Booking: req.Booking, Days: req.Days, Earliest: req.Earliest})
+	switch {
+	case err != nil:
+		apiError(w, http.StatusServiceUnavailable, "berthd_down", "berthd is not answering; the schedule is unchanged")
+	case m.Op == proto.OpRefused:
+		apiError(w, http.StatusConflict, "refused", m.Reason)
+	default:
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string][]proto.Booking{"bookings": m.Bookings})
+	}
+}
+
 // toGateway sends one request to the gateway with the node's key and hands
 // its status and body back to the page.
 func (h *Harbor) toGateway(w http.ResponseWriter, r *http.Request, method, path string, body []byte) {

@@ -29,6 +29,7 @@ import (
 	"github.com/T-Crypt/berth/internal/procs"
 	"github.com/T-Crypt/berth/internal/proto"
 	"github.com/T-Crypt/berth/internal/runs"
+	"github.com/T-Crypt/berth/internal/schedule"
 	"github.com/T-Crypt/berth/internal/server"
 	"github.com/T-Crypt/berth/internal/suite"
 )
@@ -50,6 +51,7 @@ func runDaemon(c *Context) int {
 	cfgPath := fs.String("config", config.DefaultPath(), "berth.toml: engines to read, /metrics listener ($BERTH_CONFIG); missing = none")
 	countersFile := fs.String("counters", defaultStateFile("counters.json"), "keeps the collisions board across restarts; \"\" = start at zero every time")
 	devicesFile := fs.String("devices", defaultStateFile("harbor-devices.json"), "devices paired to act from the harbor (berth pair); \"\" = pairing off")
+	scheduleFile := fs.String("schedule", defaultStateFile("schedule.json"), "the cards' bookings (berth schedule): runs, priority changes, downtime; \"\" = no schedule")
 	usageFile := fs.String("usage", defaultStateFile("usage.json"), "card-hours per engine, the default juggle ranking; \"\" = memory only")
 	footprintFile := fs.String("footprint", defaultStateFile("footprint.json"), "VRAM measured per engine across restarts, the estimate behind EST. VRAM; \"\" = memory only")
 	if code, done := c.Parse(fs); done {
@@ -286,6 +288,14 @@ func runDaemon(c *Context) int {
 	}
 	if *devicesFile != "" {
 		x.Pair = &pair.Store{Path: *devicesFile}
+	}
+	if *scheduleFile != "" {
+		s, err := schedule.Open(*scheduleFile)
+		if err != nil {
+			return c.fail(Systemf("schedule: %v", err).WithHint("fix or move %s; berthd keeps the cards' bookings there", *scheduleFile))
+		}
+		x.Schedule = s
+		n.SetBookings(s.List(time.Now()))
 	}
 	if err := server.Serve(ctx, ln, n, x, log); err != nil {
 		return c.fail(Systemf("serve: %v", err))

@@ -234,6 +234,10 @@ func (g *Gateway) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/berth/batch", g.apiBatch)
 	mux.HandleFunc("POST /v1/berth/yield", g.apiYield)
 	mux.HandleFunc("POST /v1/berth/load", g.apiLoad)
+	mux.HandleFunc("GET /v1/berth/schedule", g.scheduleRead)
+	mux.HandleFunc("POST /v1/berth/schedule", g.scheduleBook)
+	mux.HandleFunc("PATCH /v1/berth/schedule/{id}", g.scheduleMove)
+	mux.HandleFunc("DELETE /v1/berth/schedule/{id}", g.scheduleCancel)
 	for _, p := range []string{"/v1/chat/completions", "/v1/completions", "/v1/embeddings"} {
 		mux.HandleFunc("POST "+p, g.forward)
 		mux.HandleFunc("POST /cards/{card}"+p, g.onCard(g.forward))

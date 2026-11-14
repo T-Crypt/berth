@@ -417,6 +417,44 @@ lease.queue_override event (berth events).`,
 		Run:     runQueue,
 	},
 	{
+		Name:    "schedule",
+		Summary: "the card's scheduler: what runs, what waits, what is booked; book, move or cancel",
+		Args:    "[book --who W --at T --for D [--engine E] [--kind run|priority|down] [--priority P] [--days N] [--earliest] [--note N] | move ID [--at T] [--for D] | cancel ID] [--socket P] [--format F]",
+		Help: `Without arguments, show the scheduler: the leases that hold a card, the
+waiters in the order berthd grants them, and every booking that has not
+ended. The harbor draws the same bookings on its 7-day board.
+
+A booking gives a card's hours to someone:
+
+  run       the engine's turn. Its waiter goes first, it runs at the
+            booking's priority (foreground when none is given), and while
+            it holds the card nothing but a hold drains it.
+  priority  the engine runs at another class for these hours, like batch
+            during a training. It claims no time on the card.
+  down      downtime. No new work starts and holders drain at the start; a
+            hold and a training stay.
+
+An hour nobody booked runs as always, by priority then arrival, and a booked
+engine that does not show up leaves the card to everyone else. Two runs or
+downtimes on one card may not overlap. --earliest moves a booking to the
+first free hours at or after --at, and --days books the same hours on
+consecutive days. --engine also takes a group, like llama-swap. A class set
+with berth queue prio wins over a booking.
+
+  berth schedule book --who pi-pocket --engine pi-train --at 23:00 --for 5h --days 7 --priority batch
+  berth schedule book --who operator --kind down --at "sun 04:00" --for 1h --note "driver update"
+  berth schedule book --who operator --kind priority --engine llama-swap --priority batch --at 13:00 --for 3h
+  berth schedule move b4 --at 01:00
+  berth schedule cancel b4
+
+Times are the node's clock. Agents use the same scheduler over the gateway:
+GET, POST and DELETE /v1/berth/schedule (docs/gateway.md). Each change is a
+schedule.booked event and each class a booking moves is a
+lease.booking_priority event (berth events).`,
+		Formats: []Format{FormatHuman, FormatJSON, FormatYAML},
+		Run:     runSchedule,
+	},
+	{
 		Name:    "reclaim",
 		Summary: "what a stuck lease left on the card; --yes stops it",
 		Args:    "[LEASE] [--yes] [--grace D] [--socket P] [--format F]",

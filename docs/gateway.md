@@ -309,6 +309,34 @@ on the node (`card`, such as `gpu1`), its base URL on this gateway (`base`, `/ca
 `berth cordon` closed it, and the holders on that card alone. Each engine names the cards its entry runs on
 (`cards`), so a board for several cards can put each engine under its card.
 
+## Book the card from an agent
+
+An agent, a timer or another device books its own run on the card's schedule (read
+[Book the card](leasing.md#book-the-card)) with the node's key:
+
+```sh
+K="Authorization: Bearer $(berth key)"
+curl -s http://127.0.0.1:9799/v1/berth/schedule -H "$K"
+curl -s http://127.0.0.1:9799/v1/berth/schedule -H "$K" \
+  -d '{"who":"pi-pocket","engine":"pocket-train","start":"23:00","for":"5h","priority":"batch","days":7}'
+curl -s -X PATCH  http://127.0.0.1:9799/v1/berth/schedule/b4 -H "$K" -d '{"start":"01:00"}'
+curl -s -X DELETE http://127.0.0.1:9799/v1/berth/schedule/b4 -H "$K"
+```
+
+- `GET` is the scheduler in one read: `now`, `running` (the leases that hold a card), `queued` (the waiters in
+  grant order) and `bookings` (every booking that has not ended, by start). A lease that a booking governs names it
+  in `booking`.
+- `POST` books a run and answers `201` with `bookings`, the bookings it made. `start` takes what
+  `berth schedule --at` takes, and `for` is a length such as `5h` or `90m`. `days`, `earliest`, `card`, `priority`
+  and `note` are optional. A clash or an invalid booking is a `409` with the reason, such as
+  `run Sat 23:30-Sun 00:30 clashes with b1 (run for pi-pocket, Sat 23:00-Sun 04:00)`.
+- `PATCH /v1/berth/schedule/ID` moves a run. It takes `start`, `for`, `priority` and `note`, keeps the rest and
+  keeps the ID. `DELETE` cancels a run. Both answer `200` with the booking.
+
+The gateway books, moves and cancels runs only. A priority change or downtime acts on everyone else's work, so it
+is the operator's: `berth schedule`, or a paired device in the harbor. `PATCH` or `DELETE` on one is a `403`. Any
+holder of the key can change any run; per-device ownership comes with device keys.
+
 ## One URL per card
 
 On a node with several cards, each card has its own base URL on the gateway: `/cards/CARD/v1`, where `CARD` is

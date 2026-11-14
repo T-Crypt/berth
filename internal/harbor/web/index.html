@@ -29,6 +29,7 @@
     <nav class="tabs" aria-label="sections">
       <button class="tab" id="tab-harbor" type="button" aria-current="page"><span class="si tab-si" aria-hidden="true"></span><span class="tab-label">CARD</span></button>
       <button class="tab" id="tab-switch" type="button"><span class="si tab-si" aria-hidden="true"></span><span class="tab-label">SWITCH</span></button>
+      <button class="tab" id="tab-schedule" type="button"><span class="si tab-si" aria-hidden="true"></span><span class="tab-label">SCHEDULE</span></button>
       <button class="tab" id="tab-engines" type="button"><span class="si tab-si" aria-hidden="true"></span><span class="tab-label">ENGINES <span class="tab-long">&amp; REQUESTS</span></span></button>
       <button class="tab" id="tab-about" type="button"><span class="si tab-si" aria-hidden="true"></span><span class="tab-label">ABOUT</span></button>
     </nav>
@@ -227,6 +228,36 @@
       </section>
     </section>
 
+    <section id="panel-schedule" class="panel-group" hidden aria-label="the card's schedule">
+      <nav class="subnav" id="subnav-schedule" aria-label="schedule sections"></nav>
+      <section class="panel" id="sec-sched-now" aria-label="what runs and waits now">
+        <div class="panel-head">
+          <h2 class="panel-title">NOW</h2>
+          <span class="panel-meta" id="sb-now-meta">not read yet</span>
+        </div>
+        <div class="sb-now" id="sb-now"></div>
+      </section>
+      <section class="panel" id="sec-sched-board" aria-label="seven days of bookings">
+        <div class="panel-head">
+          <h2 class="panel-title">7 DAYS</h2>
+          <span class="panel-meta sb-head-actions">
+            <span class="sb-legend" aria-hidden="true"><span class="sb-key sb-k-run"></span>run <span class="sb-key sb-k-priority"></span>priority <span class="sb-key sb-k-down"></span>down <span class="sb-key sb-k-window"></span>window <span class="sb-key sb-k-live"></span>live</span>
+            <button class="btn sw-btn" id="sb-book" type="button">BOOK</button>
+          </span>
+        </div>
+        <div class="sb-card-pick" id="sb-card-pick"></div>
+        <div class="sb-board" id="sb-board" role="grid" aria-label="bookings by day and hour"></div>
+        <div class="sb-hint" id="sb-hint"></div>
+      </section>
+      <section class="panel" id="sec-sched-list" aria-label="every booking">
+        <div class="panel-head">
+          <h2 class="panel-title">BOOKINGS</h2>
+          <span class="panel-meta">by start, node clock</span>
+        </div>
+        <div class="squatter-list" id="sb-list"></div>
+      </section>
+    </section>
+
     <section id="panel-engines" class="panel-group" hidden aria-label="engines and requests">
       <nav class="subnav" id="subnav-engines" aria-label="engines sections"></nav>
       <div class="engines-intro">Engines are what the engines report about themselves, not driver measurements. The ledger, leaderboard and request log are computed by the node from the requests it has seen.</div>
@@ -364,7 +395,7 @@
         <section class="about-sec" id="about-keys" aria-labelledby="about-keys-h">
           <h2 class="section-title" id="about-keys-h">KEYBOARD</h2>
           <dl class="about-dl about-keys">
-            <dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></dt><dd>card, engines, about</dd>
+            <dt><kbd>1</kbd> to <kbd>5</kbd></dt><dd>card, switch, schedule, engines, about</dd>
             <dt><kbd>B</kbd> <kbd>A</kbd></dt><dd>basic, advanced</dd>
             <dt><kbd>P</kbd></dt><dd>pause or resume the log</dd>
             <dt><kbd>/</kbd></dt><dd>filter the log</dd>
@@ -516,7 +547,7 @@ berth config check</pre>
   <dialog id="shortcuts" aria-label="keyboard shortcuts">
     <div class="sc-head">KEYBOARD SHORTCUTS<button class="ticket-close sc-close" type="button" data-autofocus aria-label="close shortcuts">close</button></div>
     <div class="sc-list">
-      <div class="sc-row"><span><span class="kbd">1</span> <span class="kbd">2</span> <span class="kbd">3</span> <span class="kbd">4</span></span><span>Card, switch, engines, about</span></div>
+      <div class="sc-row"><span><span class="kbd">1</span> <span class="kbd">2</span> <span class="kbd">3</span> <span class="kbd">4</span> <span class="kbd">5</span></span><span>Card, switch, schedule, engines, about</span></div>
       <div class="sc-row"><span><span class="kbd">B</span> <span class="kbd">A</span></span><span>Basic, advanced mode</span></div>
       <div class="sc-row"><span><span class="kbd">P</span></span><span>Pause or resume the log</span></div>
       <div class="sc-row"><span><span class="kbd">/</span></span><span>Filter the log</span></div>
@@ -524,6 +555,45 @@ berth config check</pre>
       <div class="sc-row"><span><span class="kbd">?</span></span><span>This list</span></div>
       <div class="sc-row"><span><span class="kbd">Esc</span></span><span>Close a dialog, else clear the log filter</span></div>
     </div>
+  </dialog>
+
+  <dialog id="sched-dlg" aria-label="a booking">
+    <div class="sc-head"><span id="sched-dlg-title">BOOK THE CARD</span><button class="ticket-close sc-close" type="button" aria-label="close the booking">close</button></div>
+    <form class="sched-form" id="sched-form" method="dialog">
+      <label>KIND
+        <select name="kind">
+          <option value="run">run: the engine's turn</option>
+          <option value="priority">priority: change its class</option>
+          <option value="down">down: no new work</option>
+        </select>
+      </label>
+      <label>WHO <input name="who" required maxlength="64" placeholder="pi-pocket, training, operator" data-autofocus></label>
+      <label class="sf-engine">ENGINE OR GROUP <input name="engine" list="sched-engines" maxlength="64" placeholder="pocket-train, llama-swap"></label>
+      <datalist id="sched-engines"></datalist>
+      <label class="sf-prio">PRIORITY
+        <select name="priority">
+          <option value="">foreground (run default)</option>
+          <option value="batch">batch</option>
+          <option value="interactive">interactive</option>
+          <option value="foreground">foreground</option>
+        </select>
+      </label>
+      <div class="sf-row">
+        <label>START <input name="start" type="datetime-local" step="300" required></label>
+        <label>HOURS <input name="hours" type="number" min="0.25" max="168" step="0.25" value="1" required></label>
+      </div>
+      <div class="sf-row sf-new">
+        <label>DAYS IN A ROW <input name="days" type="number" min="1" max="14" value="1"></label>
+        <label class="sf-check"><input name="earliest" type="checkbox"> first free hours</label>
+      </div>
+      <label>NOTE <input name="note" maxlength="120" placeholder="optional"></label>
+      <p class="sf-explain" id="sched-explain"></p>
+      <p class="sf-error" id="sched-error" role="alert"></p>
+      <div class="sw-actions">
+        <button class="btn sw-btn" id="sched-save" type="submit" value="save">BOOK</button>
+        <button class="btn sw-btn sw-stop" id="sched-cancel" type="button" hidden>CANCEL BOOKING</button>
+      </div>
+    </form>
   </dialog>
 
   <dialog id="pair-dlg" aria-label="pair a phone">

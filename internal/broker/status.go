@@ -87,6 +87,7 @@ func (b *Broker) Status() proto.Status {
 			GTTUsed: l.gttUsed(), GTTContested: l.contestedGTT,
 			Contested: l.contested, Age: now.Sub(since).Seconds(), Pinned: l.pinned,
 			Window:   l.window.String(),
+			Booking:  l.booking,
 			Training: l.training,
 		}
 		if l.state == parked {

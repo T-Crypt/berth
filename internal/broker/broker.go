@@ -291,10 +291,17 @@ type lease struct {
 	parkTTL  time.Duration // 0 = the node's
 	window   proto.Window  // zero = no window
 	prio     Priority
-	needs    uint64
-	state    state
-	pid      int
-	pidStart uint64
+	// basePrio is the class the lease asked for, or the operator set; prio
+	// differs from it while a booking holds (booking.go).
+	basePrio Priority
+	// booking is the ID of the booking that sets prio now, "" when none.
+	booking string
+	// operatorPrio: berth queue prio set the class, and no booking moves it.
+	operatorPrio bool
+	needs        uint64
+	state        state
+	pid          int
+	pidStart     uint64
 	// goneTicks counts the consecutive ticks that saw the attached pid
 	// gone (no process with its start time); the reaper needs two, so a
 	// pid lookup hiccup on one tick cannot free a live lease.
@@ -431,6 +438,7 @@ func newLease(id string, r Request, now time.Time) *lease {
 		engine:       r.Engine,
 		group:        r.Group,
 		prio:         r.Priority,
+		basePrio:     r.Priority,
 		needs:        r.Needs,
 		pinned:       r.Pinned,
 		training:     r.Training,
@@ -514,6 +522,7 @@ type Broker struct {
 	verdicts map[string]verdict // loser engine key -> the juggle it lost
 	batches  map[string]*batch  // berth batch: engine or group -> its batch
 	cordoned bool               // berth cordon: grant only holds
+	bookings []proto.Booking    // this card's schedule (SetBookings)
 	parkOff  bool               // berth park off: drains stop their engine, nothing parks
 	// tracked is the claim watcher's last scan: a process (and every child)
 	// a track claim names. Its card memory is the claim's, never a stowaway.
@@ -970,6 +979,7 @@ func (b *Broker) Tick(ctx context.Context) {
 	}
 	b.claimed = claimed
 	b.closeWindows(now)
+	b.closeForDowntime(now)
 	b.evictParked(now)
 	b.schedule(now)
 }
@@ -1125,6 +1135,7 @@ func (b *Broker) allowed(name string) bool {
 // holders to drain for the first waiter that does not fit. Nobody behind a
 // blocked waiter jumps it, so a big request is not starved by small ones.
 func (b *Broker) schedule(now time.Time) {
+	b.applyBookings(now)
 	if b.cardState != "" {
 		// The card does not serve the node, so nothing new is granted, and
 		// every waiter reads the same reason. The VFIO hold itself keeps
@@ -1258,7 +1269,11 @@ func (b *Broker) grant(w *lease, now time.Time) {
 // latest bump (berth queue bump), then by arrival on the node. b.mu must be
 // held.
 func (b *Broker) sortQueue() {
+	now := b.now()
 	sort.SliceStable(b.queue, func(i, j int) bool {
+		if ri, rj := b.inRun(b.queue[i], now), b.inRun(b.queue[j], now); ri != rj {
+			return ri
+		}
 		if b.queue[i].prio != b.queue[j].prio {
 			return b.queue[i].prio > b.queue[j].prio
 		}
@@ -1465,6 +1480,9 @@ func (b *Broker) evaluate(w *lease, now time.Time) (bool, string, []*lease) {
 	if b.cordoned && w.prio != Hold {
 		return false, "the card is cordoned; berth uncordon lets new work in", nil
 	}
+	if d, ok := proto.BookingAt(b.bookings, proto.BookDown, "", now); ok && w.prio != Hold && !w.training {
+		return false, downWhy(d), nil
+	}
 	if !w.window.Contains(now) {
 		// Its own hours decide this waiter alone: no holder is a victim,
 		// because nothing it drains would put it inside its window.
@@ -1533,7 +1551,7 @@ func (b *Broker) evaluate(w *lease, now time.Time) (bool, string, []*lease) {
 			// for it to become parked (or fall back to a drain); evicting
 			// it mid-park would throw the park away.
 			pending = append(pending, h)
-		case h.pinned || h.prio > w.prio:
+		case h.pinned || h.prio > w.prio, w.prio != Hold && b.inRun(h, now) && !b.inRun(w, now):
 			blockers = append(blockers, h)
 		case w.prio != Hold && h.inTurn(now):
 			// A minimum turn: the holder keeps the card until its turn
@@ -1548,7 +1566,8 @@ func (b *Broker) evaluate(w *lease, now time.Time) (bool, string, []*lease) {
 			keptWhy = batchWhy(k, bt)
 			continue
 		case h.prio == w.prio:
-			if keep, why := b.keeps(h, w, now); keep {
+			// A tie is the holder's, unless it is the waiter's booked turn.
+			if keep, why := b.keeps(h, w, now); keep && (!b.inRun(w, now) || b.inRun(h, now)) {
 				kept, keptWhy = append(kept, h), why
 				continue
 			}

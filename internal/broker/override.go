@@ -60,7 +60,7 @@ func (b *Broker) Queue(id string, action QueueAction, prio string) (string, erro
 			return "", fmt.Errorf("priority %q: use batch, interactive or foreground", prio)
 		}
 		detail = fmt.Sprintf("priority %s -> %s by the operator", w.prio, p)
-		w.prio = p
+		w.prio, w.basePrio, w.operatorPrio, w.booking = p, p, true, ""
 		b.sortQueue()
 	case QueueDrop:
 		select {

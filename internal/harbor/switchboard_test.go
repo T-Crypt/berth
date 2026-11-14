@@ -20,6 +20,7 @@ import (
 	"github.com/T-Crypt/berth/internal/node"
 	"github.com/T-Crypt/berth/internal/pair"
 	"github.com/T-Crypt/berth/internal/procs"
+	"github.com/T-Crypt/berth/internal/schedule"
 	"github.com/T-Crypt/berth/internal/server"
 )
 
@@ -83,7 +84,11 @@ func brokerHarbor(t *testing.T, key string) (base string, gw *fakeGateway, token
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	s := &pair.Store{Path: filepath.Join(dir, "harbor-devices.json")}
-	go server.Serve(ctx, ln, node.One(b), server.Extras{Pair: s}, log)
+	sched, err := schedule.Open(filepath.Join(dir, "schedule.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	go server.Serve(ctx, ln, node.One(b), server.Extras{Pair: s, Schedule: sched}, log)
 	code, err := s.Code()
 	if err != nil {
 		t.Fatal(err)
