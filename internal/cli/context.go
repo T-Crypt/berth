@@ -25,6 +25,9 @@ type Context struct {
 	Err     io.Writer // stderr: diagnostics, never suppressed by --quiet
 	Args    []string  // the command's own args
 	Cmd     *Command
+	// Path is the command as typed after "berth": "status", or "engine
+	// show" for a subcommand, whose Cmd.Name is only "show".
+	Path    string
 	Version string
 	Format  Format
 	Verbose bool
@@ -42,7 +45,7 @@ type Context struct {
 // FlagSet is the command's flag set: the globals first, then whatever the
 // command registers on it. -h and --help are the flag package's own.
 func (c *Context) FlagSet() *flag.FlagSet {
-	fs := flag.NewFlagSet(c.Cmd.Name, flag.ContinueOnError)
+	fs := flag.NewFlagSet(c.Path, flag.ContinueOnError)
 	// The help and the errors are the framework's to print, from an existing
 	// Error: the flag package's own output would say everything twice.
 	fs.SetOutput(io.Discard)
@@ -89,8 +92,8 @@ func (c *Context) Parse(fs *flag.FlagSet) (int, bool) {
 		return ExitOK, true
 	}
 	if err != nil {
-		c.fail(Systemf("berth %s: %v", c.Cmd.Name, err).
-			WithHint("run \"berth %s -h\" for flags", c.Cmd.Name))
+		c.fail(Systemf("berth %s: %v", c.Path, err).
+			WithHint("run \"berth %s -h\" for flags", c.Path))
 		return ExitSystem, true
 	}
 	c.setFlags = map[string]bool{}
@@ -140,7 +143,7 @@ func (c *Context) noArgs() (int, bool) {
 // failUnexpected reports one unexpected positional argument.
 func (c *Context) failUnexpected(arg string) (int, bool) {
 	c.fail(Systemf("unexpected argument %q", arg).
-		WithHint("run \"berth %s -h\" for flags", c.Cmd.Name))
+		WithHint("run \"berth %s -h\" for flags", c.Path))
 	return ExitSystem, true
 }
 
@@ -239,7 +242,7 @@ func (c *Context) help(fs *flag.FlagSet) {
 	if c.Cmd.Args != "" {
 		args = " " + c.Cmd.Args
 	}
-	fmt.Fprintf(c.Out, "berth %s%s\n\n%s\n\nFlags:\n", c.Cmd.Name, args, c.Cmd.Help)
+	fmt.Fprintf(c.Out, "berth %s%s\n\n%s\n\nFlags:\n", c.Path, args, c.Cmd.Help)
 	fs.SetOutput(c.Out)
 	fs.PrintDefaults()
 }
@@ -251,7 +254,7 @@ func (c *Context) setFormat(v string) *Error {
 		return nil
 	}
 	if len(c.Cmd.Formats) == 0 {
-		return Systemf("--format does not apply to berth %s", c.Cmd.Name)
+		return Systemf("--format does not apply to berth %s", c.Path)
 	}
 	for _, f := range c.Cmd.Formats {
 		if Format(v) == f {

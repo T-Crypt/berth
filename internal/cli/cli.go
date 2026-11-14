@@ -63,7 +63,7 @@ func Run(env Env) int {
 		return c.fail(Systemf("unknown command %q", args[0]).
 			WithHint("run \"berth help\" for the command list"))
 	}
-	rest := args[1:]
+	rest, path := args[1:], cmd.Name
 	if len(cmd.Sub) > 0 {
 		if len(rest) == 0 {
 			c.groupHelp(cmd, c.Err)
@@ -80,8 +80,9 @@ func Run(env Env) int {
 				WithHint("run \"berth help %s\" for the list", cmd.Name))
 		}
 		cmd, rest = sub, rest[1:]
+		path += " " + cmd.Name
 	}
-	c.Cmd = cmd
+	c.Cmd, c.Path = cmd, path
 	c.Args = rest
 	if e := c.setFormat(c.rawFormat); e != nil {
 		return c.fail(e)
@@ -138,7 +139,7 @@ func (c *Context) helpCommand(args []string) int {
 		return c.fail(Systemf("unknown command %q", args[0]).
 			WithHint("run \"berth help\" for the command list"))
 	}
-	rest := args[1:]
+	rest, path := args[1:], cmd.Name
 	if len(cmd.Sub) > 0 {
 		if len(rest) == 0 {
 			c.groupHelp(cmd, c.Out)
@@ -150,11 +151,12 @@ func (c *Context) helpCommand(args []string) int {
 				WithHint("run \"berth help %s\" for the list", args[0]))
 		}
 		cmd, rest = sub, rest[1:]
+		path += " " + cmd.Name
 	}
 	if len(rest) > 0 {
-		return c.fail(Systemf("berth %s takes no further argument %q", cmd.Name, rest[0]))
+		return c.fail(Systemf("berth %s takes no further argument %q", path, rest[0]))
 	}
-	c.Cmd = cmd
+	c.Cmd, c.Path = cmd, path
 	c.Args = []string{"-h"}
 	return cmd.Run(c)
 }
