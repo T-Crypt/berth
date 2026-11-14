@@ -197,3 +197,19 @@ func TestWindowWaiterOnSeveralCardsOutlastsTheDefaultWait(t *testing.T) {
 		t.Fatal("nightly is not on both cards")
 	}
 }
+
+// The status names the hours a lease is held to, waiting or granted, and
+// leaves a lease with no window without one.
+func TestStatusCarriesTheLeaseWindow(t *testing.T) {
+	b, clk := startTurnBroker(t, procs.Map{})
+	clk.set(at2330)
+	must(t, acquire(b, Request{Engine: "nightly", Priority: Batch, Needs: 8 * GiB, Window: night}))
+	must(t, acquire(b, Request{Engine: "chat", Priority: Interactive, Needs: 4 * GiB}))
+	got := map[string]string{}
+	for _, l := range b.Status().Leases {
+		got[l.Engine] = l.Window
+	}
+	if got["nightly"] != "23:00-07:00" || got["chat"] != "" {
+		t.Errorf("lease windows = %v, want nightly 23:00-07:00 and chat none", got)
+	}
+}

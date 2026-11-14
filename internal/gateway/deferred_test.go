@@ -20,7 +20,6 @@ import (
 
 	"github.com/T-Crypt/berth/internal/broker"
 	"github.com/T-Crypt/berth/internal/config"
-	"github.com/T-Crypt/berth/internal/proto"
 )
 
 // A render asked for while a game holds the card is queued, answered at
@@ -81,24 +80,4 @@ func TestComfyJobQueuedWhileTheCardIsHeldRunsWhenItIsFree(t *testing.T) {
 		h := history(second)
 		return strings.Contains(h, `"`+got.PromptID+`"`) && strings.Contains(h, "history-marker")
 	})
-}
-
-// A ComfyUI job is out of reach while the card is in a VM or a pinned
-// lease has it; an ordinary holder is drained the usual way.
-func TestOutOfReach(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		st   *proto.Status
-		want bool
-	}{
-		{"no reading", nil, false},
-		{"free card", &proto.Status{}, false},
-		{"an ordinary holder", &proto.Status{Leases: []proto.Lease{{Engine: "llama-swap"}}}, false},
-		{"a game", &proto.Status{Leases: []proto.Lease{{Engine: "claim:steam-game", Pinned: true}}}, true},
-		{"in a VM", &proto.Status{Passthrough: &proto.Passthrough{State: proto.CardPassthrough}}, true},
-	} {
-		if got := outOfReach(tc.st) != ""; got != tc.want {
-			t.Errorf("%s: out of reach = %v, want %v", tc.name, got, tc.want)
-		}
-	}
 }

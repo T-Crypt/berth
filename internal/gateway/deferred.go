@@ -19,14 +19,12 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/T-Crypt/berth/internal/config"
 	"github.com/T-Crypt/berth/internal/fsx"
-	"github.com/T-Crypt/berth/internal/proto"
 )
 
 const deferredPrefix = "berth-"
@@ -50,26 +48,6 @@ type deferredBook struct {
 // keepSubmitted is how many submitted jobs the book remembers for
 // /history; older ones drop off.
 const keepSubmitted = 200
-
-// outOfReach says why a ComfyUI job cannot run now, "" when it can: the
-// card is in a VM, or a pinned lease (a game, a hold, a pinned app) has it.
-func outOfReach(st *proto.Status) string {
-	if st == nil {
-		return ""
-	}
-	if st.Passthrough != nil {
-		return "the card is passed through to a VM"
-	}
-	if cordoned(st) {
-		return "the card is cordoned"
-	}
-	for _, l := range st.Leases {
-		if l.Pinned {
-			return fmt.Sprintf("%s holds the card", holderName(l))
-		}
-	}
-	return ""
-}
 
 // queueingComfy is the ComfyUI engine whose jobs queue while the card is
 // out of reach, nil when none does.
@@ -265,9 +243,4 @@ func (g *Gateway) deferredHistory(w http.ResponseWriter, r *http.Request, id str
 		out[job.ID] = v
 	}
 	_ = json.NewEncoder(w).Encode(out)
-}
-
-// cordoned is whether berth cordon closed a card the status covers.
-func cordoned(st *proto.Status) bool {
-	return slices.ContainsFunc(st.GPUs, func(g proto.GPU) bool { return g.Scheduled && g.Cordoned })
 }

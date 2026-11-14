@@ -255,6 +255,30 @@ func (n *Node) Stop(engine string) ([]string, error) {
 	return slices.Compact(ids), nil
 }
 
+// Queue applies the operator's change to the waiter id on every card it
+// waits on (a lease on several cards waits on each under one ID), and
+// returns the change. A card that has no such waiter is skipped; any other
+// refusal is the answer.
+func (n *Node) Queue(id string, action broker.QueueAction, prio string) (string, error) {
+	var detail string
+	var first error
+	for _, c := range n.cards {
+		d, err := c.B.Queue(id, action, prio)
+		if err != nil {
+			if !broker.IsNotFound(err) {
+				return "", err
+			}
+			first = cmpErr(first, err)
+			continue
+		}
+		detail = d
+	}
+	if detail == "" {
+		return "", first
+	}
+	return detail, nil
+}
+
 // Batch starts or renews engine's batch on every card (see Broker.Batch).
 func (n *Node) Batch(engine string, grace, max time.Duration) {
 	for _, c := range n.cards {
@@ -269,6 +293,28 @@ func (n *Node) EndBatch(engine string) bool {
 		ended = c.B.EndBatch(engine) || ended
 	}
 	return ended
+}
+
+// Yield tells engine's runs on every card that its job yielded the card for
+// d, or took it back (d <= 0), and answers the leases it told.
+func (n *Node) Yield(engine string, d time.Duration) ([]string, error) {
+	var ids []string
+	var first error
+	for _, c := range n.cards {
+		got, err := c.B.Yield(engine, d)
+		switch {
+		case err != nil && !broker.IsNotFound(err):
+			return nil, err
+		case err != nil:
+			first = cmpErr(first, err)
+			continue
+		}
+		ids = append(ids, got...)
+	}
+	if len(ids) == 0 {
+		return nil, first
+	}
+	return ids, nil
 }
 
 // Unpark evicts engine's parked leases ("" = every one) on every card.
@@ -528,4 +574,12 @@ func add(a, b proto.Counters) proto.Counters {
 		a.Since = b.Since
 	}
 	return a
+}
+
+// SetBookings hands every card the schedule; each keeps the bookings that
+// name it.
+func (n *Node) SetBookings(bs []proto.Booking) {
+	for _, c := range n.cards {
+		c.B.SetBookings(slices.DeleteFunc(slices.Clone(bs), func(x proto.Booking) bool { return x.Card != c.Name }))
+	}
 }

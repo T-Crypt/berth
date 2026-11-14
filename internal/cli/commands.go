@@ -53,6 +53,22 @@ materialised, and the environment that decides which file that is.
 		},
 	},
 	{
+		Name:    "contract",
+		Summary: "one engine's terms: what berth.toml declares and what Berth measured",
+		Args:    "ENGINE [--config PATH] [--costs PATH] [--socket P] [--format F]",
+		Help: `Print one engine's terms in one place: its priority, the VRAM a lease asks for,
+the last run's measured peak, the RAM it needs and holds parked, its minimum
+turn and window, and how long a switch to it takes from each tier. Every
+number says where it came from: declared in berth.toml, Berth's default,
+measured on the card or by the gateway, or unknown.
+
+ENGINE is an [[engine]] name, an engine berthd discovered, or a name Berth
+measured leases under (a llama-swap model's berth run --as). Read only: it
+changes nothing, and without berthd it prints the declared terms.`,
+		Formats: []Format{FormatHuman, FormatJSON, FormatYAML},
+		Run:     runContract,
+	},
+	{
 		Name:    "civitai",
 		Summary: "search and browse CivitAI, for finding things to pull",
 		Help: `CivitAI is a search and a listing, not a pull: search finds a model and its
@@ -202,9 +218,42 @@ exits; with it, new events stream until you interrupt it.`,
 notifications. The error level, the default, shows refused requests, memory
 that never came back, stowaways and a parked engine loaded behind Berth's
 back. info adds every switch, drain, park and resume. [notify] enabled = false
-in berth.toml turns it off; [notify] level sets the level. Linux only for now:
-it uses notify-send, so any desktop or notification daemon shows it.`,
+in berth.toml turns it off; [notify] level sets the level. On Linux it uses
+notify-send, so any desktop or notification daemon shows it. On Windows it is a
+tray icon whose notifications are Windows' own toasts; a click opens the harbor.`,
 		Run: runNotify,
+	},
+	{
+		Name:    "why",
+		Summary: "one lease's story: why it waited, was granted, drained or refused",
+		Args:    "ID|ENGINE [--socket P] [--format F]",
+		Help: `Print every event berthd kept about one lease, oldest first, in plain words:
+when it asked for the card, each reason it waited, the grant, each drain and
+who it was for, the release, and the berthd restarts it lived through. ENGINE
+picks that engine's newest lease. A lease that berthd still holds ends with
+where it stands now; one a restart cut off names the lease its engine
+re-attached as.
+
+berthd keeps its events in events.jsonl in the state directory (--events), so
+the story reads across restarts and deploys, back to the last 1000 events.`,
+		Formats: []Format{FormatHuman, FormatJSON, FormatYAML},
+		Run:     runWhy,
+	},
+	{
+		Name:    "fit",
+		Summary: "where a request for an engine or model would run now, and what the start costs",
+		Args:    "NAME [--explain] [--config PATH] [--costs PATH] [--socket P] [--format F]",
+		Help: `Rank what it takes to bring NAME up right now, cheapest first: a resume from
+RAM, a free card, a drain of what holds the card, or a wait while a VM, a
+cordon or a pinned lease (a game, a hold, a training) keeps it. NAME is an
+engine, or a model that engines list in serves; for a model every engine that
+serves it is ranked in berth.toml's order, the way the gateway picks one.
+
+Each candidate names its reason, the tier its weights sit in, and the start
+time the gateway measured from that tier, or unknown when it has none.
+--explain lists every candidate. Read only: Fit advises, berthd decides.`,
+		Formats: []Format{FormatHuman, FormatJSON, FormatYAML},
+		Run:     runFit,
 	},
 	{
 		Name:    "export",
@@ -366,6 +415,62 @@ Gated and private models read a token from $HF_TOKEN or $CIVITAI_API_KEY.`,
 		Run:     runPull,
 	},
 	{
+		Name:    "queue",
+		Summary: "the waiters in grant order; bump, re-rank or drop one",
+		Args:    "[bump ID | prio ID batch|interactive|foreground | drop ID] [--socket P] [--format F]",
+		Help: `Without arguments, list every waiter in the order berthd will grant them:
+priority first, then arrival. Nobody has to manage the queue; these are for
+when you want it otherwise.
+
+  bump ID    move the waiter to the front of its priority class
+  prio ID P  move it to another class: batch, interactive or foreground
+  drop ID    refuse it now, the way a timeout would
+
+A hold is a pin, not a queue place, and a training's place is fixed by the
+card's lock, so neither can be set here. Every change is journaled as a
+lease.queue_override event (berth events).`,
+		Formats: []Format{FormatHuman, FormatJSON, FormatYAML},
+		Run:     runQueue,
+	},
+	{
+		Name:    "schedule",
+		Summary: "the card's scheduler: what runs, what waits, what is booked; book, move or cancel",
+		Args:    "[book --who W --at T --for D [--engine E] [--kind run|priority|down] [--priority P] [--days N] [--earliest] [--note N] | move ID [--at T] [--for D] | cancel ID] [--socket P] [--format F]",
+		Help: `Without arguments, show the scheduler: the leases that hold a card, the
+waiters in the order berthd grants them, and every booking that has not
+ended. The harbor draws the same bookings on its 7-day board.
+
+A booking gives a card's hours to someone:
+
+  run       the engine's turn. Its waiter goes first, it runs at the
+            booking's priority (foreground when none is given), and while
+            it holds the card nothing but a hold drains it.
+  priority  the engine runs at another class for these hours, like batch
+            during a training. It claims no time on the card.
+  down      downtime. No new work starts and holders drain at the start; a
+            hold and a training stay.
+
+An hour nobody booked runs as always, by priority then arrival, and a booked
+engine that does not show up leaves the card to everyone else. Two runs or
+downtimes on one card may not overlap. --earliest moves a booking to the
+first free hours at or after --at, and --days books the same hours on
+consecutive days. --engine also takes a group, like llama-swap. A class set
+with berth queue prio wins over a booking.
+
+  berth schedule book --who pi-pocket --engine pi-train --at 23:00 --for 5h --days 7 --priority batch
+  berth schedule book --who operator --kind down --at "sun 04:00" --for 1h --note "driver update"
+  berth schedule book --who operator --kind priority --engine llama-swap --priority batch --at 13:00 --for 3h
+  berth schedule move b4 --at 01:00
+  berth schedule cancel b4
+
+Times are the node's clock. Agents use the same scheduler over the gateway:
+GET, POST and DELETE /v1/berth/schedule (docs/gateway.md). Each change is a
+schedule.booked event and each class a booking moves is a
+lease.booking_priority event (berth events).`,
+		Formats: []Format{FormatHuman, FormatJSON, FormatYAML},
+		Run:     runSchedule,
+	},
+	{
 		Name:    "reclaim",
 		Summary: "what a stuck lease left on the card; --yes stops it",
 		Args:    "[LEASE] [--yes] [--grace D] [--socket P] [--format F]",
@@ -430,6 +535,28 @@ unprotected run (--fail-closed refuses instead).
 The engine's own stdout goes to stdout, so --quiet has nothing to silence here:
 berth's notices are diagnostics on stderr and always print.`,
 		Run: runRun,
+	},
+	{
+		Name:    "train",
+		Summary: "run a training job that nothing automated can interrupt",
+		Args:    "--as NAME [--gpu CARDS] -- CMD [ARGS...]",
+		Help: `Run CMD as a training lease: a pinned hold on the whole card, on every card
+--gpu names. It waits for the card with no deadline, takes it from the engines
+that hold it, and keeps it until CMD exits or you press Ctrl-C.
+
+While a training holds a card or waits for it, berthd refuses every other
+request on that card at once: engines, gateway requests, berth run and berth
+hold. Clients get the refusal right away instead of waiting. Another berth train
+waits in line and starts when the first one ends. Other cards keep serving.
+
+A game or a hold that already has the card is not drained: the training waits
+for it. berth train refuses to start when berthd is not running, because the
+lock lives in berthd.
+
+--exclusive (Linux, NVIDIA) also puts the cards in the driver's exclusive-process
+compute mode for the run's life, so a program that opens CUDA without Berth
+cannot open them. It needs a sudo rule for nvidia-smi -c (see docs/leasing.md).`,
+		Run: runTrain,
 	},
 	{
 		Name:    "skill",

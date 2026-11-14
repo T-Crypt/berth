@@ -29,7 +29,7 @@ berth status                                          # who holds the card, who 
 
 ## How it works
 
-<p align="center"><img src="assets/how-it-works.svg" alt="How berth works. Clients ask for the card: agents such as Hermes and ComfyUI workflows through the berth gateway, one endpoint that starts engines on demand; an engine under berth run; a game; and a VM through berth vfio run. berthd queues them by priority, drains the holder at its boundary (saving KV caches or parking it in RAM), waits for the driver to show the memory free, then grants the lease. gpu0 serves strata while gpu1 is passed through to a VM. Below, a timeline of one 24 GiB card: llama-swap, strata, a game, a VM passage and ComfyUI take turns and never overlap; markers 1 to 4 show one handoff." width="100%"></p>
+<p align="center"><img src="assets/how-it-works.svg" alt="How berth works. Clients ask for the card: agents such as Hermes and ComfyUI workflows through the berth gateway, one endpoint, with one URL per card, that starts engines on demand; an engine under berth run; a game or a training run under berth train, which locks its cards; and a VM through berth vfio run. berthd queues them by priority, drains the holder at its boundary (saving KV caches or parking it in RAM), waits for the driver to show the memory free, then grants the lease. gpu0 serves strata while gpu1 is passed through to a VM. Below, a timeline of one 24 GiB card: llama-swap, strata, a game, a VM passage and ComfyUI take turns and never overlap; markers 1 to 4 show one handoff." width="100%"></p>
 
 Every engine asks berthd for the card: through `berth run`, the gateway, ComfyUI's API or a game
 claim. When another engine holds it, Berth:
@@ -42,7 +42,7 @@ claim. When another engine holds it, Berth:
 The numbered markers on the timeline are those four steps. A process that holds VRAM without a lease
 shows up as a stowaway: Berth reports its PID and memory and leaves it running.
 
-> **Status: alpha, v0.5.0.** Runs daily on an RTX 4090 workstation beside llama-swap, NInfer,
+> **Status: alpha, v0.6.0.** Runs daily on an RTX 4090 workstation beside llama-swap, NInfer,
 > Strata, ComfyUI and games, and testers run it on Windows. The [docs](docs/README.md) cover what works and has tests; the
 > [roadmap](docs/roadmap.md) lists the phases and what is still missing.
 
@@ -110,8 +110,21 @@ line goes away.
   render farm job, a cracking session, by name, command line or launcher.
 - **`berth hold`** frees the card for a call or a game you start yourself. Ctrl-C gives it back. On a node with
   several cards, `--gpu` names the ones it takes.
-- **`berth run --pinned`** for an app or a training run that must never be stopped mid-work, on one card or
-  several. See [Training runs](docs/leasing.md#training-runs).
+- **`berth train`** runs a training or fine-tune that nothing automated can interrupt, on one card or several.
+  It takes the whole of each card, and berthd refuses every other request on those cards until it exits, so
+  agents and scheduled jobs get an answer at once instead of waiting. A second training waits in line. See
+  [Training runs](docs/leasing.md#training-runs).
+- **`berth run --pinned`** for an app that must never be stopped mid-work but may share the card, such as Blender.
+
+**Plans the card's hours**
+- **A schedule per card.** `berth schedule book` gives an engine the card for set hours, changes its priority for
+  them, or books downtime, up to 14 days ahead. A booked run goes first and keeps the card against everything but
+  a hold. Hours nobody booked run by priority, then arrival. See [Book the card](docs/leasing.md#book-the-card).
+- **Agents book their own runs** through `/v1/berth/schedule` on the gateway, and the harbor's SCHEDULE tab shows
+  the week to the minute. A paired phone books by clicking an empty hour.
+- **`berth queue`** lists the waiters in grant order. `bump`, `prio` and `drop` change one by hand.
+- **`learn_size = true`** sizes a lease from what the engine held last time, so engines that fit together share
+  the card without anyone typing `needs_mib`.
 
 **One API for your engines** *(preview)*
 - **`berth gateway`**: one OpenAI-compatible port. Name a model and Berth starts its engine,
@@ -158,6 +171,10 @@ line goes away.
   leaderboard; 30 days of history on disk.
 - **The harbor web UI** (`berth harbor`): a departures board of leases, a collisions-avoided
   counter, charts and the event log. Read-only, loopback by default.
+- **Explains itself.** `berth why ENGINE` tells that engine's last lease in plain words: each wait and its
+  reason, the grant, each drain and who it was for, and the restarts it lived through. `berth fit MODEL` says where
+  a request would run now and what the start costs, and `berth contract ENGINE` prints an engine's VRAM, RAM, turn
+  and switch times, each marked declared, measured or unknown. The event log is kept on disk across restarts.
 - **Alerts** to the desktop or a webhook, `/metrics` for Prometheus, and `berth export` for
   CSV or JSON.
 
@@ -253,8 +270,8 @@ which `berth service status` prints.
 
 ## Preview
 
-The first two screenshots show the harbor web UI with its built-in demo data, on the CARD tab and on
-the Engines tab in advanced mode. The third shows the CARD tab of a live node on an iPhone.
+The screenshots show the harbor web UI with its built-in demo data: the CARD tab, the Engines tab in advanced
+mode, and the CARD tab at phone width.
 [The harbor and telemetry](docs/harbor.md) explains every panel and shows how to add the harbor to an
 iPhone's Home Screen.
 
@@ -262,7 +279,7 @@ iPhone's Home Screen.
 
 <p align="center"><img src="assets/preview-requests.png" alt="Berth harbor Engines tab, advanced mode: decode throughput per engine, the token ledger, the per-model leaderboard, storage and residency" width="900"></p>
 
-<p align="center"><img src="assets/preview-mobile.png" alt="Berth harbor on an iPhone: the CARD tab with the ticket counter, collisions avoided, the collision tiles and the decode and TPOT KPIs, with CARD, ENGINES and ABOUT in a bottom bar" width="300"></p>
+<p align="center"><img src="assets/preview-mobile.png" alt="Berth harbor at phone width: the CARD tab with the ticket counter, collisions avoided, the collision tiles and the decode and TPOT KPIs, with CARD, SWITCH, ENGINES and ABOUT in a bottom bar" width="300"></p>
 
 ## Install
 
@@ -327,6 +344,25 @@ request to the reply, lease included (2026-10-23):
 | ComfyUI to a 27B chat model | 13.6 to 16.3 s |
 
 Strata's numbers and the method are in [Benchmarks](docs/benchmarks.md#swap-numbers).
+
+## A month on the reference workstation
+
+berthd counts every handoff it makes, and the harbor's collisions board shows the counts. These are the counts
+from one RTX 4090 workstation between 2026-10-12 and 2026-11-13, running llama-swap, NInfer, Strata, ComfyUI,
+coding agents and games:
+
+| What Berth did | Count |
+|---|---|
+| Requests that waited for the card instead of loading on top of the engine holding it | 1,136 |
+| Engines drained at a reply or job boundary to make room | 901 |
+| VRAM handed from one engine to the next | 23.9 TiB |
+| Processes holding VRAM without a lease, reported and left running | 573 |
+| Swaps between two engines of equal priority that the ranking stopped | 57 |
+| Releases that stalled and were caught before the card stayed full | 4 |
+| Requests refused after their wait ran out | 24 |
+
+In the last 7 days, 23 engines and jobs held the card for 143 lease-hours. Leases that share the card count their
+own hours each.
 
 ## Roadmap
 

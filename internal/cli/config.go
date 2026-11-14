@@ -146,6 +146,9 @@ func engineExtra(e config.Engine) string {
 	if len(e.NeedsMiB.Bytes()) > 0 {
 		parts = append(parts, "needs_mib: "+e.NeedsMiB.String())
 	}
+	if e.LearnSize {
+		parts = append(parts, "learn_size")
+	}
 	if len(e.Start) > 0 {
 		parts = append(parts, "start: "+e.Start[0])
 	}

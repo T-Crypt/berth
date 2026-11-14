@@ -85,3 +85,14 @@ func TestNotesNameTheirCardOnAMultiCardMachine(t *testing.T) {
 		t.Fatalf("one-card note = %+v", n)
 	}
 }
+
+func TestRecentKeepsTheNewest(t *testing.T) {
+	r := Recent{Max: 2}
+	for _, title := range []string{"a", "b", "c"} {
+		r.Add(Note{Title: title})
+	}
+	got := r.Notes()
+	if len(got) != 2 || got[0].Title != "c" || got[1].Title != "b" {
+		t.Fatalf("recent = %+v, want c then b", got)
+	}
+}

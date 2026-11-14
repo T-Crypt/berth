@@ -90,24 +90,6 @@ func (g *Gateway) waitForWake(ctx context.Context, engine string, since uint64) 
 	}
 }
 
-// parkedIn reports whether the node's lease table shows the engine
-// parked: a live answer from a parked engine is not one the gateway may
-// proxy. Only the engine's own lease counts. A parked model behind a router
-// (a llama-swap model under the llama-swap group) has its own front, which
-// wakes it when the router forwards a request, so the router is never
-// parked on its behalf.
-func parkedIn(st *proto.Status, name string) bool {
-	if st == nil {
-		return false
-	}
-	for _, l := range st.Leases {
-		if l.Engine == name && l.State == "parked" {
-			return true
-		}
-	}
-	return false
-}
-
 // switchQueued tells berthd a person switched to e while its start waits in
 // the queue. Nothing queued is no error: the start may be granted already.
 func (g *Gateway) switchQueued(e *config.Engine) {

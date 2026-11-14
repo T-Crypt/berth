@@ -35,6 +35,7 @@ type Sample struct {
 	TTFT       time.Duration `json:"ttft"`
 	Total      time.Duration `json:"total"`
 	Text       string        `json:"text"`
+	Reasoning  string        `json:"reasoning,omitempty"`
 	VramBefore uint64        `json:"vram_before"`
 	VramAfter  uint64        `json:"vram_after"`
 	MemBefore  uint64        `json:"mem_before"`
@@ -60,7 +61,9 @@ type streamResult struct {
 	TTFT  time.Duration
 	Total time.Duration
 	Text  string
-	Fail  string
+	// Reasoning is what a thinking model streamed before its answer.
+	Reasoning string
+	Fail      string
 }
 
 // parseSSE reads an SSE stream into the first-token time and the text it
@@ -114,12 +117,16 @@ func parseSSE(r io.Reader, at func() time.Time, start time.Time) (streamResult, 
 		var ev struct {
 			Choices []struct {
 				Delta struct {
-					Content string `json:"content"`
+					Content          string `json:"content"`
+					ReasoningContent string `json:"reasoning_content"`
+					Reasoning        string `json:"reasoning"`
 				} `json:"delta"`
 			} `json:"choices"`
 		}
 		if json.Unmarshal([]byte(payload), &ev) == nil && len(ev.Choices) > 0 {
-			res.Text += ev.Choices[0].Delta.Content
+			d := ev.Choices[0].Delta
+			res.Text += d.Content
+			res.Reasoning += d.ReasoningContent + d.Reasoning
 		}
 	}
 
@@ -181,11 +188,16 @@ func outputsIdentical(ss []Sample) string {
 	if len(ss) == 0 {
 		return "n/a"
 	}
-	first := ss[0].Text
-	for _, s := range ss[1:] {
-		if s.Text != first {
+	first := ss[0]
+	empty := true
+	for _, s := range ss {
+		if s.Text != first.Text || s.Reasoning != first.Reasoning {
 			return "no"
 		}
+		empty = empty && s.Text == "" && s.Reasoning == ""
+	}
+	if empty {
+		return "n/a (empty)" // equal empty strings say nothing about a resume
 	}
 	return "yes"
 }

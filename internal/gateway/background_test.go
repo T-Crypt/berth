@@ -134,27 +134,3 @@ func windowFrom(offset, span int) proto.Window {
 }
 
 const minutesDay = 24 * 60
-
-// The card is free only when nothing holds, uses or waits for it and it
-// serves this machine.
-func TestCardFree(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		st   *proto.Status
-		want bool
-	}{
-		{"no reading", nil, false},
-		{"empty card", &proto.Status{}, true},
-		{"a lease", &proto.Status{Leases: []proto.Lease{{Engine: "chat"}}}, false},
-		{"a waiter", &proto.Status{Waiting: []proto.Lease{{Engine: "chat"}}}, false},
-		{"a stowaway", &proto.Status{Squatters: []proto.Squatter{{PID: 7}}}, false},
-		{"claim rules, none matching", &proto.Status{Claims: []proto.Claim{{Name: "steam-game"}, {Name: "blender"}}}, true},
-		{"a tracked app running", &proto.Status{Claims: []proto.Claim{{Name: "steam-game"}, {Name: "blender", Active: true}}}, false},
-		{"in a VM", &proto.Status{Passthrough: &proto.Passthrough{State: proto.CardPassthrough}}, false},
-		{"probe failing", &proto.Status{ProbeErr: "nvidia-smi: exit 9"}, false},
-	} {
-		if got := cardFree(tc.st); got != tc.want {
-			t.Errorf("%s: cardFree = %v, want %v", tc.name, got, tc.want)
-		}
-	}
-}

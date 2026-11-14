@@ -54,6 +54,10 @@ func (session *comfySession) wait(o Options, done <-chan struct{}, say func(stri
 		}
 	}
 	for {
+		if o.yielded != nil && o.yielded() {
+			say("ComfyUI yielded the card from inside its job; handing off")
+			return true
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		running, pending, err := comfy.Queue(httpauth.WithBearer(ctx, o.APIKey), o.DrainComfyUI)
 		cancel()

@@ -45,7 +45,7 @@ import (
 )
 
 // prompt is the fixed greedy prompt of every request: short enough that
-// 32 tokens finish it, specific enough that a broken resume is obvious.
+// a short answer finishes it, specific enough that a broken resume is obvious.
 const prompt = "Reply with exactly one line: swap bench ok"
 
 // requestTimeout bounds one request. A cold start may wait ten minutes
@@ -65,6 +65,8 @@ type flags struct {
 	gpuBackend string
 	keyFile    string
 	jsonOut    bool
+	maxTokens  int
+	noThink    bool
 }
 
 func parseFlags() (flags, error) {
@@ -80,6 +82,8 @@ func parseFlags() (flags, error) {
 	gpuBackend := fs.String("gpu-backend", "auto", "GPU probe: auto, nvidia or amd (AMD index: DRM cardN)")
 	key := fs.String("key", "", "the gateway's API key file (default: the berth api.key)")
 	jsonOut := fs.Bool("json", false, "print the raw samples as JSON")
+	maxTokens := fs.Int("max-tokens", 256, "the max_tokens of each request; a thinking model needs room to finish thinking")
+	noThink := fs.Bool("no-think", false, "ask the model to answer without thinking (chat_template_kwargs enable_thinking=false, where the server honours it)")
 	fs.Usage = func() {
 		usage(fs)
 	}
@@ -89,7 +93,7 @@ func parseFlags() (flags, error) {
 		}
 		return flags{}, err
 	}
-	f := flags{*gateway, *a, *b, *cycles, *comfy, *leak, *gwPID, *gpuIndex, *gpuBackend, *key, *jsonOut}
+	f := flags{*gateway, *a, *b, *cycles, *comfy, *leak, *gwPID, *gpuIndex, *gpuBackend, *key, *jsonOut, *maxTokens, *noThink}
 	if err := gpu.ValidateSelection(f.gpuBackend, f.gpuIndex); err != nil {
 		return f, err
 	}
@@ -301,13 +305,13 @@ func (r *run) request(ctx context.Context, model string) error {
 	s.MemBefore = host.MemAvailable("")
 
 	t0 := time.Now()
-	res, err := r.post(ctx, "/v1/chat/completions", chatBody(model), t0)
+	res, err := r.post(ctx, "/v1/chat/completions", chatBody(model, r.f.maxTokens, r.f.noThink), t0)
 	if err != nil {
 		return err
 	}
 	s.TTFT = res.TTFT
 	s.Total = res.Total
-	s.Text = res.Text
+	s.Text, s.Reasoning = res.Text, res.Reasoning
 	if res.Fail != "" {
 		return fmt.Errorf("the gateway answered with an error: %s", res.Fail)
 	}
@@ -322,15 +326,26 @@ func (r *run) request(ctx context.Context, model string) error {
 	return nil
 }
 
-func chatBody(model string) []byte {
-	b, _ := json.Marshal(struct {
+// chatBody is one greedy request. noThink adds the chat-template switch
+// that llama.cpp-style servers read to skip the thinking; without it the
+// request stays plain OpenAI.
+func chatBody(model string, maxTokens int, noThink bool) []byte {
+	type kwargs struct {
+		EnableThinking bool `json:"enable_thinking"`
+	}
+	body := struct {
 		Model       string    `json:"model"`
 		Stream      bool      `json:"stream"`
 		Temperature float64   `json:"temperature"`
 		MaxTokens   int       `json:"max_tokens"`
 		Seed        int       `json:"seed"`
 		Messages    []message `json:"messages"`
-	}{model, true, 0, 32, 1, []message{{Role: "user", Content: prompt}}})
+		Kwargs      *kwargs   `json:"chat_template_kwargs,omitempty"`
+	}{model, true, 0, maxTokens, 1, []message{{Role: "user", Content: prompt}}, nil}
+	if noThink {
+		body.Kwargs = &kwargs{}
+	}
+	b, _ := json.Marshal(body)
 	return b
 }
 

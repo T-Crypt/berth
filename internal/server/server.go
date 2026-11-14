@@ -24,6 +24,7 @@ import (
 	"github.com/T-Crypt/berth/internal/node"
 	"github.com/T-Crypt/berth/internal/pair"
 	"github.com/T-Crypt/berth/internal/proto"
+	"github.com/T-Crypt/berth/internal/schedule"
 )
 
 // Listen opens the socket, refusing if another berthd already answers on it
@@ -118,6 +119,11 @@ type Extras struct {
 	// Finished hears that a run's engine ended on purpose (exit 0, or a
 	// stop the run carried out), by the lease's engine name.
 	Finished func(engine string)
+	// Windows are the configured engines' hours, by engine name.
+	Windows map[string]proto.Window
+	// Schedule is the cards' booking file; nil turns OpBook and its
+	// siblings off.
+	Schedule *schedule.Store
 }
 
 // Serve answers clients on ln.
@@ -168,6 +174,10 @@ func handle(ctx context.Context, c net.Conn, n *node.Node, x Extras, log *slog.L
 		st := n.Status()
 		st.Engines, st.Host, st.Insights = x.Engines(), x.Host(), x.Insights()
 		st.Alerts = x.Alerts()
+		st.Schedules = schedules(x.Windows, &st, time.Now())
+		if x.Schedule != nil {
+			st.Bookings = x.Schedule.List(time.Now())
+		}
 		st.Counters.SendTimeouts = sendTimeouts.Load()
 		st.Counters.DroppedConsumers = droppedConsumers.Load()
 		reply(conn, log, proto.Msg{Op: proto.OpStatus, Status: &st})
@@ -190,6 +200,12 @@ func handle(ctx context.Context, c net.Conn, n *node.Node, x Extras, log *slog.L
 		cordon(conn, log, first, n)
 	case proto.OpBatch:
 		batch(conn, log, first, n)
+	case proto.OpQueue:
+		queue(conn, log, first, n)
+	case proto.OpBook, proto.OpUnbook, proto.OpRebook:
+		bookings(conn, log, first, n, x.Schedule)
+	case proto.OpYield:
+		yield(conn, log, first, n)
 	case proto.OpPairCode, proto.OpPairRedeem, proto.OpPairCheck, proto.OpPairList, proto.OpPairRevoke:
 		pairing(conn, log, first, x.Pair)
 	case proto.OpResume:
@@ -261,8 +277,10 @@ func hold(ctx context.Context, conn *proto.Conn, req proto.Msg, n *node.Node, fi
 		Group:        req.Group,
 		Priority:     prio,
 		Needs:        req.Needs,
+		LearnSize:    req.LearnSize,
 		Wait:         time.Duration(req.Wait * float64(time.Second)),
 		Pinned:       req.Pinned,
+		Training:     req.Training,
 		Switched:     req.Switched,
 		Parked:       req.Parked,
 		Lend:         req.Lend,
@@ -270,6 +288,7 @@ func hold(ctx context.Context, conn *proto.Conn, req proto.Msg, n *node.Node, fi
 		LendID:       req.LendID,
 		LentBytes:    req.Lent,
 		MinTurn:      time.Duration(req.MinTurn * float64(time.Second)),
+		Held:         time.Duration(req.Held * float64(time.Second)),
 		ParkTTL:      time.Duration(req.ParkTTL * float64(time.Second)),
 		Window:       win,
 		Containers:   req.ContainerIDs(),
@@ -317,6 +336,10 @@ func hold(ctx context.Context, conn *proto.Conn, req proto.Msg, n *node.Node, fi
 			}
 		case why := <-lease.Waits():
 			u.send(proto.Msg{Op: proto.OpWaiting, Reason: why})
+		case d := <-lease.Yields():
+			if !u.send(proto.Msg{Op: proto.OpYield, Yield: d.Seconds()}) {
+				return
+			}
 		case <-lease.Resumed():
 			if !u.send(proto.Msg{Op: proto.OpGranted, Lease: lease.ID(), Resume: true}) {
 				return
@@ -395,7 +418,7 @@ func holdAll(ctx context.Context, u *consumer, req proto.Msg, r broker.Request, 
 	for i, c := range cards {
 		bs[i], names[i], uuids[i] = c.B, c.Name, c.UUID
 	}
-	r.Lend = false
+	r.Lend, r.LearnSize = false, false
 	var leases []*broker.Lease
 	var err error
 	if req.Op == proto.OpReattach {

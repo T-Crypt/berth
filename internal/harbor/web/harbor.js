@@ -13,6 +13,7 @@ import { EngineView } from "./engines.js";
 import { LibraryView } from "./library.js";
 import { ResidencyView } from "./residency.js";
 import { initSwitch } from "./switch.js";
+import { initSchedule } from "./schedule.js";
 import { sparkline, lineChart, stackedArea, timelineChart } from "./charts.js";
 import { PAL } from "./palette.js";
 import { GIB } from "./util.js";
@@ -124,7 +125,7 @@ function initialLbRange() {
   return "24h";
 }
 
-let board, ticket, engineView, residency, priorityView, libraryView, switchView;
+let board, ticket, engineView, residency, priorityView, libraryView, switchView, scheduleView;
 let connPill, statePill, vmPill, nodeVersion, lastUpdate, demoStrip, alertStripEl;
 let odometerReels, counterSince, counterMeta;
 let ctiles;
@@ -133,7 +134,7 @@ let shortcutsDlg, railMenuDlg;
 let lastLogSig = null; // filter+query+pause signature: repaint only on change, append otherwise
 let clearLogFilter = null; // set by buildLogSearch: the page's Esc reaches it (R-07)
 let lastTick = 0; // the relative-time ticker's own 1 s cadence
-let berthsRoot, claimsRoot, claimsMeta, stowRoot, notickRoot, machineRoot, machineCharts, machineMeta, socketLine;
+let berthsRoot, schedulesRoot, schedulesMeta, claimsRoot, claimsMeta, stowRoot, notickRoot, machineRoot, machineCharts, machineMeta, socketLine;
 let kpiStripEl, tideEl, tideLegend, tideMeta;
 let boardMeta, berthsMeta, stowMeta, noticketMeta, enginesMeta;
 let throughputMeta, throughputDecode, throughputRpm;
@@ -168,6 +169,8 @@ function main() {
   shortcutsDlg = $("shortcuts");
   railMenuDlg = $("rail-menu");
   berthsRoot = $("berths");
+  schedulesRoot = $("schedules");
+  schedulesMeta = $("schedules-meta");
   claimsRoot = $("claims");
   claimsMeta = $("claims-meta");
   stowRoot = $("stowaways");
@@ -203,6 +206,7 @@ function main() {
   residency = new ResidencyView($("residency-canvas"), $("residency-legend"), $("residency-sessions"), $("residency-meta"));
   residency.colorOf = (name) => engineColor(name);
   switchView = initSwitch({ demo: state.demo });
+  scheduleView = initSchedule({ demo: state.demo });
   buildKpiStrip();
   wireMode();
   applyMode();
@@ -469,8 +473,8 @@ function applyMode() {
 
 // ---------------- tabs ----------------
 function wireTabs() {
-  const tabs = { harbor: $("tab-harbor"), switch: $("tab-switch"), engines: $("tab-engines"), about: $("tab-about") };
-  const panels = { harbor: $("panel-harbor"), switch: $("panel-switch"), engines: $("panel-engines"), about: $("panel-about") };
+  const tabs = { harbor: $("tab-harbor"), switch: $("tab-switch"), schedule: $("tab-schedule"), engines: $("tab-engines"), about: $("tab-about") };
+  const panels = { harbor: $("panel-harbor"), switch: $("panel-switch"), schedule: $("panel-schedule"), engines: $("panel-engines"), about: $("panel-about") };
   const show = (key) => {
     if (!tabs[key]) key = "harbor";
     for (const k of Object.keys(tabs)) {
@@ -480,6 +484,7 @@ function wireTabs() {
     }
     if (key === "engines" && state.status) engineView.render(state.status);
     if (key === "switch") switchView.show(); else switchView.hide();
+    if (key === "schedule") scheduleView.show(); else scheduleView.hide();
   };
   for (const key of Object.keys(tabs)) {
     tabs[key].addEventListener("click", () => {
@@ -508,14 +513,15 @@ let pendingSection = null;
 const HARBOR_SECTIONS = [
   ["sec-counter", "Counter"], ["sec-tide", "Tide"], ["sec-timeline", "Timeline"],
   ["sec-board", "Board"], ["sec-log", "Log"], ["sec-berths", "Berths"],
-  ["sec-machine", "Machine"], ["sec-claims", "Claims"], ["sec-stow", "Stowaways"], ["sec-noticket", "No ticket"],
+  ["sec-machine", "Machine"], ["sec-schedules", "Schedules"], ["sec-claims", "Claims"], ["sec-stow", "Stowaways"], ["sec-noticket", "No ticket"],
 ];
 const ENGINES_SECTIONS = [
   ["sec-engines", "Engines"], ["sec-library", "Library"], ["priority-panel", "Ranking"], ["sec-pool", "KV pool"],
   ["sec-throughput", "Throughput"], ["sec-ledger", "Ledger"], ["sec-lb", "Leaderboard"],
   ["sec-recent", "Recent"], ["sec-residency", "Residency"], ["sec-storage", "Storage"],
 ];
-const SWITCH_SECTIONS = [["sec-switch-cards", "Cards"], ["sec-switch-engines", "Engines"]];
+const SWITCH_SECTIONS = [["sec-switch-cards", "Cards"], ["sec-switch-queue", "Queue"], ["sec-switch-engines", "Engines"]];
+const SCHEDULE_SECTIONS = [["sec-sched-now", "Now"], ["sec-sched-board", "7 days"], ["sec-sched-list", "Bookings"]];
 const ABOUT_SECTIONS = [
   ["about-top", "Berth"], ["about-cards", "Cards"], ["about-modes", "Modes"], ["about-nav", "Getting around"],
   ["about-keys", "Keyboard"], ["about-states", "Status words"], ["about-kpis", "KPIs"], ["about-counters", "Counters"],
@@ -529,6 +535,7 @@ function wireChrome() {
   } catch (e) { state.collapsed = []; }
   buildSubnav($("subnav-harbor"), HARBOR_SECTIONS);
   buildSubnav($("subnav-switch"), SWITCH_SECTIONS);
+  buildSubnav($("subnav-schedule"), SCHEDULE_SECTIONS);
   buildSubnav($("subnav-engines"), ENGINES_SECTIONS);
   buildSubnav($("subnav-about"), ABOUT_SECTIONS);
   wireCollapse();
@@ -627,7 +634,7 @@ function wireShortcuts() {
   const mode = document.querySelector(".app-header .mode");
   if (mode) mode.before(keys);
   shortcutsDlg.querySelector(".sc-close").addEventListener("click", () => shortcutsDlg.close());
-  const tabFor = { 1: "tab-harbor", 2: "tab-switch", 3: "tab-engines", 4: "tab-about" };
+  const tabFor = { 1: "tab-harbor", 2: "tab-switch", 3: "tab-schedule", 4: "tab-engines", 5: "tab-about" };
   for (const k of Object.keys(tabFor)) onKey(k, () => $(tabFor[k]).click());
   onKey("b", () => setMode("basic", true));
   onKey("a", () => setMode("advanced", true));
@@ -2097,6 +2104,22 @@ function claimLine(cl) {
 function memoryWord(cl) {
   return fmtGiB(cl.used || 0) + " GiB" + (cl.gtt_used ? " + " + fmtGiB(cl.gtt_used) + " GiB GTT" : "");
 }
+// renderSchedules lists the engines held to hours, by the node's clock, as
+// berth status does: an engine shows here before its window opens.
+function renderSchedules(s) {
+  const list = el("div", "squatter-list");
+  const all = s.schedules || [];
+  const open = all.filter((sc) => sc.open);
+  schedulesMeta.textContent = all.length ? open.length + " open of " + all.length : "none";
+  if (all.length === 0) list.append(el("div", "empty-note", "no engine is held to hours: set window = \"23:00-07:00\" on an [[engine]]"));
+  for (const sc of all) {
+    const row = el("div", "sq sched" + (sc.open ? " sched-open" : ""));
+    const now = sc.open ? "open, closes in " + fmtAge(sc.change_s) : "closed, opens in " + fmtAge(sc.change_s);
+    row.append(el("div", "top", el("span", "name", sc.engine), el("span", null, sc.window)), el("div", "meta", now));
+    list.append(row);
+  }
+  schedulesRoot.replaceChildren(list);
+}
 function renderClaims(s) {
   const list = el("div", "squatter-list");
   const all = s.claims || [];
@@ -2469,6 +2492,7 @@ function renderLight(s) {
   paintTabCounts(entries.length, (s.engines || []).length);
   renderBerths(s);
   paintAlerts(s);
+  renderSchedules(s);
   renderClaims(s);
   renderStowaways(s);
   renderNoTicket(s);

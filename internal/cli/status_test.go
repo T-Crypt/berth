@@ -41,6 +41,13 @@ func (emptyCard) Read(context.Context) (gpu.Snapshot, error) {
 // match what the daemon sends.
 func startDaemon(t *testing.T) string {
 	t.Helper()
+	return startDaemonWith(t, server.Extras{})
+}
+
+// startDaemonWith is startDaemon serving x's hooks (the engines berthd
+// found, say); its alerts are the daemon's own.
+func startDaemonWith(t *testing.T, x server.Extras) string {
+	t.Helper()
 	sock := filepath.Join(t.TempDir(), "berth.sock")
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	b := broker.New(broker.Config{
@@ -60,7 +67,8 @@ func startDaemon(t *testing.T) string {
 	ev := alerts.New(alerts.FromConfig(config.AlertsConfig{}), 3, nil)
 	lastAlerts := &atomic.Pointer[proto.Alerts]{}
 	lastAlerts.Store(ev.Snapshot())
-	go server.Serve(ctx, ln, node.One(b), server.Extras{Alerts: lastAlerts.Load}, log)
+	x.Alerts = lastAlerts.Load
+	go server.Serve(ctx, ln, node.One(b), x, log)
 	return sock
 }
 
@@ -440,5 +448,28 @@ func TestClaimsTablesSayHoldsAndNameCards(t *testing.T) {
 	}
 	if s := out.String(); !strings.Contains(s, "HOLDS") || strings.Contains(s, "CARD") {
 		t.Errorf("one card claims table:\n%s", s)
+	}
+}
+
+// berth status lists every engine held to hours and where the node's clock
+// sits in them, so a window shows before its engine runs.
+func TestStatusShowsTheSchedules(t *testing.T) {
+	var out, errOut bytes.Buffer
+	c := &Context{Out: &out, Err: &errOut, Format: FormatHuman, Style: newStyle(&out), errStyle: newStyle(&errOut)}
+	st := &proto.Status{
+		API: proto.APIVersion, Version: "test",
+		Schedules: []proto.Schedule{
+			{Engine: "nightly", Window: "23:00-07:00", Open: false, ChangeS: 3 * 3600},
+			{Engine: "render", Window: "18:00-22:00", Open: true, ChangeS: 2*3600 + 15*60},
+		},
+	}
+	if err := (statusView{st: st}).Human(c, true); err != nil {
+		t.Fatal(err)
+	}
+	s := out.String()
+	for _, want := range []string{"SCHEDULE", "HOURS", "nightly", "23:00-07:00", "closed, opens in 3h", "render", "open, closes in 2h15m"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("stdout lacks %q:\n%s", want, s)
+		}
 	}
 }

@@ -68,6 +68,18 @@ const (
 	// defaults). With End set, end Engine's batch now. The server answers
 	// with the same op, or OpRefused when End finds no batch.
 	OpBatch = "batch"
+	// OpQueue: client: the operator changes the waiter Lease: Action bump
+	// (front of its priority class), prio (to Priority: batch, interactive
+	// or foreground) or drop (refuse it). The server answers with the same
+	// op and Reason naming the change, or OpRefused.
+	OpQueue = "queue"
+	// OpYield: client: the running job of Engine (by name or group) let go
+	// of the card from inside for Yield seconds, or took it back (Yield 0),
+	// so a drain treats the job as at its boundary while it lasts (#299).
+	// Ending a yield resumes the engine if a drain parked it. The server
+	// answers with the same op and the Leases it told, or OpRefused. The
+	// server sends the same op to each lease's runner.
+	OpYield = "yield"
 	// OpPark: the runner holding a draining lease asks to park its engine
 	// in RAM; the daemon answers OpParkOK or OpRefused with the why line.
 	// OpParked: the runner's park call is done; the daemon watches for the
@@ -117,20 +129,41 @@ const (
 	OpPairCheck  = "pair_check"
 	OpPairList   = "pair_list"
 	OpPairRevoke = "pair_revoke"
+
+	// The card's schedule; berthd owns the file. OpBook puts Booking on
+	// the schedule, Days times on consecutive days (0 or 1 = once), and
+	// with Earliest moves it to the first free hours at or after its Start
+	// with the same length; it answers the same op with the Bookings made.
+	// OpUnbook takes Booking.ID off; OpRebook replaces the booking with
+	// Booking.ID by Booking. Both answer the same op with the Bookings
+	// changed. Any refusal is OpRefused with the reason.
+	OpBook   = "book"
+	OpUnbook = "unbook"
+	OpRebook = "rebook"
 )
 
 // Msg is every message in both directions; unused fields are omitted.
 type Msg struct {
-	Op       string `json:"op"`
-	Engine   string `json:"engine,omitempty"`
-	Group    string `json:"group,omitempty"` // the engine family the lease counts for in juggles and usage
-	Priority string `json:"priority,omitempty"`
-	Needs    uint64 `json:"needs,omitempty"` // bytes; 0 = the whole card
+	Op string `json:"op"`
+	// Booking, Bookings, Days and Earliest belong to OpBook, OpUnbook and
+	// OpRebook.
+	Booking  *Booking  `json:"booking,omitempty"`
+	Bookings []Booking `json:"bookings,omitempty"`
+	Days     int       `json:"days,omitempty"`
+	Earliest bool      `json:"earliest,omitempty"`
+	Engine   string    `json:"engine,omitempty"`
+	Group    string    `json:"group,omitempty"` // the engine family the lease counts for in juggles and usage
+	Priority string    `json:"priority,omitempty"`
+	Needs    uint64    `json:"needs,omitempty"` // bytes; 0 = the whole card
 	// NeedsEach is the size in bytes on each card Card names, in that
 	// order, when the cards differ. Needs is then the largest, so a berthd
 	// that predates NeedsEach reserves too much on a small card, never too
 	// little.
 	NeedsEach []uint64 `json:"needs_each,omitempty"`
+	// LearnSize asks berthd to size an OpAcquire or OpReattach with no
+	// Needs from the engine's measured peak. A berthd that predates it
+	// grants the whole card, as it would without.
+	LearnSize bool `json:"learn_size,omitempty"`
 	// Card is the card an OpAcquire or OpReattach is for: its name on the
 	// node (gpu1) or its PCI address, or a comma list of them for one lease
 	// on several cards. "" is the node's first card.
@@ -143,6 +176,7 @@ type Msg struct {
 	PID      int     `json:"pid,omitempty"`
 	PIDStart uint64  `json:"pid_start,omitempty"` // OpReattach: the engine's start time, so a reused PID is refused
 	Pinned   bool    `json:"pinned,omitempty"`    // OpAcquire/OpReattach: never drained (holds, berth run --pinned)
+	Training bool    `json:"training,omitempty"`  // OpAcquire/OpReattach: berth train, locks the card
 	Parked   bool    `json:"parked,omitempty"`    // OpReattach: the engine's weights are parked in RAM; its lease comes back parked
 	// Lend marks a run whose engine has lend calls (its entry says
 	// lend = "hook"): OpAcquire and OpReattach declare it, and the broker
@@ -158,10 +192,16 @@ type Msg struct {
 	// younger than it after the grant, no waiter drains it but a hold.
 	// OpAcquire and OpReattach; 0 = off.
 	MinTurn float64 `json:"min_turn,omitempty"`
+	// Held is how long, in seconds, an OpReattach's engine had held the card
+	// since its last grant or resume, so the new daemon goes on with that
+	// turn instead of starting a fresh one.
+	Held float64 `json:"held,omitempty"`
 	// Max and End are an OpBatch's cap, in seconds, and its end request;
 	// its idle grace travels in Grace.
 	Max float64 `json:"max,omitempty"`
 	End bool    `json:"end,omitempty"`
+	// Yield is an OpYield's length in seconds; 0 ends the yield.
+	Yield float64 `json:"yield,omitempty"`
 	// ParkTTL is how long the lease may stay parked, in seconds, in place
 	// of the node's [park] ttl. OpAcquire and OpReattach; 0 = the node's.
 	ParkTTL float64 `json:"park_ttl,omitempty"`
@@ -180,6 +220,8 @@ type Msg struct {
 	// daemon with it, so the daemon still reads it; nothing sends it now.
 	Container string `json:"container,omitempty"`
 	Lease     string `json:"lease,omitempty"`
+	// OpQueue: Action is bump, prio or drop; prio reads Priority.
+	Action string `json:"action,omitempty"`
 	// OpStop: Leases is the reply, the leases the daemon asked to drain.
 	// OpUnpark, OpParkMode: the leases evicted.
 	Leases []string `json:"leases,omitempty"`
@@ -205,7 +247,8 @@ type Msg struct {
 	Holders []Holder `json:"holders,omitempty"`
 	// Resume is set on an OpGranted that hands a parked lease the card
 	// back, so the runner knows to call the adapter's resume instead of
-	// starting anything.
+	// starting anything. On the OpYield reply to an end, it says the end
+	// queued a parked engine, whose lease.resumed is still to come.
 	Resume bool `json:"resume,omitempty"`
 	// Lending (the OpLend / OpLent / OpLendFailed / OpReturn* ops). Needs
 	// carries the bytes to give on OpLend and what the engine gave on OpLent;
@@ -266,7 +309,10 @@ const (
 	EvStuck          = "lease.stuck"
 	EvRefused        = "lease.refused"
 	EvReattached     = "lease.reattached"
-	EvOrphaned       = "lease.orphaned" // the attached process is gone and the broker released the lease itself
+	EvOrphaned       = "lease.orphaned"         // the attached process is gone and the broker released the lease itself
+	EvQueueOverride  = "lease.queue_override"   // the operator bumped, re-ranked or dropped a waiter (berth queue)
+	EvBooked         = "schedule.booked"        // a booking went on, came off or changed on the card's schedule
+	EvBookingPrio    = "lease.booking_priority" // a booking moved a lease to another priority class, or its end moved it back
 	EvSquatter       = "squatter.appeared"
 	EvSquatterGone   = "squatter.gone"
 	EvProbeFailed    = "probe.failed"
@@ -297,6 +343,9 @@ const (
 	// host driver. Each fires once per transition.
 	EvCardPassthrough = "card.passthrough"
 	EvCardReturned    = "card.returned"
+	// EvNodeStarted: berthd started. Its detail is the version. The events
+	// before it are the last daemon's, read back from the event file.
+	EvNodeStarted = "node.started"
 )
 
 // Card states, the values Status.Passthrough.State takes. Normal is the
@@ -362,6 +411,12 @@ type Status struct {
 	Priority    *PriorityStatus   `json:"priority,omitempty"`
 	Claims      []Claim           `json:"claims,omitempty"`
 	Footprints  []EngineFootprint `json:"footprints,omitempty"`
+	// Schedules are the engines held to hours, by engine name: each
+	// configured window, and a lease's own (berth run --window) in place of
+	// its engine's, whether or not anything runs now.
+	Schedules []Schedule `json:"schedules,omitempty"`
+	// Bookings are every card's schedule that has not ended, by start.
+	Bookings []Booking `json:"bookings,omitempty"`
 	// ParkedBytes is the RAM the parked engines hold: each one's Berth
 	// scope's anon plus shmem, or its VRAM footprint where Berth reads no
 	// scope. A reading, never a reservation.
@@ -395,6 +450,18 @@ type EngineFootprint struct {
 	Bytes  uint64    `json:"estimated_vram_bytes"`
 	Runs   int       `json:"runs"`
 	At     time.Time `json:"at"`
+	// HotPeakBytes is the most VRAM a run under this exact name held, the
+	// figure learn_size sizes a lease from.
+	HotPeakBytes uint64 `json:"hot_peak_vram_bytes,omitempty"`
+	// RAMPeakBytes is the most host RAM a run held while active.
+	RAMPeakBytes uint64 `json:"ram_peak_bytes,omitempty"`
+	// ParkedRAMBytes is the host RAM the engine last held parked.
+	ParkedRAMBytes uint64 `json:"parked_ram_bytes,omitempty"`
+	// Priority and MinTurnS are what the last run under this exact name
+	// asked for: its berth run line's --priority and --min-turn. Priority
+	// is "" until a run of the name is measured.
+	Priority string  `json:"priority,omitempty"`
+	MinTurnS float64 `json:"min_turn_s,omitempty"`
 }
 
 // Claim is one claim rule and what it matches right now: work Berth does not
@@ -564,6 +631,9 @@ type Lease struct {
 	Contested    uint64   `json:"contested,omitempty"`
 	Age          float64  `json:"age_seconds"`
 	Pinned       bool     `json:"pinned,omitempty"` // never drained: a hold, a claim, berth run --pinned
+	// Training is a berth train lease: it locks its card, and every other
+	// request there is refused while it holds or waits.
+	Training bool `json:"training,omitempty"`
 	// ParkedSince is how long the engine has been parked, in seconds; 0
 	// when it is not parked.
 	ParkedSince float64 `json:"parked_since,omitempty"`
@@ -577,6 +647,21 @@ type Lease struct {
 	// expects the waiting engine to start, from the measured starts in
 	// its queue chain only; 0 = unknown (no book, or nothing measured).
 	EstimateS float64 `json:"estimate_start_s,omitempty"`
+	// Window is the hours the broker holds the lease to, "23:00-07:00";
+	// "" = none.
+	Window string `json:"window,omitempty"`
+	// Booking is the ID of the booking that sets Priority now; "" = the
+	// lease's own class.
+	Booking string `json:"booking,omitempty"`
+}
+
+// Holder names the lease for people: its engine, or "group (engine)" for a
+// model under a router (llama-swap (qwen)).
+func (l Lease) Holder() string {
+	if l.Group != "" && l.Group != l.Engine {
+		return l.Group + " (" + l.Engine + ")"
+	}
+	return l.Engine
 }
 
 type Squatter struct {

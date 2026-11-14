@@ -18,7 +18,12 @@ berth status            # the card, leases, waiters, stowaways, claims, the boar
 berth status --format json | jq '.leases, .waiting, .squatters'
 berth claims            # games and apps Berth holds the card for, or names
 berth engine check -v   # what every engine reports right now
+berth contract ENGINE   # one engine's VRAM, RAM, turn and switch times, each declared, measured or unknown
+berth fit MODEL --explain   # where a request would run now (running, resume, free, drain, blocked) and why
+berth queue             # waiters in grant order; bump/prio/drop are the operator's, never an agent's own call
+berth schedule          # what holds the card, the queue, and every booking for the next 14 days
 berth events -f         # live: grants, drains, refusals, stowaways
+berth why ID|ENGINE     # one lease's story: why it waited, was drained or refused, across restarts
 ```
 
 If `berth status` says berthd is unreachable, Berth is not coordinating this card: say so and
@@ -32,6 +37,9 @@ do not assume any engine is protected.
   gateway), or it can load onto a card that is already full and crash both.
 - A **pinned** lease (a hold, a claim, `berth run --pinned`) is never drained. If a request waits
   "held by ... pinned", the user's game or app has the card. Tell them; do not work around it.
+- A refusal that says a card "is locked for training", or that a run "is training on this node", means a
+  `berth train` run has it. Do not retry in a loop, start the engine another way, restart berthd, or stop the
+  training. Tell the user, or use another card or node.
 - Do not edit berth.toml, systemd units or an engine's config without showing the change and its
   undo first. Run `berth config check` after any berth.toml edit.
 
@@ -39,12 +47,14 @@ do not assume any engine is protected.
 
 | Need | Command |
 |---|---|
-| Run an engine under a lease | `berth run --as NAME [--priority batch\|interactive\|foreground] [--needs-mib N] -- CMD ARGS` |
+| Run an engine under a lease | `berth run --as NAME [--priority batch\|interactive\|foreground] [--needs-mib N \| --learn-size] -- CMD ARGS` |
 | Run an engine on one card of several | `berth run --as NAME --gpu gpu1 -- CMD`, or `gpu = "gpu1"` in its engine entry (`berth status` names the cards; the engine gets `CUDA_VISIBLE_DEVICES` for that card unless already set) |
 | Run an engine across several cards | `berth run --as NAME --gpu gpu0,gpu1 -- CMD`: one lease, granted on every card at once. It cannot park or lend yet |
 | Run a configured engine without retyping its command | `berth run --as NAME` with no command runs the `start` of NAME's `[[engine]]` entry |
-| Run an app that must not be drained (Blender, a training job) | `berth run --as NAME --pinned -- CMD` |
+| Train or fine-tune a model (nothing automated may interrupt it) | `berth train --as NAME [--gpu gpu0,gpu1] -- CMD`: the whole card, no wait deadline, and every other request on its cards is refused until it exits. Another `berth train` waits in line |
+| Run an app that must not be drained but may share the card (Blender) | `berth run --as NAME --pinned -- CMD` |
 | Give an engine a minimum turn before a request can drain it | `berth run --as NAME --min-turn 5m -- CMD`, or `min_turn = "5m"` in its engine entry (a hold still wins; `berth status` shows the turn left in the TURN column) |
+| Plan your own turn on the card (a nightly job, a long run) | `POST /v1/berth/schedule` on the gateway with `{"who":"ME","engine":"NAME","start":"23:00","for":"5h"}`, or `berth schedule book --who ME --engine NAME --at 23:00 --for 5h`. Read `berth schedule` first and pick free hours; a clash is a 409 naming the booking it hits. Book only your own runs: downtime and priority changes are the operator's |
 | Free the card for the user (game, call) | `berth hold [--for 2h] [--reason game] [--gpu gpu1]` (ends on Ctrl-C; default the first card) |
 | Call a model and let Berth start its engine | the gateway: `http://127.0.0.1:9799/v1`, bearer key from `berth key` |
 | Wrap every llama-swap model at once | `berth wire llama-swap --config CFG` (plan), `--write` (apply, keeps a backup), `--write --update` (rewrite wire's flags on lines it wrote, keeping flags added by hand), `--wait 10m` (every model waits that long for the card) |
@@ -141,7 +151,8 @@ builtin = true            # false turns the built-in pack off
 1. `berth status`: is something else leased, waiting, or a stowaway?
 2. A refusal reason names who holds the card and why the request could not fit
    ("needs 20480 MiB; at most 14336 MiB can be freed; claims hold 10240 MiB").
-3. `berth events --format json` after the failure shows the drain and grant sequence.
+3. `berth why ENGINE` after the failure tells that engine's last lease, wait by wait; `berth events --format json`
+   shows the whole drain and grant sequence.
 4. Fix the cause (a smaller quant, `--needs-mib`, a priority, the user's hold ending), never by
    killing the holder.
 5. A lease stuck after its engine exited: `berth reclaim` lists what the lease recorded. Only with

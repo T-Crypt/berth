@@ -76,11 +76,22 @@ type Model struct {
 	Line   string `json:"line,omitempty" yaml:"line,omitempty"` // the wrapper, for add and update
 }
 
+// SwapGroup is a llama-swap group whose wired members llama-swap swaps
+// itself: loading one unloads the other, a voluntary release to Berth, so
+// min_turn, the ranking and the juggle guard never decide between them.
+// Group is "" for llama-swap's default group, which holds every model no
+// group names.
+type SwapGroup struct {
+	Group   string   `json:"group" yaml:"group"`
+	Members []string `json:"members" yaml:"members"`
+}
+
 // Result is one run over one file.
 type Result struct {
-	Path    string  `json:"path" yaml:"path"`
-	Models  []Model `json:"models" yaml:"models"`
-	Changed bool    `json:"changed" yaml:"changed"` // any add or update
+	Path     string      `json:"path" yaml:"path"`
+	Models   []Model     `json:"models" yaml:"models"`
+	Changed  bool        `json:"changed" yaml:"changed"` // any add or update
+	Swapping []SwapGroup `json:"swapping,omitempty" yaml:"swapping,omitempty"`
 
 	content string // the edited file; NewContent reads it
 }
@@ -130,7 +141,7 @@ func LlamaSwap(pathArg string, o Options) (*Result, error) {
 	// Every plan reads the original lines; the edits are applied afterwards,
 	// bottom-up, so one model's insert never moves another model's target.
 	r := &Result{Path: pathArg, Models: make([]Model, 0, len(names))}
-	wrapped := map[string]string{} // model -> the fragment its cmd must carry
+	wrapped := map[string]bool{} // models whose cmd must run under berth run --as
 	var plans []editPlan
 	for i, name := range names {
 		end := blockEnd
@@ -143,7 +154,7 @@ func LlamaSwap(pathArg string, o Options) (*Result, error) {
 		}
 		switch m.Action {
 		case "wired", "add", "update":
-			wrapped[name] = "run --as " + shellWord(name) + " "
+			wrapped[name] = true
 		}
 		r.Models = append(r.Models, m)
 	}
@@ -161,6 +172,7 @@ func LlamaSwap(pathArg string, o Options) (*Result, error) {
 	}
 	r.Changed = r.Count("add")+r.Count("update") > 0
 	r.content = joinLines(lines, trailingNL)
+	r.Swapping = swapping(text, names, wrapped)
 
 	// Verify against a parse, plan or not: the walker's output is the
 	// product, and a silent formatting surprise is the one failure worth
@@ -278,11 +290,11 @@ func planModel(lines []string, keyRow, end int, name string, o Options) (Model, 
 		if !o.Update {
 			return Model{Name: name, Action: "wired", Reason: "already runs under berth run"}, nil
 		}
-		kept, ok := handFlags(lines[wrapRow], o)
+		lead, kept, ok := handFlags(lines[wrapRow], o)
 		if !ok {
 			return Model{Name: name, Action: "wired", Reason: "the berth run line does not end at --; edit it by hand"}, nil
 		}
-		desired := wrapperLine(name, o, wrapIndent, lineEnding(lines[wrapRow]), kept...)
+		desired := wrapperLine(name, o, wrapIndent, lineEnding(lines[wrapRow]), lead, kept...)
 		if lines[wrapRow] == desired {
 			return Model{Name: name, Action: "wired", Reason: "already runs under berth run with these flags"}, nil
 		}
@@ -305,16 +317,21 @@ func planModel(lines []string, keyRow, end int, name string, o Options) (Model, 
 	if at < len(lines) {
 		ending = lineEnding(lines[at])
 	}
-	line := wrapperLine(name, o, insertIndent, ending)
+	line := wrapperLine(name, o, insertIndent, ending, nil)
 	return Model{Name: name, Action: "add", Line: line}, &editPlan{at: at, line: line}
 }
 
-// wrapperLine is the full line inserted into the block: berth run, the flags,
-// the operator's own flags (kept), and the -- that ends berth's own flag
-// list. The model's original cmd follows on the next line.
-func wrapperLine(name string, o Options, indent int, ending string, kept ...string) string {
+// wrapperLine is the full line inserted into the block: the operator's words
+// before berth (lead), berth run, the flags, the operator's own flags (kept),
+// and the -- that ends berth's own flag list. The model's original cmd
+// follows on the next line.
+func wrapperLine(name string, o Options, indent int, ending string, lead []string, kept ...string) string {
 	var b strings.Builder
 	b.WriteString(strings.Repeat(" ", indent))
+	for _, w := range lead {
+		b.WriteString(shellWord(w))
+		b.WriteString(" ")
+	}
 	b.WriteString(shellWord(o.Bin))
 	b.WriteString(" run --as ")
 	b.WriteString(shellWord(name))
@@ -346,18 +363,20 @@ func wrapperLine(name string, o Options, indent int, ending string, kept ...stri
 	return b.String()
 }
 
-// handFlags is the words of a berth run line that wire did not write: every
-// word between run and the closing --, less the flags wire writes and their
-// values (each of them takes one). A --wait is wire's only when o.Wait is
-// set. ok is false when the line has no closing --.
-func handFlags(line string, o Options) (kept []string, ok bool) {
+// handFlags is the words of a berth run line that wire did not write: lead,
+// the words before the berth binary (a wrapper that runs berth run), and
+// kept, every word between run and the closing --, less the flags wire
+// writes and their values (each of them takes one). A --wait is wire's only
+// when o.Wait is set. ok is false when the line has no closing --.
+func handFlags(line string, o Options) (lead, kept []string, ok bool) {
 	owned := map[string]bool{"as": true, "group": true, "priority": true, "drain-post": true, "drain-slots": true, "wait": o.Wait > 0}
 	fields := shellFields(line)
 	run := slices.Index(fields, "run")
 	end := slices.Index(fields, "--")
-	if run < 0 || end < run {
-		return nil, false
+	if run < 1 || end < run {
+		return nil, nil, false
 	}
+	lead = fields[:run-1]
 	for i := run + 1; i < end; i++ {
 		name, _, eq := strings.Cut(strings.TrimLeft(fields[i], "-"), "=")
 		if strings.HasPrefix(fields[i], "-") && owned[name] {
@@ -368,7 +387,7 @@ func handFlags(line string, o Options) (kept []string, ok bool) {
 		}
 		kept = append(kept, fields[i])
 	}
-	return kept, true
+	return lead, kept, true
 }
 
 // wrappedAs names the model a line wraps in `berth run --as NAME`, or "". The
@@ -376,8 +395,8 @@ func handFlags(line string, o Options) (kept []string, ok bool) {
 // name all count.
 func wrappedAs(line string) string {
 	fields := shellFields(line)
-	for i := 1; i+2 < len(fields); i++ {
-		if fields[i] != "run" || fields[i+1] != "--as" {
+	for i := 1; i < len(fields); i++ {
+		if fields[i] != "run" {
 			continue
 		}
 		base := fields[i-1]
@@ -387,7 +406,14 @@ func wrappedAs(line string) string {
 		if base != "berth" && !strings.EqualFold(base, "berth.exe") {
 			continue
 		}
-		return fields[i+2]
+		for j := i + 1; j < len(fields) && fields[j] != "--"; j++ {
+			if fields[j] == "--as" && j+1 < len(fields) {
+				return fields[j+1]
+			}
+			if name, ok := strings.CutPrefix(fields[j], "--as="); ok {
+				return name
+			}
+		}
 	}
 	return ""
 }
@@ -480,9 +506,70 @@ func roster(text string) ([]string, error) {
 	return nil, nil
 }
 
+// swapping lists the groups where llama-swap swaps two or more wired models
+// itself, in roster order. Groups come from routing.router.settings.groups,
+// or the older top-level groups:; swap defaults to true, and a model no group
+// names sits in the default group, which swaps.
+func swapping(text string, names []string, wired map[string]bool) []SwapGroup {
+	var cfg struct {
+		Groups  map[string]groupCfg `yaml:"groups"`
+		Routing struct {
+			Router struct {
+				Settings struct {
+					Groups map[string]groupCfg `yaml:"groups"`
+				} `yaml:"settings"`
+			} `yaml:"router"`
+		} `yaml:"routing"`
+	}
+	if yaml.Unmarshal([]byte(text), &cfg) != nil {
+		return nil
+	}
+	groups := cfg.Routing.Router.Settings.Groups
+	if groups == nil {
+		groups = cfg.Groups
+	}
+	groupOf := map[string]string{}
+	for g, c := range groups {
+		for _, m := range c.Members {
+			groupOf[m] = g
+		}
+	}
+	var out []SwapGroup
+	at := map[string]int{}
+	for _, name := range names {
+		if !wired[name] {
+			continue
+		}
+		g := groupOf[name]
+		if g != "" && groups[g].Swap != nil && !*groups[g].Swap {
+			continue
+		}
+		i, ok := at[g]
+		if !ok {
+			i = len(out)
+			at[g] = i
+			out = append(out, SwapGroup{Group: g})
+		}
+		out[i].Members = append(out[i].Members, name)
+	}
+	kept := out[:0]
+	for _, s := range out {
+		if len(s.Members) > 1 {
+			kept = append(kept, s)
+		}
+	}
+	return kept
+}
+
+// groupCfg is the part of a llama-swap group swapping reads.
+type groupCfg struct {
+	Swap    *bool    `yaml:"swap"`
+	Members []string `yaml:"members"`
+}
+
 // verify re-parses the edited text and checks the roster order and every
 // wrappable model's cmd against the parse, not against the line walker.
-func verify(text string, wantOrder []string, want map[string]string) error {
+func verify(text string, wantOrder []string, want map[string]bool) error {
 	names, err := roster(text)
 	if err != nil {
 		return fmt.Errorf("edited file does not parse: %w", err)
@@ -507,12 +594,11 @@ func verify(text string, wantOrder []string, want map[string]string) error {
 		models := doc.Content[i+1]
 		for j := 0; j+1 < len(models.Content); j += 2 {
 			name := models.Content[j].Value
-			frag, ok := want[name]
-			if !ok {
+			if !want[name] {
 				continue
 			}
-			if !strings.Contains(modelCmd(models.Content[j+1]), frag) {
-				return fmt.Errorf("edited cmd of %q does not carry %q", name, frag)
+			if wrappedAs(modelCmd(models.Content[j+1])) != name {
+				return fmt.Errorf("edited cmd of %q does not run under berth run --as %q", name, name)
 			}
 		}
 	}

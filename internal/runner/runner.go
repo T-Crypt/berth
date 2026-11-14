@@ -50,9 +50,17 @@ type Options struct {
 	Priority string
 	// Needs is the card memory in bytes, one value per card in Card's
 	// order; one value sizes every card, none takes the whole card.
-	Needs    []uint64
-	Pinned   bool // never drained: an app that must not be stopped (Blender, a capture)
-	Switched bool // a person's switch (the wake page's Launch, /v1/berth/switch): wins a juggle
+	Needs []uint64
+	// LearnSize: with no Needs, berthd sizes the lease from the most this
+	// engine has been measured holding, not the whole card.
+	LearnSize bool
+	Pinned    bool // never drained: an app that must not be stopped (Blender, a capture)
+	Training  bool // berth train: a pinned hold that locks its cards; berthd refuses every other request there
+	// Exclusive: berth train --exclusive puts the granted cards in the
+	// driver's exclusive-process compute mode for the run's life, so no
+	// program outside Berth can open them either.
+	Exclusive bool
+	Switched  bool // a person's switch (the wake page's Launch, /v1/berth/switch): wins a juggle
 	// MinTurn is a minimum turn: while the lease is younger than it after
 	// the grant, no request of equal or lower priority drains it, and
 	// neither does a higher one; only a hold (a game, a call, berth hold)
@@ -79,6 +87,9 @@ type Options struct {
 	// has nothing running or pending before any stop step, so a job is
 	// never cut off. There is no time limit; a job ends when it ends.
 	DrainComfyUI string
+	// yielded reports a yield from inside the running ComfyUI job, which a
+	// drain's boundary wait counts as the job's end. drain sets it.
+	yielded func() bool
 	// Session release is opt-in and uses the same drain ticket as daemon requests.
 	ExitComfyUIIdle      bool
 	ExitComfyUIIdleAfter time.Duration
@@ -221,6 +232,12 @@ func Run(o Options) int {
 			say("berthd unreachable (%v); not starting %s", err, o.Engine)
 			return ExitRefused
 		}
+		// A training that lost berthd still owns the card: nothing starts
+		// beside it unprotected.
+		if t, ok := runs.Training(runs.Dir(o.Socket), procs.System{}.StartTime); ok {
+			say("berthd unreachable (%v) and %s is training on this node; not starting %s", err, t.Engine, o.Engine)
+			return ExitRefused
+		}
 		// The engine starts unleased and the line below dials on, so a
 		// daemon that comes up later (berthd starting beside this service
 		// at boot) re-attaches it the way it would a run it lost.
@@ -228,12 +245,24 @@ func Run(o Options) int {
 		conn, raw = nil, nil
 	}
 
+	if o.CLI == nil {
+		o.CLI = execCLI
+	}
 	var cardEnv string
 	if conn != nil {
 		defer raw.Close()
-		var ok bool
-		if cardEnv, ok = acquire(o, conn, say); !ok {
+		granted, ok := acquire(o, conn, say)
+		if !ok {
 			return ExitRefused
+		}
+		cardEnv = visibleDevices(o.Card, granted, os.LookupEnv, say)
+		if o.Exclusive {
+			restore, err := exclusive(o, granted.CardUUID)
+			if err != nil {
+				say("--exclusive: %v; not starting %s", err, o.Engine)
+				return ExitRefused
+			}
+			defer restore(say)
 		}
 	}
 
@@ -256,15 +285,15 @@ func Run(o Options) int {
 
 	done := make(chan struct{})
 
-	if o.CLI == nil {
-		o.CLI = execCLI
-	}
 	var cid containerRef
 	o.container = &cid
 
 	// line is the lease's live conn and park state; the drain, the resume
 	// and the container resolver ride it across reattach loops.
 	line := newLine(conn)
+	if conn != nil {
+		line.startTurn()
+	}
 	go forwardSignals(cmd, done, func() bool { return o.Checkpoint && line.isParked() }, line.askStop)
 
 	// A container engine resolves its containers to their full IDs and names
@@ -356,7 +385,17 @@ func Run(o Options) int {
 					case m.Op == proto.OpReturn:
 						go line.returnStep(o, m.LendID, say)
 					case m.Op == proto.OpGranted && m.Resume:
-						go line.resume(o, cmd, done, say)
+						line.startTurn()
+						if waking, ok := line.beginWake(); ok {
+							go line.resume(o, cmd, done, waking, say)
+						}
+					case m.Op == proto.OpYield:
+						line.setYield(time.Duration(m.Yield * float64(time.Second)))
+						if m.Yield > 0 {
+							say("%s yielded the card from inside its job for %s", o.Engine, time.Duration(m.Yield*float64(time.Second)))
+						} else {
+							say("%s ended its yield", o.Engine)
+						}
 					}
 				})
 				select {
@@ -404,30 +443,30 @@ func Run(o Options) int {
 
 // acquire asks berthd for the card and waits for the grant. It returns the
 // device entry the engine starts with, and false when there is no grant.
-func acquire(o Options, conn *proto.Conn, say func(string, ...any)) (string, bool) {
-	if err := conn.Send(proto.Msg{Op: proto.OpAcquire, Card: o.Card, Engine: o.Engine, Group: o.Group, Priority: o.Priority, Needs: largest(o.Needs), NeedsEach: each(o.Needs), Wait: o.Wait.Seconds(), Pinned: o.Pinned, Switched: o.Switched, Lend: o.Lend != nil, WholeMachine: o.WholeMachine, MinTurn: o.MinTurn.Seconds(), ParkTTL: o.ParkTTL.Seconds(), Window: o.Window.String()}); err != nil {
+func acquire(o Options, conn *proto.Conn, say func(string, ...any)) (proto.Msg, bool) {
+	if err := conn.Send(proto.Msg{Op: proto.OpAcquire, Card: o.Card, Engine: o.Engine, Group: o.Group, Priority: o.Priority, Needs: largest(o.Needs), NeedsEach: each(o.Needs), LearnSize: o.LearnSize, Wait: o.Wait.Seconds(), Pinned: o.Pinned, Training: o.Training, Switched: o.Switched, Lend: o.Lend != nil, WholeMachine: o.WholeMachine, MinTurn: o.MinTurn.Seconds(), ParkTTL: o.ParkTTL.Seconds(), Window: o.Window.String()}); err != nil {
 		say("acquire: %v", err)
-		return "", false
+		return proto.Msg{}, false
 	}
 	for {
 		m, err := conn.Recv()
 		if err != nil {
 			say("berthd went away while %s was waiting: %v", o.Engine, err)
-			return "", false
+			return proto.Msg{}, false
 		}
 		switch m.Op {
 		case proto.OpWaiting:
 			say("waiting: %s", m.Reason)
 		case proto.OpRefused:
 			say("refused: %s", m.Reason)
-			return "", false
+			return proto.Msg{}, false
 		case proto.OpGranted:
 			if m.Reason != "" {
 				say("granted %s, WARNING: %s", m.Lease, m.Reason)
 			} else {
 				say("granted %s", m.Lease)
 			}
-			return visibleDevices(o.Card, m, os.LookupEnv, say), true
+			return m, true
 		}
 	}
 }
@@ -491,8 +530,8 @@ func reattach(o Options, cmd *exec.Cmd, done <-chan struct{}, cid *containerRef,
 // waiters behind memory that is already gone.
 func reattachMsg(o Options, pid int, start uint64, cid *containerRef, parked bool, line *leaseLine) proto.Msg {
 	m := proto.Msg{Op: proto.OpReattach, Card: o.Card, Engine: o.Engine, Group: o.Group, Priority: o.Priority,
-		Needs: largest(o.Needs), NeedsEach: each(o.Needs), Pinned: o.Pinned, Lend: o.Lend != nil, WholeMachine: o.WholeMachine,
-		MinTurn: o.MinTurn.Seconds(), ParkTTL: o.ParkTTL.Seconds(), Window: o.Window.String(),
+		Needs: largest(o.Needs), NeedsEach: each(o.Needs), LearnSize: o.LearnSize, Pinned: o.Pinned, Training: o.Training, Lend: o.Lend != nil, WholeMachine: o.WholeMachine,
+		MinTurn: o.MinTurn.Seconds(), Held: line.held().Seconds(), ParkTTL: o.ParkTTL.Seconds(), Window: o.Window.String(),
 		PID: pid, PIDStart: start, Containers: cid.list(), Parked: parked}
 	if t, ok := line.openLend(); ok {
 		m.LendID, m.Lent = t.ID, t.MiB<<20
@@ -739,7 +778,7 @@ func record(o Options, cmd *exec.Cmd, reason string) func() {
 	pid, self := cmd.Process.Pid, os.Getpid()
 	remove, err := runs.Write(runs.Dir(o.Socket), runs.Record{
 		Engine: o.Engine, PID: pid, Start: procs.System{}.StartTime(pid), Started: time.Now(), Reason: reason,
-		Wrapper: self, WrapperStart: procs.System{}.StartTime(self),
+		Wrapper: self, WrapperStart: procs.System{}.StartTime(self), Training: o.Training,
 	})
 	if err != nil {
 		fmt.Fprintf(o.Stderr, "berth: could not record the unprotected run: %v\n", err)
@@ -830,9 +869,11 @@ func drainWait(o Options) time.Duration {
 
 func drain(o Options, cmd *exec.Cmd, line *leaseLine, done <-chan struct{}, reason string, say func(string, ...any)) {
 	say("draining %s: %s", o.Engine, reason)
+	line.awaitWake(o.Engine, done, say)
 	if o.DrainComfyUI != "" {
 		boundary := o
 		boundary.ExitComfyUIIdle = false
+		boundary.yielded = line.yielding
 		if !jobBoundary(boundary, done, say) {
 			return
 		}

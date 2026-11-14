@@ -59,6 +59,10 @@ type Engine struct {
 	Serves   []string `toml:"serves,omitempty" json:"serves,omitempty" yaml:"serves,omitempty"`          // model names this engine answers for
 	Priority string   `toml:"priority,omitempty" json:"priority,omitempty" yaml:"priority,omitempty"`    // batch, interactive (default) or foreground
 	NeedsMiB MiBs     `toml:"needs_mib,omitempty" json:"needs_mib,omitempty" yaml:"needs_mib,omitempty"` // per card, in gpu order; none = the whole card
+	// LearnSize: with no needs_mib, the lease takes the most this engine has
+	// been measured holding plus a load headroom, so engines that fit
+	// together share the card. Until a run is measured, the whole card.
+	LearnSize bool `toml:"learn_size,omitempty" json:"learn_size,omitempty" yaml:"learn_size,omitempty"`
 	// Background: the gateway starts this engine at batch priority whenever
 	// the card has been free (no lease, no waiter, the card serving this
 	// machine) for IdleAfter. Any other request drains it as any batch
@@ -705,6 +709,9 @@ func (c *Config) Validate() error {
 			errs = append(errs, fmt.Errorf("%s: drain_max %s must be >= 0", where, e.DrainMax))
 		}
 		if err := CheckNeeds(e.NeedsMiB, e.GPU); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", where, err))
+		}
+		if err := CheckLearnSize(e); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", where, err))
 		}
 		if e.MinTurn.Duration < 0 {

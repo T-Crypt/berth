@@ -90,6 +90,22 @@ data: [DONE]
 			want:  streamResult{TTFT: 3 * time.Second, Total: 6 * time.Second, Text: "swap"},
 		},
 		{
+			// A thinking model streams its reasoning before its answer:
+			// llama.cpp, NInfer and Strata as reasoning_content, others as
+			// reasoning. It is a token, and it is kept apart from the answer.
+			name: "reasoning then answer",
+			in: `data: {"choices":[{"delta":{"reasoning_content":"one "}}]}
+
+data: {"choices":[{"delta":{"reasoning":"line"}}]}
+
+data: {"choices":[{"delta":{"content":"ok"}}]}
+
+data: [DONE]
+`,
+			clock: clockOf(t0.Add(2*time.Second), t0.Add(4*time.Second)),
+			want:  streamResult{TTFT: 2 * time.Second, Total: 4 * time.Second, Text: "ok", Reasoning: "one line"},
+		},
+		{
 			name:  "trailing event without blank line or DONE",
 			in:    "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}",
 			clock: clockOf(t0.Add(time.Second), t0.Add(time.Second)),
@@ -235,6 +251,9 @@ func TestOutputsIdentical(t *testing.T) {
 		{"one", []Sample{{Text: "swap bench ok"}}, "yes"},
 		{"all the same", []Sample{{Text: "swap bench ok"}, {Text: "swap bench ok"}, {Text: "swap bench ok"}}, "yes"},
 		{"a resume that drifts", []Sample{{Text: "swap bench ok"}, {Text: "swap bench ok "}}, "no"},
+		{"thinking that drifts", []Sample{{Reasoning: "ok, one line", Text: ""}, {Reasoning: "ok one line", Text: ""}}, "no"},
+		{"the same thinking, no answer yet", []Sample{{Reasoning: "ok, one line"}, {Reasoning: "ok, one line"}}, "yes"},
+		{"empty answers prove nothing", []Sample{{}, {}}, "n/a (empty)"},
 	}
 	for _, tt := range tests {
 		if got := outputsIdentical(tt.samples); got != tt.want {
@@ -265,13 +284,20 @@ func TestChatBody(t *testing.T) {
 		Seed        int       `json:"seed"`
 		Messages    []message `json:"messages"`
 	}
-	if err := json.Unmarshal(chatBody("model-x"), &body); err != nil {
+	raw := chatBody("model-x", 256, false)
+	if err := json.Unmarshal(raw, &body); err != nil {
 		t.Fatalf("chatBody is not JSON: %v", err)
 	}
-	if body.Model != "model-x" || !body.Stream || body.Temperature != 0 || body.MaxTokens != 32 || body.Seed != 1 {
+	if body.Model != "model-x" || !body.Stream || body.Temperature != 0 || body.MaxTokens != 256 || body.Seed != 1 {
 		t.Errorf("chatBody fields = %+v", body)
 	}
 	if len(body.Messages) != 1 || body.Messages[0].Role != "user" || body.Messages[0].Content != prompt {
 		t.Errorf("chatBody message = %+v", body.Messages)
+	}
+	if strings.Contains(string(raw), "chat_template_kwargs") {
+		t.Errorf("a plain request carries chat_template_kwargs: %s", raw)
+	}
+	if got := string(chatBody("model-x", 64, true)); !strings.Contains(got, `"chat_template_kwargs":{"enable_thinking":false}`) || !strings.Contains(got, `"max_tokens":64`) {
+		t.Errorf("-no-think body = %s", got)
 	}
 }

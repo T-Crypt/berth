@@ -30,6 +30,10 @@ type Record struct {
 	// can re-attach the engine. 0 in a record from before v0.5.1.
 	Wrapper      int    `json:"wrapper_pid,omitempty"`
 	WrapperStart uint64 `json:"wrapper_start,omitempty"`
+	// Training marks a berth train run. While it lives without a lease, it
+	// still locks the node: berth run will not start an engine without
+	// berthd, and a new berthd refuses other requests until it re-attaches.
+	Training bool `json:"training,omitempty"`
 }
 
 // WrapperState is "alive" while the berth run that wrote r still runs,
@@ -81,6 +85,16 @@ func Write(dir string, r Record) (func(), error) {
 		return func() {}, err
 	}
 	return func() { os.Remove(p) }, nil
+}
+
+// Training is a live training record in dir, and whether there is one.
+func Training(dir string, alive func(pid int) uint64) (Record, bool) {
+	for _, r := range List(dir, alive) {
+		if r.Training {
+			return r, true
+		}
+	}
+	return Record{}, false
 }
 
 // List returns the records whose process is still the same process

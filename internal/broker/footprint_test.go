@@ -117,6 +117,35 @@ func TestFootprintIgnoresACorruptFile(t *testing.T) {
 	}
 }
 
+// A LearnSize lease takes the engine's measured peak plus the load headroom,
+// not the whole card, so a sized engine is granted beside it and the holder
+// is never drained. An engine never measured still takes the whole card.
+func TestLearnSizeSharesTheCard(t *testing.T) {
+	b, c, _ := setup(t, procs.Map{101: 100})
+	runFootprint(t, b, c, "llama", 12*GiB)
+
+	llama := granted(t, b, "llama", acquire(b, Request{Engine: "llama", Priority: Foreground, LearnSize: true}))
+	llama.Attach(100)
+	c.set(gpu.Proc{PID: 101, Name: "llama-server", Used: 12 * GiB})
+	b.Tick(context.Background())
+	if d := grantDetail(t, b, "llama"); !strings.Contains(d, "sized from its measured peak 12.0 GiB") {
+		t.Fatalf("grant detail = %q, want the learned size named", d)
+	}
+
+	granted(t, b, "whisper", acquire(b, Request{Engine: "whisper", Priority: Foreground, Needs: 8 * GiB}))
+	select {
+	case why := <-llama.Drains():
+		t.Fatalf("llama was drained for a waiter that fits beside its learned size: %s", why)
+	default:
+	}
+
+	fresh := acquire(b, Request{Engine: "fresh", Priority: Batch, LearnSize: true})
+	pending(t, fresh)
+	if w := lastWaiting(b); w == "" {
+		t.Fatal("an unmeasured LearnSize engine was not left waiting for the whole card")
+	}
+}
+
 // A run that holds far more than the learned footprint warns once, once
 // the engine has three runs to learn from.
 func TestFootprintWarnsOnceOnADrift(t *testing.T) {
@@ -177,5 +206,32 @@ func TestFootprintFoldsAtTheFreeNotTheRelease(t *testing.T) {
 	last, ok := b.Footprint("llama")
 	if !ok || last != 9*GiB {
 		t.Fatalf("Footprint(llama) = %d, %v after the free; want %d, true", last, ok, 9*GiB)
+	}
+}
+
+// A llama-swap model's own peak and terms sit on its name's entry, its last
+// run on the group's. The status reply carries both, so a reader of the
+// model's name (berth contract, learn_size) finds the peak the broker sizes
+// it from and the priority and turn its berth run line asks for.
+func TestFootprintStatusCarriesAModelsOwnPeak(t *testing.T) {
+	b, c, _ := setup(t, procs.Map{101: 100})
+	l := must(t, acquire(b, Request{Engine: "dirk", Group: "llama-swap", Priority: Foreground, MinTurn: 5 * time.Minute}))
+	l.Attach(100)
+	c.set(gpu.Proc{PID: 101, Name: "llama-server", Used: 12 * GiB})
+	b.Tick(context.Background())
+	l.Release()
+	c.set()
+	b.Tick(context.Background())
+
+	got := map[string]proto.EngineFootprint{}
+	for _, f := range b.Status().Footprints {
+		f.At = time.Time{}
+		got[f.Engine] = f
+	}
+	if f := got["dirk"]; f != (proto.EngineFootprint{Engine: "dirk", HotPeakBytes: 12 * GiB, Priority: "foreground", MinTurnS: 300}) {
+		t.Fatalf("dirk's entry = %+v, want its own 12 GiB peak, foreground, a 300 s turn", f)
+	}
+	if f := got["llama-swap"]; f.Bytes != 12*GiB || f.Runs != 1 {
+		t.Fatalf("llama-swap's entry = %+v, want the last run's 12 GiB", f)
 	}
 }

@@ -116,13 +116,20 @@ When a waiter does not fit on a card, the scheduler tries the cheapest way to ma
 stops at the first that works:
 
 1. **Fits now**: grant.
-2. **Beside a parked residual**: grant beside it.
+2. **Beside a parked residual**: grant beside it, when the most the waiter's engine has held fits beside it.
+   An engine that has filled the card evicts the parked engine instead of loading into a card it cannot fit.
 3. **Lend**: a holder that can lend gives the waiter's size on that card, and keeps serving.
 4. **Park or checkpoint**: the holder sleeps in RAM, if the RAM budget admits it.
 5. **Drain**: the holder stops.
 
 Priorities, minimum turns, holds and the juggle guard decide whether the holder has to make room at
 all; this list only decides how. Each step that fails within the grace falls through to the next.
+
+A **yield** moves a holder's boundary, not its books. A ComfyUI job that calls an LLM can say that it freed its
+models in-process and is at a safe point for a while ([#299](https://github.com/T-Crypt/berth/issues/299)). A drain
+then parks it without waiting for the job to end. Rule 1 still holds, because the park counts only what the card
+read shows free, and rule 4 still holds, because a park that frees nothing falls back to a stop. The holder's way
+back is a resume, which the end of the yield asks for.
 
 ## Many machines
 

@@ -29,6 +29,50 @@ type engineFootprint struct {
 	ParkedRAM uint64    // the RAM a parked run last held (its scope's anon + shmem); 0 = never measured
 	ParkBase  uint64    // what that run held hot, just before it parked
 	RAMPeak   uint64    // the most RAM any run held while active (its scope's anon + shmem); 0 = never measured
+	// HotPeak is the most VRAM a run of this engine name held, kept on the
+	// name's entry: a group's Peak is its largest model's, and one model of
+	// a llama-swap may fit beside a parked engine while another does not.
+	HotPeak uint64
+	// Priority and MinTurn are what the name's last run asked for, kept on
+	// the name's entry: a llama-swap model's terms sit on its berth run
+	// line, which no berth.toml entry declares. Priority "" = no run yet.
+	Priority string        `json:",omitempty"`
+	MinTurn  time.Duration `json:",omitempty"`
+}
+
+// besideHeadroom is the free card memory a whole-card engine needs past its
+// measured peak to load beside a parked engine. Measured on an RTX 4090: a
+// 23710 MiB model served alone, and died loading with 398 MiB left beside a
+// 456 MiB residual. The 2 s card read misses the load's last allocations.
+const besideHeadroom = 512 << 20
+
+// hotPeak is the most VRAM a run of engine has held, 0 until one was measured.
+// b.mu must be held.
+func (b *Broker) hotPeak(engine string) uint64 {
+	if f := b.footprints[engine]; f != nil {
+		return f.HotPeak
+	}
+	return 0
+}
+
+// learnSize is the size a request takes, and for a LearnSize request the
+// grant's line saying where the size came from: the most VRAM a run of the
+// engine has held plus besideHeadroom. A request with a size, for the whole
+// machine or on an APU keeps what it asked. An engine never measured, or one
+// whose peak leaves the card nothing to share, takes the whole card. b.mu
+// must be held.
+func (b *Broker) learnSize(r Request) (uint64, string) {
+	if !r.LearnSize || r.Needs > 0 || r.WholeMachine || b.snap.APU {
+		return r.Needs, ""
+	}
+	peak := b.hotPeak(r.Engine)
+	if peak == 0 {
+		return 0, "not measured yet, so the whole card"
+	}
+	if peak+besideHeadroom >= b.ceiling() {
+		return 0, fmt.Sprintf("its measured peak %s fills the card", sizeHuman(peak))
+	}
+	return peak + besideHeadroom, fmt.Sprintf("sized from its measured peak %s", sizeHuman(peak))
 }
 
 // footprints is the table keyed by engine key: the lease's group, else its
@@ -75,6 +119,13 @@ func (b *Broker) foldFootprint(l *lease, now time.Time) {
 	f.Last = l.peak
 	f.Runs++
 	f.At = now
+	n := b.footprints[l.engine]
+	if n == nil {
+		n = &engineFootprint{}
+		b.footprints[l.engine] = n
+	}
+	n.HotPeak = max(n.HotPeak, l.peak)
+	n.Priority, n.MinTurn = l.prio.String(), l.minTurn
 	b.footprintDirty = true
 }
 
@@ -87,15 +138,19 @@ func sizeHuman(n uint64) string {
 	return fmt.Sprintf("%d MiB", n/gpu.MiB)
 }
 
-// footprintStatus is the table as the status reply carries it: the last
-// run's peak per engine, sorted by name. b.mu must be held.
+// footprintStatus is the table as the status reply carries it: per engine
+// key, the last run's peak and the peaks learn_size and RAM figures read,
+// sorted by name. A llama-swap model's entry may carry only its own peaks;
+// the last-run figure sits on its group's. b.mu must be held.
 func (b *Broker) footprintStatus() []proto.EngineFootprint {
 	out := []proto.EngineFootprint{}
 	for k, f := range b.footprints {
-		if f == nil || f.Last == 0 {
+		if f == nil || f.Last == 0 && f.HotPeak == 0 && f.RAMPeak == 0 && f.ParkedRAM == 0 {
 			continue
 		}
-		out = append(out, proto.EngineFootprint{Engine: k, Bytes: f.Last, Runs: f.Runs, At: f.At})
+		out = append(out, proto.EngineFootprint{Engine: k, Bytes: f.Last, Runs: f.Runs, At: f.At,
+			HotPeakBytes: f.HotPeak, RAMPeakBytes: f.RAMPeak, ParkedRAMBytes: f.ParkedRAM,
+			Priority: f.Priority, MinTurnS: f.MinTurn.Seconds()})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Engine < out[j].Engine })
 	return out

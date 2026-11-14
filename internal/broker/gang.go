@@ -86,6 +86,10 @@ func (g *gang) commit(now time.Time) bool {
 // the order of cards; nil gives every share r.Needs. The cards must share
 // the node's IDs and Seq.
 func AcquireAll(ctx context.Context, cards []*Broker, needs []uint64, r Request, onWait func(string)) ([]*Lease, error) {
+	if r.Training {
+		needs = nil
+	}
+	r = r.asTraining()
 	per := shareRequests(cards, needs, r)
 	if len(cards) == 1 {
 		l, err := cards[0].Acquire(ctx, per[cards[0]], onWait)
@@ -108,6 +112,7 @@ func AcquireAll(ctx context.Context, cards []*Broker, needs []uint64, r Request,
 	arrived := sorted[0].cfg.Seq.Add(1)
 	g := &gang{kick: make(chan struct{}, 1)}
 	waits := make(chan string, 8)
+	locked := make(chan string, len(sorted))
 	done := make(chan struct{})
 	defer close(done)
 	for _, b := range sorted {
@@ -117,6 +122,9 @@ func AcquireAll(ctx context.Context, cards []*Broker, needs []uint64, r Request,
 		b.queue = append(b.queue, l)
 		b.log.Info("acquire", "lease", l.id, "engine", l.engine, "priority", l.prio, "needs_mib", l.needs>>20, "cards", len(sorted))
 		b.emit(proto.Event{Kind: proto.EvRequested, Lease: l.id, Engine: l.engine, Bytes: l.needs, Detail: l.prio.String()})
+		if l.training {
+			b.lockOut(l)
+		}
 		g.shares = append(g.shares, share{b, l})
 		b.mu.Unlock()
 		if shareQueued != nil {
@@ -131,6 +139,12 @@ func AcquireAll(ctx context.Context, cards []*Broker, needs []uint64, r Request,
 					case <-done:
 						return
 					}
+				case why := <-l.lockCh:
+					select {
+					case locked <- why:
+					case <-done:
+					}
+					return
 				case <-done:
 					return
 				}
@@ -179,6 +193,8 @@ func AcquireAll(ctx context.Context, cards []*Broker, needs []uint64, r Request,
 			}
 		case <-ctx.Done():
 			return nil, giveUp(ctx.Err().Error())
+		case why := <-locked:
+			return nil, giveUp(why)
 		case <-timeout:
 			return nil, giveUp(fmt.Sprintf("gave up after %s", wait))
 		}

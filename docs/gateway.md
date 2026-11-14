@@ -18,6 +18,13 @@
   every retry: for 15 s, doubling to 5 min, the gateway answers at once with the same cause,
   and `Retry-After` says when the next start is allowed. A start that answers clears it. A
   model listed under `serves` by two engines fails `berth config check`.
+- **Queue position.** A `not_ready` start whose lease is still in line for the card says where it
+  stands. `X-Berth-Queue-Position` is its place in line, 1 for next. `X-Berth-Start-Estimate:
+  45; lower-bound` is the seconds berthd expects the start to take once the card frees. It counts
+  only the measured starts ahead in the queue and not the holder's time left, so treat it as a
+  minimum. It is missing when nothing was measured. `Retry-After` is then the larger of that
+  estimate and 30 s. A streaming request gets the same error as an SSE event, without these
+  headers.
 - **API key.** Bearer token on every route; `berth key` prints it (created on first use, mode
   600). Loopback only; browser origins and non-loopback Host names are refused.
 
@@ -268,7 +275,14 @@ curl -s http://127.0.0.1:9799/v1/berth/switch -H "Authorization: Bearer $(berth 
 curl -s http://127.0.0.1:9799/v1/berth/stop   -H "Authorization: Bearer $(berth key)" -d '{"engine":"strata"}'
 curl -s http://127.0.0.1:9799/v1/berth/load   -H "Authorization: Bearer $(berth key)" -d '{"engine":"llama-swap","model":"qwen3.6-35b-a3b"}'
 curl -s http://127.0.0.1:9799/v1/berth/batch  -H "Authorization: Bearer $(berth key)" -d '{"engine":"comfyui","grace":30}'
+curl -s http://127.0.0.1:9799/v1/berth/yield  -H "Authorization: Bearer $(berth key)" -d '{"engine":"comfyui","seconds":120}'
 ```
+
+- **Yield** is for a ComfyUI node that calls an LLM in the middle of a job (see [leasing](leasing.md), "A yield").
+  `{"engine":"comfyui","seconds":120}` answers `200` once berthd has told ComfyUI's run, and the yield lasts the
+  seconds given (absent: 300, at most 3600). `{"engine":"comfyui","end":true}` ends it and answers `200` only once
+  ComfyUI holds the card again. An engine with no lease is a `409`, and so is one whose lease covers several cards,
+  since that lease cannot park yet. An engine not in `berth.toml` is a `404`.
 
 - **Batch** is `berth batch` on the network (see [leasing](leasing.md), "A batch"): `202` once berthd has the batch,
   and an engine with a `start` command is switched to as **Switch** does, so one call comes before the jobs.
@@ -294,6 +308,34 @@ model starting. Each engine also carries its `type`. `cards` lists every card th
 on the node (`card`, such as `gpu1`), its base URL on this gateway (`base`, `/cards/gpu1/v1`), `cordoned` when
 `berth cordon` closed it, and the holders on that card alone. Each engine names the cards its entry runs on
 (`cards`), so a board for several cards can put each engine under its card.
+
+## Book the card from an agent
+
+An agent, a timer or another device books its own run on the card's schedule (read
+[Book the card](leasing.md#book-the-card)) with the node's key:
+
+```sh
+K="Authorization: Bearer $(berth key)"
+curl -s http://127.0.0.1:9799/v1/berth/schedule -H "$K"
+curl -s http://127.0.0.1:9799/v1/berth/schedule -H "$K" \
+  -d '{"who":"pi-pocket","engine":"pocket-train","start":"23:00","for":"5h","priority":"batch","days":7}'
+curl -s -X PATCH  http://127.0.0.1:9799/v1/berth/schedule/b4 -H "$K" -d '{"start":"01:00"}'
+curl -s -X DELETE http://127.0.0.1:9799/v1/berth/schedule/b4 -H "$K"
+```
+
+- `GET` is the scheduler in one read: `now`, `running` (the leases that hold a card), `queued` (the waiters in
+  grant order) and `bookings` (every booking that has not ended, by start). A lease that a booking governs names it
+  in `booking`.
+- `POST` books a run and answers `201` with `bookings`, the bookings it made. `start` takes what
+  `berth schedule --at` takes, and `for` is a length such as `5h` or `90m`. `days`, `earliest`, `card`, `priority`
+  and `note` are optional. A clash or an invalid booking is a `409` with the reason, such as
+  `run Sat 23:30-Sun 00:30 clashes with b1 (run for pi-pocket, Sat 23:00-Sun 04:00)`.
+- `PATCH /v1/berth/schedule/ID` moves a run. It takes `start`, `for`, `priority` and `note`, keeps the rest and
+  keeps the ID. `DELETE` cancels a run. Both answer `200` with the booking.
+
+The gateway books, moves and cancels runs only. A priority change or downtime acts on everyone else's work, so it
+is the operator's: `berth schedule`, or a paired device in the harbor. `PATCH` or `DELETE` on one is a `403`. Any
+holder of the key can change any run; per-device ownership comes with device keys.
 
 ## One URL per card
 

@@ -21,6 +21,7 @@ import (
 	"github.com/T-Crypt/berth/internal/claims"
 	"github.com/T-Crypt/berth/internal/config"
 	"github.com/T-Crypt/berth/internal/engines"
+	"github.com/T-Crypt/berth/internal/eventlog"
 	"github.com/T-Crypt/berth/internal/gpu"
 	"github.com/T-Crypt/berth/internal/history"
 	"github.com/T-Crypt/berth/internal/host"
@@ -29,6 +30,7 @@ import (
 	"github.com/T-Crypt/berth/internal/procs"
 	"github.com/T-Crypt/berth/internal/proto"
 	"github.com/T-Crypt/berth/internal/runs"
+	"github.com/T-Crypt/berth/internal/schedule"
 	"github.com/T-Crypt/berth/internal/server"
 	"github.com/T-Crypt/berth/internal/suite"
 )
@@ -50,8 +52,10 @@ func runDaemon(c *Context) int {
 	cfgPath := fs.String("config", config.DefaultPath(), "berth.toml: engines to read, /metrics listener ($BERTH_CONFIG); missing = none")
 	countersFile := fs.String("counters", defaultStateFile("counters.json"), "keeps the collisions board across restarts; \"\" = start at zero every time")
 	devicesFile := fs.String("devices", defaultStateFile("harbor-devices.json"), "devices paired to act from the harbor (berth pair); \"\" = pairing off")
+	scheduleFile := fs.String("schedule", defaultStateFile("schedule.json"), "the cards' bookings (berth schedule): runs, priority changes, downtime; \"\" = no schedule")
 	usageFile := fs.String("usage", defaultStateFile("usage.json"), "card-hours per engine, the default juggle ranking; \"\" = memory only")
 	footprintFile := fs.String("footprint", defaultStateFile("footprint.json"), "VRAM measured per engine across restarts, the estimate behind EST. VRAM; \"\" = memory only")
+	eventsFile := fs.String("events", defaultStateFile("events.jsonl"), "the event stream across restarts, what berth events and berth why read; \"\" = memory only")
 	if code, done := c.Parse(fs); done {
 		return code
 	}
@@ -125,6 +129,16 @@ func runDaemon(c *Context) int {
 		allowList = splitList(*allow)
 	}
 	events, ids, seq, ledger := node.Shared()
+	if *eventsFile != "" {
+		if kept, err := eventlog.Open(*eventsFile); err != nil {
+			log.Error("event file; events are kept in memory only", "path", *eventsFile, "err", err)
+		} else {
+			events = kept
+			defer kept.Close()
+			ids.Store(kept.LastLease())
+		}
+	}
+	events.Emit(proto.Event{At: time.Now(), Kind: proto.EvNodeStarted, Detail: "berth " + c.Version})
 	procTable := procs.Shared(procs.List, *poll/2)
 	var cards []*node.Card
 	var snaps []gpu.Snapshot
@@ -279,9 +293,21 @@ func runDaemon(c *Context) int {
 	go samplerLoop(ctx, rec, hr, n, watcher, ev, &lastHost, &lastAlerts)
 	x := server.Extras{Engines: watcher.Snapshot, Host: lastHost.Load, History: rec.Get,
 		Insights: func() *proto.Insights { return watcher.Insights(time.Now()) },
-		Requests: watcher.Requests, Alerts: lastAlerts.Load, Finished: watcher.Finished}
+		Requests: watcher.Requests, Alerts: lastAlerts.Load, Finished: watcher.Finished,
+		Windows: map[string]proto.Window{}}
+	for _, e := range cfg.Engine {
+		x.Windows[e.Name] = e.Window
+	}
 	if *devicesFile != "" {
 		x.Pair = &pair.Store{Path: *devicesFile}
+	}
+	if *scheduleFile != "" {
+		s, err := schedule.Open(*scheduleFile)
+		if err != nil {
+			return c.fail(Systemf("schedule: %v", err).WithHint("fix or move %s; berthd keeps the cards' bookings there", *scheduleFile))
+		}
+		x.Schedule = s
+		n.SetBookings(s.List(time.Now()))
 	}
 	if err := server.Serve(ctx, ln, n, x, log); err != nil {
 		return c.fail(Systemf("serve: %v", err))

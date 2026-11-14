@@ -2,10 +2,9 @@
 
 ## Preview
 
-The harbor UI (basic mode, served from the built-in demo fixture - every number on the screen
-comes from `demo.json`). The tide shows the card's memory by holder over six hours; the
-hatched stretch is a stowaway the fixture replays: a model that ran without a lease after a
-daemon restart, reported and left alone.
+The harbor UI in basic mode, served from the built-in demo fixture. Every number on the screen comes from
+`demo.json`. The tide shows the card's memory by holder over the last hour. The hatched stretch is a stowaway the
+fixture replays: a model that ran without a lease after a daemon restart, which Berth reported and left alone.
 
 <p align="center"><img src="https://raw.githubusercontent.com/T-Crypt/berth/main/assets/preview-harbor.png" alt="Berth harbor: the CARD tab with ticket counter, request KPIs, the tide of card memory by holder, and the model timeline" width="900"></p>
 
@@ -15,10 +14,10 @@ decode throughput, the token ledger, the per-model leaderboard, storage and resi
 
 <p align="center"><img src="https://raw.githubusercontent.com/T-Crypt/berth/main/assets/preview-requests.png" alt="Berth harbor Engines tab, advanced mode: decode throughput per engine, the token ledger, the per-model leaderboard, storage and residency" width="900"></p>
 
-On a phone, the harbor fits the screen: the tabs move to a bar at the bottom and the panels
-stack. This is the CARD tab on an iPhone, read from a live node on the reference workstation.
+On a phone, the harbor fits the screen. The tabs move to a bar at the bottom and the panels stack. This is the
+CARD tab at phone width, from the same demo fixture.
 
-<p align="center"><img src="https://raw.githubusercontent.com/T-Crypt/berth/main/assets/preview-mobile.png" alt="Berth harbor on an iPhone: the CARD tab with the ticket counter, collisions avoided, the collision tiles and the decode and TPOT KPIs, with CARD, ENGINES and ABOUT in a bottom bar" width="300"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/T-Crypt/berth/main/assets/preview-mobile.png" alt="Berth harbor at phone width: the CARD tab with the ticket counter, collisions avoided, the collision tiles and the decode and TPOT KPIs, with CARD, SWITCH, ENGINES and ABOUT in a bottom bar" width="300"></p>
 
 ### The harbor on your iPhone's Home Screen
 
@@ -66,7 +65,11 @@ for a phone.
   first-seen time; optional desktop notification and webhook. Report-only by design.
 - **Contested grants:** a grant made while stowaways hold memory is flagged, not hidden.
 - **Event log:** every request, wait, drain, release, free, stuck lease, stowaway and
-  probe change, with gap-free sequence numbers; `berth events -f` follows it live.
+  probe change, with gap-free sequence numbers; `berth events -f` follows it live. berthd keeps the
+  stream in `~/.local/state/berth/events.jsonl` (`--events`), so the numbers and the last 1000 events carry
+  on across a restart. `berth why ID` tells one lease's part of it in plain words: why it waited, the
+  grant, each drain and who it was for, and the restarts it lived through. `berth why ENGINE` reads that
+  engine's newest lease.
 - **The collisions board:** collisions avoided, VRAM handed off, drains, stuck releases
   caught, stowaways caught, contested grants, refusals. Each count links back to a
   recorded event. berthd keeps the board in `~/.local/state/berth/counters.json`
@@ -122,8 +125,11 @@ for a phone.
   adds every switch, drain, park, resume and VM handoff. A burst of one event shows once. On a machine with several cards the title leads with
   the card (`gpu1: GPU passed to a VM`) and each card's events are gated apart.
   Set it in `berth.toml` (`[notify] enabled = false` turns it off) or with `--level`.
-  `berth service install --notify` runs it as a user unit. It is Linux only for now and
-  uses `notify-send`, so any desktop or notification daemon shows it.
+  On Linux it uses `notify-send`, so any desktop or notification daemon shows it, and
+  `berth service install --notify` runs it as a user unit. On Windows it is a tray icon in
+  the taskbar: its notifications are Windows' own toasts (a click opens the harbor), its
+  tooltip is the latest event, and its menu opens the harbor, turns the toasts off and on,
+  lists the last 10 events and quits. `berth service install --notify` starts it at logon.
 
 ## The harbor's views
 Everything the node collects shows in one of four tabs, and every panel answers a

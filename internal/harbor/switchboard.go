@@ -75,6 +75,70 @@ func (h *Harbor) boardAction(action string) http.HandlerFunc {
 	}
 }
 
+// boardQueue is POST /v1/board/queue: a paired device bumps, re-ranks or
+// drops one waiter. It goes to berthd's socket, not the gateway: the
+// gateway's API key is held by agents, and a queue change is the
+// operator's, so only a paired device makes one.
+func (h *Harbor) boardQueue(w http.ResponseWriter, r *http.Request) {
+	if !h.writeOK(w, r) {
+		return
+	}
+	var req struct {
+		Lease    string `json:"lease"`
+		Action   string `json:"action"`
+		Priority string `json:"priority,omitempty"`
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<16))
+	if err != nil || json.Unmarshal(body, &req) != nil || req.Lease == "" ||
+		(req.Action != "bump" && req.Action != "prio" && req.Action != "drop") || (req.Action == "prio") != (req.Priority != "") {
+		apiError(w, http.StatusBadRequest, "bad_body", `the body must be JSON like {"lease":"ID","action":"bump|drop"} or {"lease":"ID","action":"prio","priority":"batch|interactive|foreground"}`)
+		return
+	}
+	m, err := h.ask(proto.Msg{Op: proto.OpQueue, Lease: req.Lease, Action: req.Action, Priority: req.Priority})
+	switch {
+	case err != nil:
+		apiError(w, http.StatusServiceUnavailable, "berthd_down", "berthd is not answering; the queue is unchanged")
+	case m.Op == proto.OpRefused:
+		apiError(w, http.StatusConflict, "refused", m.Reason)
+	default:
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"lease": m.Lease, "change": m.Reason})
+	}
+}
+
+// boardSchedule is POST /v1/board/schedule: a paired device books, moves or
+// cancels any booking, downtime and priority changes included. Like the
+// queue, it goes to berthd's socket: agents holding the gateway's key book
+// only their own runs there.
+func (h *Harbor) boardSchedule(w http.ResponseWriter, r *http.Request) {
+	if !h.writeOK(w, r) {
+		return
+	}
+	var req struct {
+		Action   string         `json:"action"`
+		Booking  *proto.Booking `json:"booking"`
+		Days     int            `json:"days,omitempty"`
+		Earliest bool           `json:"earliest,omitempty"`
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<16))
+	op := map[string]string{"book": proto.OpBook, "move": proto.OpRebook, "cancel": proto.OpUnbook}
+	if err != nil || json.Unmarshal(body, &req) != nil || op[req.Action] == "" || req.Booking == nil ||
+		(req.Action != "book") != (req.Booking.ID != "") {
+		apiError(w, http.StatusBadRequest, "bad_body", `the body must be JSON like {"action":"book","booking":{...}} or {"action":"move|cancel","booking":{"id":"b1",...}}`)
+		return
+	}
+	m, err := h.ask(proto.Msg{Op: op[req.Action], Booking: req.Booking, Days: req.Days, Earliest: req.Earliest})
+	switch {
+	case err != nil:
+		apiError(w, http.StatusServiceUnavailable, "berthd_down", "berthd is not answering; the schedule is unchanged")
+	case m.Op == proto.OpRefused:
+		apiError(w, http.StatusConflict, "refused", m.Reason)
+	default:
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string][]proto.Booking{"bookings": m.Bookings})
+	}
+}
+
 // toGateway sends one request to the gateway with the node's key and hands
 // its status and body back to the page.
 func (h *Harbor) toGateway(w http.ResponseWriter, r *http.Request, method, path string, body []byte) {

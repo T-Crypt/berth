@@ -69,7 +69,30 @@ models:
 ```
 
 llama-swap stops a model with SIGTERM; `berth run` forwards it to the engine's process group.
-While Berth waits for the card, llama-swap's `healthCheckTimeout` keeps the request open.
+
+By default llama-swap runs one model at a time and unloads the old model itself when a request names
+another. Berth sees that as the old model giving the card back, so `min_turn`, the engine ranking and
+the juggle guard never decide between two llama-swap models. Two clients on two models then swap the
+card on every request. Put the wired models in a group with `swap: false` so a request for another
+model waits for a Berth lease instead, and the old model unloads through its drain once Berth says so:
+
+```yaml
+healthCheckTimeout: 600   # longer than min_turn plus the slowest model's load
+routing:
+  router:
+    use: group
+    settings:
+      groups:
+        "chat":
+          swap: false
+          exclusive: false
+          members: ["qwen3-30b", "gemma-27b"]
+```
+
+While a model waits for the card, llama-swap's `healthCheckTimeout` keeps the request open. If the
+timeout is shorter than the wait, llama-swap gives up on the start and the request fails. `berth wire
+llama-swap` names every group where llama-swap still swaps wired models itself. Models whose learned
+size fits beside each other (`learn_size`) now share the card instead of swapping.
 Reading: `type = "llama-swap"` follows every running model's upstream metrics, which exist only
 when the model's `cmd` starts `llama-server` with `--metrics`; without it the engine stays up and
 the harbor shows n/a for decode, prefill and token totals.

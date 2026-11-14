@@ -12,31 +12,16 @@ package gateway
 
 import (
 	"context"
-	"slices"
 	"time"
 
 	"github.com/T-Crypt/berth/internal/config"
+	"github.com/T-Crypt/berth/internal/fit"
 	"github.com/T-Crypt/berth/internal/node"
-	"github.com/T-Crypt/berth/internal/proto"
 )
 
 // DefaultIdleAfter is how long the card must be free before a background
 // engine starts, when its entry names no idle_after.
 const DefaultIdleAfter = 60 * time.Second
-
-// cardFree is whether nothing holds, uses or waits for the card and the
-// card serves this machine. A parked lease holds it: a batch job must not
-// evict an engine someone parked in RAM to come back to. A stowaway or a
-// tracked app (Blender) holds memory no lease accounts for, and a start
-// beside it is the collision Berth exists to prevent.
-func cardFree(st *proto.Status) bool {
-	if st == nil || st.Passthrough != nil || st.ProbeErr != "" ||
-		len(st.Leases) > 0 || len(st.Waiting) > 0 || len(st.Squatters) > 0 || cordoned(st) {
-		return false
-	}
-	// Status lists every claim rule; only one matching right now is in use.
-	return !slices.ContainsFunc(st.Claims, func(c proto.Claim) bool { return c.Active })
-}
 
 // Background starts the background engines while ctx lives, checking the
 // card every `every` (0 = 5 s): queued ComfyUI jobs as soon as the card is
@@ -69,7 +54,7 @@ func (g *Gateway) Background(ctx context.Context, every time.Duration) {
 		st := g.nodeStatus()
 		// Work someone asked for while the card was out of reach goes
 		// first, as soon as the card is free, before any background engine.
-		if q := g.queueingComfy(); q != nil && cardFree(node.View(st, q.GPU)) && g.submitting.CompareAndSwap(false, true) {
+		if q := g.queueingComfy(); q != nil && fit.CardFree(node.View(st, q.GPU)) && g.submitting.CompareAndSwap(false, true) {
 			go func() {
 				defer g.submitting.Store(false)
 				g.submitDeferred(ctx)
@@ -85,7 +70,7 @@ func (g *Gateway) Background(ctx context.Context, every time.Duration) {
 			if !e.Window.Contains(now) {
 				continue
 			}
-			if !cardFree(node.View(st, e.GPU)) {
+			if !fit.CardFree(node.View(st, e.GPU)) {
 				delete(freeSince, e.GPU)
 				continue
 			}

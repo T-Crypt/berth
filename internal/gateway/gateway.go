@@ -37,6 +37,7 @@ import (
 
 	"github.com/T-Crypt/berth/internal/apikey"
 	"github.com/T-Crypt/berth/internal/config"
+	"github.com/T-Crypt/berth/internal/fit"
 	"github.com/T-Crypt/berth/internal/host"
 	"github.com/T-Crypt/berth/internal/node"
 	"github.com/T-Crypt/berth/internal/proto"
@@ -231,7 +232,12 @@ func (g *Gateway) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/berth/switch", g.apiSwitch)
 	mux.HandleFunc("POST /v1/berth/stop", g.apiStop)
 	mux.HandleFunc("POST /v1/berth/batch", g.apiBatch)
+	mux.HandleFunc("POST /v1/berth/yield", g.apiYield)
 	mux.HandleFunc("POST /v1/berth/load", g.apiLoad)
+	mux.HandleFunc("GET /v1/berth/schedule", g.scheduleRead)
+	mux.HandleFunc("POST /v1/berth/schedule", g.scheduleBook)
+	mux.HandleFunc("PATCH /v1/berth/schedule/{id}", g.scheduleMove)
+	mux.HandleFunc("DELETE /v1/berth/schedule/{id}", g.scheduleCancel)
 	for _, p := range []string{"/v1/chat/completions", "/v1/completions", "/v1/embeddings"} {
 		mux.HandleFunc("POST "+p, g.forward)
 		mux.HandleFunc("POST /cards/{card}"+p, g.onCard(g.forward))
@@ -369,11 +375,27 @@ func (g *Gateway) listed(ctx context.Context, base string) []string {
 		return c.models
 	}
 	g.mu.Unlock()
+	out := ListModels(ctx, g.client(), base)
+	if out == nil {
+		return nil
+	}
+	g.mu.Lock()
+	if g.lists == nil {
+		g.lists = map[string]cached{}
+	}
+	g.lists[base] = cached{time.Now(), out}
+	g.mu.Unlock()
+	return out
+}
+
+// ListModels is the model names an engine's /v1/models lists, nil when it
+// does not answer with a list. A GET there loads nothing.
+func ListModels(ctx context.Context, c *http.Client, base string) []string {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+"/v1/models", nil)
 	if err != nil {
 		return nil
 	}
-	resp, err := g.client().Do(req)
+	resp, err := c.Do(req)
 	if err != nil {
 		return nil
 	}
@@ -390,12 +412,6 @@ func (g *Gateway) listed(ctx context.Context, base string) []string {
 	for _, d := range r.Data {
 		out = append(out, d.ID)
 	}
-	g.mu.Lock()
-	if g.lists == nil {
-		g.lists = map[string]cached{}
-	}
-	g.lists[base] = cached{time.Now(), out}
-	g.mu.Unlock()
 	return out
 }
 
@@ -447,7 +463,7 @@ func (g *Gateway) resolve(ctx context.Context, model, card string) (target, bool
 	for _, e := range g.live() {
 		// A parked engine answers its list with the weights in RAM; the
 		// resume, not the list, says when it may be proxied.
-		if e.Up && g.engineOn(st, e.Name, card) && !parkedIn(st, e.Name) && slices.Contains(g.listed(ctx, e.URL), model) {
+		if e.Up && g.engineOn(st, e.Name, card) && !fit.Parked(st, e.Name) && slices.Contains(g.listed(ctx, e.URL), model) {
 			return target{url: e.URL, live: true}, true
 		}
 	}
@@ -460,27 +476,10 @@ func (g *Gateway) resolve(ctx context.Context, model, card string) (target, bool
 	if len(serving) == 0 {
 		return target{}, false
 	}
-	// One engine per card serves the model: the cheapest card to reach
+	// One engine per card serves the model: the cheapest path to a card
 	// wins, and berth.toml's order breaks a tie.
-	e := slices.MinFunc(serving, func(a, b *config.Engine) int { return reach(st, a) - reach(st, b) })
+	e := fit.Rank(st, serving, nil)[0].Entry
 	return target{url: e.URL, engine: e}, true
-}
-
-// reach ranks what it takes to bring e up on its card, cheapest first: a
-// resume from RAM, a free card, a drain of the holder, then a wait for a
-// card a VM or a pinned lease (a game, a hold) keeps.
-func reach(st *proto.Status, e *config.Engine) int {
-	v := node.View(st, e.GPU)
-	switch {
-	case parkedIn(st, e.Name):
-		return 0
-	case cardFree(v):
-		return 1
-	case v != nil && outOfReach(v) == "":
-		return 2
-	default:
-		return 3
-	}
 }
 
 // notServed is the 404 for a model no engine serves, on card when one is
@@ -585,6 +584,11 @@ type startError struct {
 	code  string // no_start, outranked, drained_while_starting, no_berth, start_failed, engine_oom, not_ready, no_headroom
 	msg   string
 	retry time.Duration // when set, the client is told to try again after this (Retry-After)
+	// queue is the engine's lease's place in line when the start timed out
+	// waiting for the card, 0 when it was not waiting; estimate is the
+	// broker's lower-bound start estimate for it, 0 for unknown.
+	queue    int
+	estimate time.Duration
 }
 
 func (e *startError) Error() string { return e.msg }
@@ -796,6 +800,12 @@ func (g *Gateway) startFailed(w http.ResponseWriter, engine, what string, err er
 	if se != nil && se.retry > 0 {
 		w.Header().Set("Retry-After", strconv.Itoa(int((se.retry+time.Second-1)/time.Second)))
 	}
+	if se != nil && se.queue > 0 {
+		w.Header().Set("X-Berth-Queue-Position", strconv.Itoa(se.queue))
+		if se.estimate > 0 {
+			w.Header().Set("X-Berth-Start-Estimate", fmt.Sprintf("%d; lower-bound", int((se.estimate+time.Second-1)/time.Second)))
+		}
+	}
 	apiErrorCode(w, http.StatusServiceUnavailable, code, err.Error())
 }
 
@@ -805,7 +815,7 @@ func (g *Gateway) startFailed(w http.ResponseWriter, engine, what string, err er
 func (g *Gateway) comfyTarget(ctx context.Context) (target, bool) {
 	st := g.nodeStatus()
 	for _, e := range g.live() {
-		if e.Up && e.Type == "comfyui" && !parkedIn(st, e.Name) && g.comfyAnswers(ctx, e.URL) {
+		if e.Up && e.Type == "comfyui" && !fit.Parked(st, e.Name) && g.comfyAnswers(ctx, e.URL) {
 			return target{url: e.URL, live: true}, true
 		}
 	}
@@ -867,7 +877,7 @@ func (g *Gateway) comfyPrompt(w http.ResponseWriter, r *http.Request, switched b
 		return
 	}
 	if e := g.queueingComfy(); e != nil {
-		if why := outOfReach(node.View(g.nodeStatus(), e.GPU)); why != "" {
+		if why := fit.OutOfReach(node.View(g.nodeStatus(), e.GPU)); why != "" {
 			g.deferPrompt(w, r, e, why)
 			return
 		}
@@ -1016,9 +1026,30 @@ func (g *Gateway) ensure(ctx context.Context, e *config.Engine, switched bool) e
 		case <-time.After(250 * time.Millisecond):
 		}
 		if time.Now().After(deadline) {
-			return &startError{code: "not_ready", msg: fmt.Sprintf("%s did not answer within %s", e.Name, ready)}
+			return g.queued(e, &startError{code: "not_ready", msg: fmt.Sprintf("%s did not answer within %s", e.Name, ready)})
 		}
 	}
+}
+
+// queued adds where the engine's lease waits to a start that timed out: its
+// place in line and the broker's start estimate. The estimate counts only the
+// measured starts ahead of it, never the holder's time left, so it is a lower
+// bound, and the client is told to retry no sooner than it or 30 s.
+func (g *Gateway) queued(e *config.Engine, se *startError) *startError {
+	v := node.View(g.nodeStatus(), e.GPU)
+	if v == nil {
+		return se
+	}
+	for _, l := range v.Waiting {
+		if l.Engine == e.Name && l.Position > 0 && (se.queue == 0 || l.Position < se.queue) {
+			se.queue, se.estimate = l.Position, time.Duration(l.EstimateS*float64(time.Second))
+		}
+	}
+	if se.queue > 0 {
+		se.retry = max(30*time.Second, se.estimate)
+		se.msg += fmt.Sprintf("; its lease is number %d in line for the card", se.queue)
+	}
+	return se
 }
 
 func (g *Gateway) ready() time.Duration {

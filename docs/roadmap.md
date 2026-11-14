@@ -130,16 +130,38 @@ v0.5.0 was tagged first as `v0.5.0-rc.1`.
 - **Restarts.** A run that started before berthd, or lost it, re-attaches when a daemon answers, and berthd
   logs a refused re-attach with its reason.
 
-## Next: v0.5.x, models across machines
+## Shipped: v0.6.0, a schedule per card (2026-11-14)
 
+v0.6.0 was tagged first as `v0.6.0-rc.1`.
+
+- **A schedule.** `berth schedule book` books an engine's run, a priority change or downtime on a card, up to 14
+  days ahead. Agents book their own runs through `/v1/berth/schedule`, and the harbor's SCHEDULE tab shows the
+  week. Hours nobody booked run by priority, then arrival.
+- **Training runs.** `berth train` takes whole cards for a fine-tune, refuses every other request on them at once,
+  and with `--exclusive` locks the card in the driver.
+- **Answers about the card.** `berth fit` ranks where a request would run, `berth contract` lists an engine's
+  terms, `berth queue` shows and changes the grant order, and `berth why` tells one lease's story. The gateway
+  picks through the same ranking as `berth fit`.
+- **Learned sizes.** `learn_size = true` sizes a lease from the engine's measured peak.
+- **A yield for ComfyUI jobs that call an LLM** ([#299](https://github.com/T-Crypt/berth/issues/299)), and
+  `berth notify` as a Windows tray icon ([#186](https://github.com/T-Crypt/berth/pull/186)).
+- **Restarts.** The event log and lease numbers carry on across a berthd restart, a re-attached engine keeps the
+  turn it was in, and a drain no longer stops an engine that is still resuming
+  ([#275](https://github.com/T-Crypt/berth/issues/275)).
+
+## Next: v0.6.x
+
+- **A warmth ladder.** An engine steps down from live to parked to stopped by idle time and the next booking, and
+  `berth why` names each step.
+- **A booked run starts its engine** at the start of its hours, for engines the gateway can launch.
 - **The soonest node.** When several nodes serve a model, send the request to the one where it is warm or the
-  card is free, by the same reach order a node uses for its own cards.
-- **One board.** The harbor's SWITCH tab shows each peer's cards and engines beside this node's.
+  card is free.
+- **Device names.** A key per device, so the queue and the schedule say "mac" or "pi-pocket", and a booking
+  belongs to the device that made it.
 
 Still to decide, with data from multi-card users:
 
 - Whether a cordon survives a berthd restart. Today it lives in berthd's memory, and a restart clears it.
-- Whether measured switch costs rank the cards for a plain `/v1` request. Today the gateway ranks them by reach.
 
 ## Also queued
 
@@ -149,8 +171,6 @@ Each item has its building blocks merged or a spec written:
 - Models started on demand for a standalone llama-server.
 - Parked resume numbers for vLLM and SGLang in [Swap numbers](benchmarks.md#swap-numbers), which take
   their park adapters out of experimental.
-- `berth notify` on Windows: a tray icon with native toasts ([#186](https://github.com/T-Crypt/berth/pull/186)),
-  after a test on a real Windows desktop.
 - VFIO on a box with two NVIDIA cards: keep the other card's berthd from opening the card being
   switched, after a measurement on a real two-card box.
 - Hermes Agent: an overnight recipe in the setup page, built on the gateway workflow test, where Hermes

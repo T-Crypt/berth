@@ -516,3 +516,36 @@ func TestComfyUIDrainWaitsForJobBoundary(t *testing.T) {
 		t.Fatalf("no handoff line:\n%s", out1.String())
 	}
 }
+
+// The socket's status carries the configured hours of an engine with no
+// lease, so a client sees a schedule before its engine runs.
+func TestSocketStatusCarriesTheSchedules(t *testing.T) {
+	sock := filepath.Join(t.TempDir(), "berth.sock")
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	b := broker.New(broker.Config{Poll: 20 * time.Millisecond, DefaultWait: 5 * time.Second, JuggleWindow: -1, Log: log}, emptyCard{}, procs.System{})
+	ln, err := server.Listen(sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go b.Run(ctx)
+	windows := map[string]proto.Window{"nightly": {Start: 23 * 60, End: 7 * 60}, "chat": {}}
+	go server.Serve(ctx, ln, node.One(b), server.Extras{Windows: windows}, log)
+
+	conn, raw, err := server.Dial(sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	if err := conn.Send(proto.Msg{Op: proto.OpStatus}); err != nil {
+		t.Fatal(err)
+	}
+	m, err := conn.Recv()
+	if err != nil || m.Status == nil {
+		t.Fatalf("status: %v %+v", err, m)
+	}
+	if s := m.Status.Schedules; len(s) != 1 || s[0].Engine != "nightly" || s[0].Window != "23:00-07:00" || s[0].ChangeS <= 0 {
+		t.Fatalf("schedules = %+v, want nightly 23:00-07:00 alone", s)
+	}
+}

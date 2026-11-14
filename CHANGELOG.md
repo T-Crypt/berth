@@ -6,6 +6,135 @@ has a matching GitHub release whose body comes from its section below.
 
 ## [Unreleased]
 
+## [v0.6.0] - 2026-11-14
+
+v0.6.0 gives each card a schedule and makes Berth explain its choices. `berth schedule` books an engine's hours,
+a priority change or downtime up to 14 days ahead, agents book their own runs through the gateway, and the
+harbor's SCHEDULE tab shows the week. `berth train` runs a training that nothing automated can interrupt.
+`berth fit`, `berth contract`, `berth queue` and `berth why` say where a request would run, what an engine costs,
+who is next and why a lease waited or was drained. The event log now survives restarts. It was tagged first as
+`v0.6.0-rc.1`.
+
+### Added
+
+- `berth why ID` tells one lease's story in plain words: when it asked for the card, each reason it waited, the
+  grant, each drain and who it was for, the release, and the berthd restarts it lived through. `berth why ENGINE`
+  reads that engine's newest lease. A lease berthd still holds ends with where it stands now, and one a restart
+  cut off names the lease its engine re-attached as.
+- berthd keeps its event stream in `events.jsonl` in the state directory (`--events`, `""` for memory only). A
+  restart reads the last 1000 events back, goes on numbering after them, and goes on with the lease numbers, so
+  `berth events --since N` and `berth why` read across restarts and deploys. The file moves to `events.jsonl.1`
+  at 8 MiB. Each start is a `node.started` event that names the version.
+
+- A schedule for each card, up to 14 days ahead. `berth schedule` shows what holds each card, the waiters in grant
+  order and every booking. `berth schedule book` books an engine's run (it goes first, runs at the booking's
+  priority, and keeps the card against everything but a hold), a priority change for set hours, or downtime (no
+  new work, holders drain at the start). `move` and `cancel` change a booking, and `--days` and `--earliest`
+  repeat one or find free hours. Hours nobody booked run by priority, then arrival, as before. berthd keeps the
+  bookings in `schedule.json`.
+- The gateway's `GET`, `POST`, `PATCH` and `DELETE /v1/berth/schedule` let agents and devices read the scheduler
+  and book, move or cancel their own runs. Downtime and priority changes stay the operator's.
+- The harbor's SCHEDULE tab: what runs and waits now, a 7-day board of 24-hour tracks with every booking to the
+  minute, each engine's window and the live holder, and a list of bookings. A paired device books by clicking an
+  empty hour and moves or cancels a booking by clicking it. Each booking form says what the booking will do before
+  you save it.
+
+- `berth train --as NAME [--gpu CARDS] -- CMD` runs a training or fine-tune that nothing automated can interrupt.
+  It takes the whole of each card it names, waits for them with no deadline, and keeps them until the command
+  exits. While it holds a card or waits for it, berthd refuses every other request on that card at once: gateway
+  requests, `berth run`, llama-swap models, scheduled jobs and `berth hold`. Clients get the refusal right away
+  instead of waiting out their timeout. A second `berth train` waits in line and starts when the first one ends.
+  Other cards keep serving. `berth train` refuses to start without berthd, and `berth status` shows the lease as
+  `hold,pinned,training`.
+- `berth train --exclusive` also locks the card in the driver on Linux with an NVIDIA card. It puts the granted cards
+  in exclusive-process compute mode for the run's life, so a program that opens CUDA without Berth cannot open
+  them, and puts them back to the default mode when the run ends. It needs a sudo rule for `nvidia-smi -c`, and
+  refuses to start without one, or when another compute process is already on the card.
+- A `berth train` run keeps its lock while berthd is away. With berthd down, `berth run` refuses to start an engine
+  while a training runs on the node, instead of starting it without a lease. A berthd that starts while a training
+  runs refuses every other request until the training re-attaches, with no time limit, where other engines get
+  15 seconds.
+
+- On Windows, `berth notify` is a tray icon in the taskbar. Its notifications are Windows' own toasts, and a click
+  opens the harbor. The tooltip shows the latest event, and keeps it after explorer restarts. The menu opens the
+  harbor, turns the toasts off and on, lists the last 10 events and quits. `berth service install --notify`
+  starts it at logon for the current user ([#186](https://github.com/T-Crypt/berth/pull/186)).
+- `POST /v1/berth/yield` lets a ComfyUI node that calls an LLM in the middle of a job give the card to that LLM
+  and take it back. Before, the LLM's drain of ComfyUI waited for the job to end, the job waited for the LLM, and
+  neither moved until the node's call timed out. The node frees ComfyUI's models in-process and yields. The drain
+  then parks ComfyUI as it would between jobs, the LLM runs, and `{"end":true}` answers once ComfyUI holds the card
+  again. A yield runs out after its seconds (300 by default), so a node that dies mid-yield cannot leave it on
+  ([#299](https://github.com/T-Crypt/berth/issues/299)).
+- `learn_size = true` on an engine entry, or `berth run --learn-size`, sizes the lease from the most that engine
+  has been measured holding plus 512 MiB, in place of the whole card. Engines that fit together then share the card
+  without anyone typing `needs_mib` or keeping it up to date. An engine not yet measured takes the whole card, and
+  the grant line in `berth events` names the size it used
+  ([#311](https://github.com/T-Crypt/berth/issues/311)).
+- `berth status` has a SCHEDULE table and the harbor a SCHEDULES panel. Each lists every engine that has a
+  `window`, with its hours, whether they are open, and how long until they close or open. An engine shows before its
+  window opens, and a `berth run --window` lease shows its own hours. The status JSON carries the same rows as
+  `schedules`, and each lease carries its `window`.
+- `berth contract ENGINE` prints one engine's terms in one place: its priority, the VRAM a lease asks for, the last
+  run's measured peak, the RAM it needs and holds parked, its minimum turn and window, and how long a switch to it
+  takes from each tier. Each number says whether berth.toml declares it, Berth's default applies, Berth measured
+  it, or nothing is known. ENGINE can be an `[[engine]]` name, a discovered engine, or a llama-swap model's
+  `berth run --as` name. Without berthd it prints the declared terms. The status JSON's `footprints` now carry each
+  engine's `hot_peak_vram_bytes`, `ram_peak_bytes` and `parked_ram_bytes`. A llama-swap model whose last-run
+  figure sits on its group's entry is now listed under its own name too. A llama-swap model has no berth.toml
+  entry, so its priority and minimum turn come from its last run's lease, which carried the flags on its
+  `berth run` line. Its last peak is the most a run under its name held. The footprint entry carries them as
+  `priority` and `min_turn_s`.
+- `berth fit NAME` says where a request for an engine or a model would run right now and what the start costs. It
+  ranks each candidate by path: already running on the card, a resume from RAM, a free card, a drain of the holder,
+  or blocked by a VM, a cordon or a pinned lease. Each candidate names its reason, the tier its weights sit in, and
+  the switch time the gateway measured from that tier, or unknown. For a model, every engine that serves it is
+  ranked the way the gateway picks one. A model that no `[[engine]]` names or serves, such as a llama-swap model, is
+  found the way the gateway finds it, on a live engine whose `/v1/models` lists it. `--explain` lists every
+  candidate. It is read only, and the gateway now picks through the same ranking.
+- `berth queue` lists the waiters in the order berthd will grant them, with their lease IDs. `berth queue bump ID`
+  moves one to the front of its priority class, `berth queue prio ID batch|interactive|foreground` moves it to
+  another class, and `berth queue drop ID` refuses it now. Holds and trainings cannot be changed this way. Each
+  change is a `lease.queue_override` event.
+- The harbor's SWITCH tab has a QUEUE panel. It lists the waiters in grant order, and a paired device gets FIRST, a
+  priority picker and DROP on each one. These buttons go from the harbor straight to berthd, never through the
+  gateway, because agents hold the gateway's API key and a queue change is the operator's to make.
+- A gateway request whose start times out (`not_ready`) while its lease is still in line for the card says where
+  it stands. The 503 carries `X-Berth-Queue-Position` and, when berthd has measured the starts ahead,
+  `X-Berth-Start-Estimate: N; lower-bound`. `Retry-After` is the larger of the estimate and 30 s. The estimate
+  leaves out the holder's time left, so it is a minimum, not a promise.
+- `berth wire llama-swap` names each llama-swap group where llama-swap swaps two or more wired models itself.
+  There llama-swap unloads the old model before Berth sees the request, so `min_turn`, the engine ranking and the
+  juggle guard never apply between them. The JSON carries the groups as `swapping`. The llama-swap section of
+  contrib/INTEGRATION.md shows the `swap: false` group and the `healthCheckTimeout` that let Berth decide the turns.
+
+### Fixed
+
+- A drain that arrives while a parked engine is still loading back no longer stops it. `berth run` now waits for
+  the resume to finish, then parks or drains as usual. Before, the park call reached the engine in the middle of
+  its load, the engine answered 409, and the run fell back to stopping it. That cold-started the LLM on its next
+  request and could leave it marked unresponsive ([#275](https://github.com/T-Crypt/berth/issues/275)).
+- The swap bench (`contrib/bench/swap`) no longer reports `OUTPUT IDENTICAL yes` for thinking models that ran out
+  of tokens before answering. It now compares the reasoning a model streams as well as its answer, prints
+  `n/a (empty)` when every run came back empty, asks for 256 tokens by default (`-max-tokens`), and can ask the
+  model to skip its thinking (`-no-think`).
+- A subcommand's help and error hints name its group. `berth engine show --help` printed `berth show`, which is no
+  command, and a bad flag said to run `berth show -h`.
+- A berthd restart no longer gives every running engine a fresh minimum turn. `berth run` now tells the new berthd
+  how long its engine had held the card, and the re-attached lease goes on with the turn it was in. Before, each
+  deploy reset the TURN column to the full `min_turn` and kept waiters out for that long again.
+- `berth wire llama-swap` now finds a `berth run` line with a flag written before `--as`, such as
+  `berth run --min-turn 5m --as qwen ...`. Before, it took the model for unwired, and `--write` added a second
+  `berth run` in front of the first.
+- `berth wire llama-swap --write --update` keeps the words before the berth binary on a `berth run` line, such as
+  a wrapper script or `env FOO=1`. Before, it rewrote the line from the berth binary on and dropped them.
+
+- A model that fills the card no longer loads beside a parked engine it cannot fit next to. Berth granted any
+  whole-card engine the card beside a parked residual under `residual_max_gib`, so a 23.4 GiB model on a 24 GiB
+  card started beside a kept-up ComfyUI's 768 MiB context and failed to load. Berth now remembers the most each
+  engine has held, by its own name inside a llama-swap group, and evicts the parked engine first when that, plus
+  512 MiB the load needs past its measured peak, does not fit beside it. A smaller model still loads beside it,
+  and an engine never measured is granted as before.
+
 ### Changed
 
 - An engine left without a lease after berthd restarts now tells you whether its `berth run` can still re-attach
