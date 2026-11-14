@@ -100,6 +100,10 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Fixed
 
+- The swap bench (`contrib/bench/swap`) no longer reports `OUTPUT IDENTICAL yes` for thinking models that ran out
+  of tokens before answering. It now compares the reasoning a model streams as well as its answer, prints
+  `n/a (empty)` when every run came back empty, asks for 256 tokens by default (`-max-tokens`), and can ask the
+  model to skip its thinking (`-no-think`).
 - A subcommand's help and error hints name its group. `berth engine show --help` printed `berth show`, which is no
   command, and a bad flag said to run `berth show -h`.
 - A berthd restart no longer gives every running engine a fresh minimum turn. `berth run` now tells the new berthd
