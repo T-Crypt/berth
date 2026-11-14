@@ -45,6 +45,8 @@ in its usual place. The full flag set:
   -json           print the raw samples as JSON
   -key string     the gateway's API key file
   -leak int       run N A-B cycles and print VRAM after drain and the gateway RSS at cycle 1 and N
+  -max-tokens int the max_tokens of each request (default 256)
+  -no-think       send chat_template_kwargs enable_thinking=false, which llama.cpp-style servers honour
 ```
 
 With `-comfy WORKFLOW.json` the B slot becomes a ComfyUI workflow posted
@@ -97,7 +99,11 @@ model-b     15.10 s        0.2 GiB         40.1 GiB           yes
 - `OUTPUT IDENTICAL` says whether every run of that engine produced the
   same greedy answer. A parked resume that is not bit-identical to the
   fresh run is not the same model state, and this column is how you see
-  it.
+  it. The answer and the reasoning a thinking model streams first
+  (`reasoning_content` or `reasoning`) both count. When every run of an
+  engine came back empty, the column reads `n/a (empty)`: equal empty
+  strings prove nothing. Give a thinking model room with `-max-tokens`, or
+  ask it to skip the thinking with `-no-think`.
 
 The parked tier needs no separate mode. When park is on for an engine,
 its warm switches go through the park and resume path, and the warm row
