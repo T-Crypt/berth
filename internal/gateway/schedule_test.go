@@ -49,7 +49,9 @@ func decode[T any](t *testing.T, resp *http.Response) T {
 // a clash is a 409 naming the booking it hits.
 func TestScheduleRoutes(t *testing.T) {
 	srv, _ := scheduleGateway(t)
-	resp := call(t, "POST", srv.URL+"/v1/berth/schedule", `{"who":"pi-pocket","engine":"pocket","start":"23:00","for":"5h","priority":"batch"}`)
+	// Absolute starts: between 23:00 and 23:30, "23:00" is tomorrow and "23:30" today, so they never clash.
+	day := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+	resp := call(t, "POST", srv.URL+"/v1/berth/schedule", `{"who":"pi-pocket","engine":"pocket","start":"`+day+` 23:00","for":"5h","priority":"batch"}`)
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("book = %d %s", resp.StatusCode, readAll(resp))
 	}
@@ -58,7 +60,7 @@ func TestScheduleRoutes(t *testing.T) {
 		t.Fatalf("booked = %+v", made)
 	}
 
-	resp = call(t, "POST", srv.URL+"/v1/berth/schedule", `{"who":"train","engine":"sft","start":"23:30","for":"1h"}`)
+	resp = call(t, "POST", srv.URL+"/v1/berth/schedule", `{"who":"train","engine":"sft","start":"`+day+` 23:30","for":"1h"}`)
 	if body := readAll(resp); resp.StatusCode != http.StatusConflict || !strings.Contains(body, "clashes with b1") {
 		t.Fatalf("clash = %d %s", resp.StatusCode, body)
 	}
