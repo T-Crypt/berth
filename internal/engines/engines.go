@@ -343,6 +343,7 @@ func (w *Watcher) read(ctx context.Context, e config.Engine) proto.Engine {
 			}
 			if ss, serr := w.slots(ctx, base+"/slots", "", ""); serr == nil {
 				out.Slots = ss
+				out.Metrics.InFlightReported = true
 			}
 		}
 	case "custom":
@@ -503,6 +504,7 @@ func (w *Watcher) custom(ctx context.Context, base string, e config.Engine, out 
 				PromptTokens: f("prompt_tokens"), OutputTokens: f("output_tokens"),
 				PromptSeconds: f("prompt_seconds"), OutputSeconds: f("output_seconds"),
 				Processing: f("processing"), Waiting: f("waiting"),
+				InFlightReported: inFlight(vals, e.Map),
 			}
 			out.MetricsReported = true
 		}
@@ -602,6 +604,7 @@ func (w *Watcher) metrics(ctx context.Context, url string, names map[string]stri
 	m.PromptSeconds, m.OutputSeconds = f("prompt_seconds"), f("output_seconds")
 	m.Processing, m.Waiting = f("processing"), f("waiting")
 	m.DraftTokens, m.DraftAccepted = vals["ninfer:draft_tokens_total"], vals["ninfer:draft_accepted_tokens_total"]
+	m.InFlightReported = inFlight(vals, names)
 	return m, nil
 }
 
@@ -623,9 +626,13 @@ func (w *Watcher) llamaSwap(ctx context.Context, base string, out *proto.Engine)
 	if err := json.Unmarshal(b, &r); err != nil {
 		return fmt.Errorf("/running: %w", err)
 	}
+	// The engine reports in-flight work only when every model on it does:
+	// one model that cannot say hides its requests from the sum.
+	reported := true
 	for _, m := range r.Running {
 		out.Models = append(out.Models, proto.Model{Name: m.Model, State: m.State, File: models.ModelArg(m.Cmd)})
 		if m.State != "ready" || m.Proxy == "" {
+			reported = reported && m.State != "ready"
 			continue
 		}
 		px := strings.TrimRight(m.Proxy, "/")
@@ -635,6 +642,7 @@ func (w *Watcher) llamaSwap(ctx context.Context, base string, out *proto.Engine)
 			out.Metrics = out.Metrics.Add(mm)
 			out.MetricsReported = true
 		}
+		modelReported := err == nil && mm.InFlightReported
 		// Best-effort per model: the proxy's context window and its live KV
 		// slots, tagged with the model they sit on. A 404/501 on either
 		// leaves the engine up with what it has.
@@ -648,8 +656,11 @@ func (w *Watcher) llamaSwap(ctx context.Context, base string, out *proto.Engine)
 		}
 		if ss, serr := w.slots(ctx, px+"/slots", m.Model, ""); serr == nil {
 			out.Slots = append(out.Slots, ss...)
+			modelReported = true
 		}
+		reported = reported && modelReported
 	}
+	out.Metrics.InFlightReported = reported
 	for _, md := range out.Models {
 		if md.State == "ready" && md.Window > out.Window {
 			out.Window = md.Window
@@ -814,11 +825,25 @@ func (w *Watcher) strata(ctx context.Context, base, keyEnv string, out *proto.En
 		out.Metrics.Processing = 1
 	}
 	out.Metrics.Waiting = float64(m.Live.Queued)
+	out.Metrics.InFlightReported = m.Live.Running != nil || m.Live.State != ""
 	out.Metrics.PromptTokens = m.Totals.PromptTokens
 	out.Metrics.OutputTokens = m.Totals.OutputTokens
 	out.Metrics.PromptSeconds = m.Totals.PromptMS / 1000
 	out.Metrics.OutputSeconds = m.Totals.DecodeMS / 1000
 	return nil
+}
+
+// inFlight is whether a Prometheus reading carries the engine's in-flight
+// gauges, so that a zero in them means idle rather than not reported.
+func inFlight(vals map[string]float64, names map[string]string) bool {
+	for _, field := range []string{"processing", "waiting"} {
+		if name, ok := names[field]; ok {
+			if _, ok := vals[name]; ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ParseProm reads Prometheus text exposition into name -> value, summing
