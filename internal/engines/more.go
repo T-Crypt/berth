@@ -80,6 +80,7 @@ func (w *Watcher) promMetrics(ctx context.Context, url, keyEnv, prefix string, n
 		PromptTokens: f("prompt_tokens"), OutputTokens: f("output_tokens"),
 		PromptSeconds: f("prompt_seconds"), OutputSeconds: f("output_seconds"),
 		Processing: f("processing"), Waiting: f("waiting"),
+		InFlightReported: inFlight(vals, names),
 	}, true
 }
 
@@ -257,8 +258,11 @@ func (w *Watcher) freetoken(ctx context.Context, base, keyEnv string, out *proto
 	out.Metrics.PromptTokens = pick("tokens_prompt", "prompt_tokens", "input_tokens")
 	out.Metrics.Waiting = pick("queue", "requests_waiting", "pending_requests")
 	for _, k := range []string{"generating", "busy", "active"} {
-		if v, ok := body[k].(bool); ok && v {
-			out.Metrics.Processing = 1
+		if v, ok := body[k].(bool); ok {
+			out.Metrics.InFlightReported = true
+			if v {
+				out.Metrics.Processing = 1
+			}
 		}
 	}
 	return nil
@@ -273,6 +277,7 @@ func (w *Watcher) comfyui(ctx context.Context, base, keyEnv string, out *proto.E
 		return err
 	}
 	out.Metrics.Processing, out.Metrics.Waiting = float64(running), float64(pending)
+	out.Metrics.InFlightReported = true
 	if b, err := w.getKey(ctx, base+"/system_stats", keyEnv); err == nil {
 		var s struct {
 			System struct {
