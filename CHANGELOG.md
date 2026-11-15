@@ -8,6 +8,9 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Fixed
 
+- The gateway no longer sends a request to an engine whose lease is draining, parking or releasing. It holds the
+  request until the lease is active again, or gone and the engine is started anew. Before, Strata took a request
+  in the seconds it spent stopping and ended it with 0 tokens.
 - A minimum turn (`--min-turn`) now protects only a lease whose engine has served a request. An engine started by
   a health probe or a warm-up, read up and idle with nothing served, no longer keeps the card for its full turn
   while a real request waits.
