@@ -42,7 +42,7 @@ claim. When another engine holds it, Berth:
 The numbered markers on the timeline are those four steps. A process that holds VRAM without a lease
 shows up as a stowaway: Berth reports its PID and memory and leaves it running.
 
-> **Status: alpha, v0.6.0.** Runs daily on an RTX 4090 workstation beside llama-swap, NInfer,
+> **Status: alpha, v0.6.1.** Runs daily on an RTX 4090 workstation beside llama-swap, NInfer,
 > Strata, ComfyUI and games, and testers run it on Windows. The [docs](docs/README.md) cover what works and has tests; the
 > [roadmap](docs/roadmap.md) lists the phases and what is still missing.
 
@@ -270,16 +270,18 @@ which `berth service status` prints.
 
 ## Preview
 
-The screenshots show the harbor web UI with its built-in demo data: the CARD tab, the Engines tab in advanced
-mode, and the CARD tab at phone width.
+The screenshots show the harbor web UI with its built-in demo data: the CARD tab, the SCHEDULE tab, the Engines
+tab in advanced mode, and the CARD tab at phone width.
 [The harbor and telemetry](docs/harbor.md) explains every panel and shows how to add the harbor to an
 iPhone's Home Screen.
 
 <p align="center"><img src="assets/preview-harbor.png" alt="Berth harbor: the CARD tab with ticket counter, request KPIs, the tide of card memory by holder, and the model timeline" width="900"></p>
 
+<p align="center"><img src="assets/preview-schedule.png" alt="Berth harbor SCHEDULE tab: NOW with the holders, the waiters and the booking in force, 7 DAYS with one track per day of bookings, windows and the live holder, and the list of bookings" width="900"></p>
+
 <p align="center"><img src="assets/preview-requests.png" alt="Berth harbor Engines tab, advanced mode: decode throughput per engine, the token ledger, the per-model leaderboard, storage and residency" width="900"></p>
 
-<p align="center"><img src="assets/preview-mobile.png" alt="Berth harbor at phone width: the CARD tab with the ticket counter, collisions avoided, the collision tiles and the decode and TPOT KPIs, with CARD, SWITCH, ENGINES and ABOUT in a bottom bar" width="300"></p>
+<p align="center"><img src="assets/preview-mobile.png" alt="Berth harbor at phone width: the CARD tab with the ticket counter and collisions avoided, with CARD, SWITCH, SCHEDULE, ENGINES and ABOUT in a bottom bar" width="300"></p>
 
 ## Install
 
