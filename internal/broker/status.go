@@ -93,7 +93,7 @@ func (b *Broker) Status() proto.Status {
 		if l.state == parked {
 			pl.ParkedSince = parkedAge(l, now)
 		}
-		if l.minTurn > 0 {
+		if l.minTurn > 0 && !l.unused {
 			if rem := l.minTurn - now.Sub(l.granted); rem > 0 {
 				pl.TurnS = rem.Seconds()
 			}
