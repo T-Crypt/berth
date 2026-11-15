@@ -1949,6 +1949,10 @@ dialog.sheet::backdrop { background: var(--scrim); backdrop-filter: blur(3px); }
   .about-dl { grid-template-columns: 1fr; }
   .about-hero, .about-sec { padding: var(--s4); }
 }
+/* five tabs share the bottom bar: under 340px SCHEDULE is wider than its fifth */
+@media (max-width: 339px) {
+  .tab { letter-spacing: 0; padding-inline: 0; }
+}
 
 /* ---------- motion preferences and other media ---------- */
 @media (prefers-reduced-motion: reduce) {
