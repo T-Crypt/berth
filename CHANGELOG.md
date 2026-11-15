@@ -6,6 +6,16 @@ has a matching GitHub release whose body comes from its section below.
 
 ## [Unreleased]
 
+### Fixed
+
+- A minimum turn (`--min-turn`) now protects only a lease whose engine has served a request. An engine started by
+  a health probe or a warm-up, read up and idle with nothing served, no longer keeps the card for its full turn
+  while a real request waits.
+- An engine that reports no in-flight figure (no processing gauge, no `/slots`, no queue) now reads as unknown
+  instead of idle. Before, an NInfer build without `/slots`, or Ollama, read idle while it served, and a juggle
+  handed its card over as if no request were running. `berth status --format json` shows the new
+  `in_flight_reported` field per engine.
+
 ## [v0.6.0] - 2026-11-14
 
 v0.6.0 gives each card a schedule and makes Berth explain its choices. `berth schedule` books an engine's hours,

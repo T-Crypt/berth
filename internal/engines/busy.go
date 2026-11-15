@@ -52,7 +52,7 @@ func (w *Watcher) Busy(name string) (busy, known bool) {
 				return true, true // starting or stopping
 			}
 		}
-		return false, true
+		return false, e.Metrics.InFlightReported
 	}
 	return false, false
 }

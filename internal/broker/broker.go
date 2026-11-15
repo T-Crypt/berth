@@ -291,9 +291,14 @@ type lease struct {
 	lockCh   chan string
 	switched bool // a person's switch (Request.Switched)
 	minTurn  time.Duration
-	parkTTL  time.Duration // 0 = the node's
-	window   proto.Window  // zero = no window
-	prio     Priority
+	// unused: since the grant the engine was read up and idle, and never
+	// busy. A probe started it, nobody asked it anything, so it has no
+	// minimum turn to keep. served: it was read busy once.
+	unused  bool
+	served  bool
+	parkTTL time.Duration // 0 = the node's
+	window  proto.Window  // zero = no window
+	prio    Priority
 	// basePrio is the class the lease asked for, or the operator set; prio
 	// differs from it while a booking holds (booking.go).
 	basePrio Priority
@@ -425,7 +430,26 @@ func (l *lease) awaitingGrant() bool {
 // than the turn, by the broker's clock (a duration from the grant, not
 // an order among leases).
 func (l *lease) inTurn(now time.Time) bool {
-	return l.minTurn > 0 && now.Sub(l.granted) < l.minTurn
+	return l.minTurn > 0 && !l.unused && now.Sub(l.granted) < l.minTurn
+}
+
+// noteServed reads whether each active lease's engine serves, for the
+// minimum turn: a lease seen busy once has served; one seen only idle is
+// unused. With no reading (no watcher, an engine still loading) neither
+// is set, and the turn holds as it always did.
+func (b *Broker) noteServed() {
+	if b.cfg.Busy == nil {
+		return
+	}
+	for _, l := range b.leases {
+		if l.state != active || l.minTurn == 0 || l.served {
+			continue
+		}
+		if busy, known := b.cfg.Busy(l.key()); known {
+			l.served = busy
+			l.unused = !busy
+		}
+	}
 }
 
 // turnWhy is the line a waiter blocked by l's minimum turn is told.
@@ -981,6 +1005,7 @@ func (b *Broker) Tick(ctx context.Context) {
 		b.measureRAM(l)
 	}
 	b.claimed = claimed
+	b.noteServed()
 	b.closeWindows(now)
 	b.closeForDowntime(now)
 	b.evictParked(now)

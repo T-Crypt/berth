@@ -756,6 +756,10 @@ type EngineMetrics struct {
 	Waiting       float64 `json:"waiting"`
 	DraftTokens   float64 `json:"draft_tokens,omitempty"`
 	DraftAccepted float64 `json:"draft_accepted,omitempty"`
+	// InFlightReported is true when the reading carries a request-in-flight
+	// figure (a processing or waiting gauge, a job queue). Without it a zero
+	// Processing is unknown, not idle.
+	InFlightReported bool `json:"in_flight_reported,omitempty"`
 }
 
 func (m EngineMetrics) Add(o EngineMetrics) EngineMetrics {
