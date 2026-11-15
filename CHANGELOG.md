@@ -6,6 +6,8 @@ has a matching GitHub release whose body comes from its section below.
 
 ## [Unreleased]
 
+## [v0.6.1] - 2026-11-15
+
 ### Fixed
 
 - The gateway no longer sends a request to an engine whose lease is draining, parking or releasing. It holds the
@@ -18,6 +20,12 @@ has a matching GitHub release whose body comes from its section below.
   instead of idle. Before, an NInfer build without `/slots`, or Ollama, read idle while it served, and a juggle
   handed its card over as if no request were running. `berth status --format json` shows the new
   `in_flight_reported` field per engine.
+- On a phone narrower than 340 pixels, the SCHEDULE label in the harbor's bottom tab bar no longer runs into the
+  labels beside it.
+
+### Documentation
+
+- The README and the harbor guide show the SCHEDULE tab, and the harbor screenshots are new.
 
 ## [v0.6.0] - 2026-11-14
 
