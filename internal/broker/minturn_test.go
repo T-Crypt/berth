@@ -239,3 +239,55 @@ func TestReattachKeepsTheTurnItWasIn(t *testing.T) {
 		t.Errorf("reason = %q, want %q", got, want)
 	}
 }
+
+// turnBusy is the engine reading a minimum-turn test sets: the watcher's
+// answer for the llama-swap group, known and idle until the test says busy.
+type turnBusy struct{ busy atomic.Bool }
+
+func (r *turnBusy) read(key string) (bool, bool) { return r.busy.Load(), key == "llama-swap" }
+
+func startBusyTurnBroker(t *testing.T, r *turnBusy) (*Broker, *minClock) {
+	t.Helper()
+	b, _ := jugglers(t, Config{JuggleWindow: -1, Busy: r.read})
+	clk := newMinClock(turnBase)
+	b.nowFn = clk.now
+	return b, clk
+}
+
+// A lease whose engine was started by a probe and never served a request
+// (seen up and idle since the grant) has no minimum turn to keep: a waiter
+// takes the card at once instead of waiting out five minutes nobody uses.
+func TestMinTurnNeedsARequestServed(t *testing.T) {
+	r := &turnBusy{}
+	b, clk := startBusyTurnBroker(t, r)
+	holder := must(t, acquire(b, Request{Engine: "NInfer-Qwen3.8-27B", Group: "llama-swap", Priority: Foreground, MinTurn: 5 * time.Minute}))
+	b.Tick(context.Background())
+	clk.set(turnBase.Add(30 * time.Second))
+
+	w := acquireW(b, Request{Engine: "strata", Priority: Foreground})
+	pending(t, w.ch)
+	if why := drained(t, holder); !strings.Contains(why, "strata") {
+		t.Fatalf("drain reason = %q, want the waiter named", why)
+	}
+}
+
+// Once the engine has served a request its turn holds, through the idle
+// gaps between requests.
+func TestMinTurnHoldsAfterARequestServed(t *testing.T) {
+	r := &turnBusy{}
+	b, clk := startBusyTurnBroker(t, r)
+	holder := must(t, acquire(b, Request{Engine: "NInfer-Qwen3.8-27B", Group: "llama-swap", Priority: Foreground, MinTurn: 5 * time.Minute}))
+	b.Tick(context.Background())
+	r.busy.Store(true)
+	b.Tick(context.Background())
+	r.busy.Store(false)
+	b.Tick(context.Background())
+	clk.set(turnBase.Add(30 * time.Second))
+
+	w := acquireW(b, Request{Engine: "strata", Priority: Foreground})
+	pending(t, w.ch)
+	notDrained(t, holder)
+	if got, want := firstReason(t, w), "next in line: NInfer-Qwen3.8-27B has its minimum turn, 4m30s left"; got != want {
+		t.Errorf("reason = %q, want %q", got, want)
+	}
+}
