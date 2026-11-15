@@ -463,7 +463,7 @@ func (g *Gateway) resolve(ctx context.Context, model, card string) (target, bool
 	for _, e := range g.live() {
 		// A parked engine answers its list with the weights in RAM; the
 		// resume, not the list, says when it may be proxied.
-		if e.Up && g.engineOn(st, e.Name, card) && !fit.Parked(st, e.Name) && slices.Contains(g.listed(ctx, e.URL), model) {
+		if e.Up && g.engineOn(st, e.Name, card) && !fit.Parked(st, e.Name) && !fit.Leaving(st, e.Name) && slices.Contains(g.listed(ctx, e.URL), model) {
 			return target{url: e.URL, live: true}, true
 		}
 	}
@@ -930,12 +930,25 @@ func (g *Gateway) comfyProxyTo(t target, w http.ResponseWriter, r *http.Request)
 // ensure starts e under a lease unless this gateway already has, then waits
 // until it answers. A start the broker refuses comes back as the reason.
 // switched marks a person's switch, which wins a juggle.
+// leavingEvery is how often a request held for a draining engine reads the
+// lease again.
+var leavingEvery = 250 * time.Millisecond
+
 func (g *Gateway) ensure(ctx context.Context, e *config.Engine, switched bool) error {
 	// ComfyUI answers no /v1/models; its queue endpoint is the liveness
 	// probe instead, so a cold start waits for the real server.
 	probe := g.answers
 	if e.Type == "comfyui" {
 		probe = g.comfyAnswers
+	}
+	// A draining engine answers until it stops: the request waits for the
+	// lease to settle, active again or gone and started anew.
+	for fit.Leaving(g.nodeStatus(), e.Name) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(leavingEvery):
+		}
 	}
 	// A parked engine answers while the weights sit in RAM: the resume
 	// goes before any probe, or the request is proxied to RAM.

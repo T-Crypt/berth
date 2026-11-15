@@ -134,6 +134,21 @@ func Parked(st *proto.Status, name string) bool {
 	return false
 }
 
+// Leaving is whether name's lease is giving the card back: draining, parking
+// or releasing. The engine may still answer, but a request sent to it now
+// lands on an engine that is about to stop.
+func Leaving(st *proto.Status, name string) bool {
+	if st == nil {
+		return false
+	}
+	for _, l := range st.Leases {
+		if l.Engine == name && (l.State == "draining" || l.State == "parking" || l.State == "releasing") {
+			return true
+		}
+	}
+	return false
+}
+
 // CardFree is whether nothing holds, uses or waits for the card and the card
 // serves this machine. A parked lease holds it: a batch job must not evict an
 // engine someone parked in RAM to come back to. A stowaway or a tracked app
