@@ -149,6 +149,15 @@ v0.6.0 was tagged first as `v0.6.0-rc.1`.
   turn it was in, and a drain no longer stops an engine that is still resuming
   ([#275](https://github.com/T-Crypt/berth/issues/275)).
 
+## Shipped: v0.6.1, cleaner handoffs (2026-11-15)
+
+- **No request into a draining engine.** The gateway holds a request while its engine's lease drains, parks or
+  releases, instead of sending it to an engine that is stopping.
+- **A minimum turn needs a request.** An engine woken by a health probe or a warm-up no longer keeps the card for
+  its full `--min-turn` while a real request waits.
+- **Busy or unknown.** An engine that reports no in-flight figure reads as unknown, not idle, so a juggle does not
+  hand its card over mid-request.
+
 ## Next: v0.6.x
 
 - **A warmth ladder.** An engine steps down from live to parked to stopped by idle time and the next booking, and

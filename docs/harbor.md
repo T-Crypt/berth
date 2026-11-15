@@ -8,6 +8,10 @@ fixture replays: a model that ran without a lease after a daemon restart, which 
 
 <p align="center"><img src="https://raw.githubusercontent.com/T-Crypt/berth/main/assets/preview-harbor.png" alt="Berth harbor: the CARD tab with ticket counter, request KPIs, the tide of card memory by holder, and the model timeline" width="900"></p>
 
+The SCHEDULE tab: what holds the card now, the next seven days of bookings, and every booking in order.
+
+<p align="center"><img src="https://raw.githubusercontent.com/T-Crypt/berth/main/assets/preview-schedule.png" alt="Berth harbor SCHEDULE tab: NOW with the holders, the waiters and the booking in force, 7 DAYS with one track per day of bookings, windows and the live holder, and the list of bookings" width="900"></p>
+
 The Engines tab (advanced mode): the engine cards with their learned footprints as
 EST. VRAM, the library (shelf, quant, size, the cached tier, the serving engine),
 decode throughput, the token ledger, the per-model leaderboard, storage and residency.
@@ -17,7 +21,7 @@ decode throughput, the token ledger, the per-model leaderboard, storage and resi
 On a phone, the harbor fits the screen. The tabs move to a bar at the bottom and the panels stack. This is the
 CARD tab at phone width, from the same demo fixture.
 
-<p align="center"><img src="https://raw.githubusercontent.com/T-Crypt/berth/main/assets/preview-mobile.png" alt="Berth harbor at phone width: the CARD tab with the ticket counter, collisions avoided, the collision tiles and the decode and TPOT KPIs, with CARD, SWITCH, ENGINES and ABOUT in a bottom bar" width="300"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/T-Crypt/berth/main/assets/preview-mobile.png" alt="Berth harbor at phone width: the CARD tab with the ticket counter and collisions avoided, with CARD, SWITCH, SCHEDULE, ENGINES and ABOUT in a bottom bar" width="300"></p>
 
 ### The harbor on your iPhone's Home Screen
 
@@ -132,7 +136,7 @@ for a phone.
   lists the last 10 events and quits. `berth service install --notify` starts it at logon.
 
 ## The harbor's views
-Everything the node collects shows in one of four tabs, and every panel answers a
+Everything the node collects shows in one of five tabs, and every panel answers a
 question an operator actually asks.
 
 **The CARD tab.**
@@ -194,6 +198,12 @@ ever opens the harbor's own origin. `berth harbor --gateway URL` names the gatew
 reads the key and never creates it. Without a key, the tab says so and offers no actions. On the gateway side,
 `berth gateway --harbor URL` redirects the gateway's old `/gui/` index and `/` to `URL/#switch`, so a bookmark of the
 engine list lands on this tab; its per-engine wake pages keep answering.
+
+**The SCHEDULE tab** answers "who has the card now, and who has it next?" NOW lists what holds each card, the
+waiters in queue order, the booking in force and the next one. 7 DAYS draws one 24-hour track per day with every
+booking to the minute (run, priority or down), each engine's window and the live holder. BOOKINGS lists every
+booking by start, on the node's clock. A paired device books by clicking an empty hour, and moves or cancels a
+booking by clicking it or its EDIT button. [Book the card](leasing.md#book-the-card) explains the bookings themselves.
 
 **The ENGINES tab.**
 - **The engine cards** answer "is this engine up and serving?" with the state the
