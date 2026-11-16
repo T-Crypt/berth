@@ -7,6 +7,7 @@ package gateway
 
 import (
 	"bufio"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -100,6 +101,23 @@ func TestKeepAliveFailureEmitsErrorEvent(t *testing.T) {
 	}
 	if strings.Count(s, "data: [DONE]") != 1 {
 		t.Fatalf("more than one DONE: %s", s)
+	}
+	// An SSE client joins the data lines of one event with "\n" (the
+	// blank line ends the event), so the error object and DONE must be
+	// two events, or the client reads one event that is not JSON.
+	for ev := range strings.SplitSeq(strings.TrimSpace(s), "\n\n") {
+		var data []string
+		for line := range strings.SplitSeq(ev, "\n") {
+			if d, ok := strings.CutPrefix(line, "data: "); ok {
+				data = append(data, d)
+			}
+		}
+		if len(data) == 0 {
+			continue
+		}
+		if d := strings.Join(data, "\n"); d != "[DONE]" && !json.Valid([]byte(d)) {
+			t.Errorf("event data is neither JSON nor [DONE]: %q", d)
+		}
 	}
 }
 
