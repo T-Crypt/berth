@@ -6,6 +6,13 @@ has a matching GitHub release whose body comes from its section below.
 
 ## [Unreleased]
 
+### Fixed
+
+- On Windows, `berth service install --notify` no longer opens a console window at logon. The Run key started
+  `berth.exe notify` itself, a console program, and closing that window ended the tray. It now starts the tray
+  through the hidden launcher the other services use, and its output goes to `logs\berth-notify.log`. Run the
+  install again to replace an older Run value. (#344)
+
 ## [v0.6.1] - 2026-11-15
 
 ### Fixed

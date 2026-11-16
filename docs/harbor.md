@@ -133,7 +133,10 @@ for a phone.
   `berth service install --notify` runs it as a user unit. On Windows it is a tray icon in
   the taskbar: its notifications are Windows' own toasts (a click opens the harbor), its
   tooltip is the latest event, and its menu opens the harbor, turns the toasts off and on,
-  lists the last 10 events and quits. `berth service install --notify` starts it at logon.
+  lists the last 10 events and quits. `berth service install --notify` starts it at logon
+  with no console window, through the same hidden launcher as the other services, and its
+  output goes to `logs\berth-notify.log` in the state directory. Run the install again to
+  move an older install off the console.
 
 ## The harbor's views
 Everything the node collects shows in one of five tabs, and every panel answers a
