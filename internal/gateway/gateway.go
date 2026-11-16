@@ -742,7 +742,9 @@ func ssePreamble(w http.ResponseWriter) {
 }
 
 // sseFailure answers a streaming request whose engine would not come up:
-// the same OpenAI-shaped error the 503 path carries, as one SSE event.
+// the same OpenAI-shaped error the 503 path carries, as one SSE event, then
+// DONE as its own event. A client joins the data lines of one event, so the
+// two on one event read as JSON followed by "[DONE]", which does not parse.
 func (g *Gateway) sseFailure(w http.ResponseWriter, engine, what string, err error) {
 	code := ""
 	var se *startError
@@ -751,7 +753,7 @@ func (g *Gateway) sseFailure(w http.ResponseWriter, engine, what string, err err
 	}
 	g.log().Warn("gateway start failed", "engine", engine, "request", what, "code", code, "err", err)
 	b, _ := json.Marshal(berthError(code, err.Error()))
-	fmt.Fprintf(w, "data: %s\ndata: [DONE]\n\n", b)
+	fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", b)
 	_ = http.NewResponseController(w).Flush()
 }
 
