@@ -6,6 +6,12 @@ has a matching GitHub release whose body comes from its section below.
 
 ## [Unreleased]
 
+### Fixed
+
+- A streamed request whose engine never got the card now ends with an error a client can read. The gateway sent
+  the error object and `[DONE]` as one server-sent event, so a client read the two lines together, failed to parse
+  them and reported "malformed server-sent event JSON" instead of the reason. They are now two events. (#346)
+
 ## [v0.6.1] - 2026-11-15
 
 ### Fixed
