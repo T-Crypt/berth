@@ -16,6 +16,9 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Fixed
 
+- `go test ./internal/cli` on a Windows machine with Berth installed no longer deletes the installed services'
+  launchers (`units\*.vbs` in the state directory). Three service tests ran a real uninstall or install against
+  the user's own state directory instead of a temporary one. (#351)
 - On Windows, `berth service install --notify` no longer opens a console window at logon. The Run key started
   `berth.exe notify` itself, a console program, and closing that window ended the tray. It now starts the tray
   through the hidden launcher the other services use, and its output goes to `logs\berth-notify.log`. Run the

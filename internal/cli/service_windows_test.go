@@ -245,6 +245,7 @@ func TestServiceInstallWindows(t *testing.T) {
 }
 
 func TestServiceInstallWindowsCommandFails(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	dir := t.TempDir()
 	ops, _ := fakeOps(t, dir, func(a argv) (string, error) {
 		return "ERROR: Access is denied.", errors.New("exit status 1")
@@ -403,6 +404,9 @@ func TestServiceStatusWindows(t *testing.T) {
 }
 
 func TestServiceUninstallWindows(t *testing.T) {
+	// The uninstall removes each unit's stub for real: without its own
+	// state directory it deletes a live install's launchers (issue 351).
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	ops, calls := fakeOps(t, t.TempDir(), func(a argv) (string, error) {
 		if a.args[0] == "/Delete" {
 			if a.args[2] == `\Berth\berth-gateway` {
@@ -442,6 +446,7 @@ func TestServiceUninstallWindows(t *testing.T) {
 
 // A task that is not running makes /End fail; the uninstall still deletes it.
 func TestServiceUninstallWindowsIgnoresEndFailure(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	ops, _ := fakeOps(t, t.TempDir(), func(a argv) (string, error) {
 		if a.args[0] == "/End" {
 			return "ERROR: There is no running instance of the task.", errors.New("exit status 1")
