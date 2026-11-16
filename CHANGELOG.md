@@ -8,6 +8,10 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Fixed
 
+- On Windows, `berth service install --notify` no longer opens a console window at logon. The Run key started
+  `berth.exe notify` itself, a console program, and closing that window ended the tray. It now starts the tray
+  through the hidden launcher the other services use, and its output goes to `logs\berth-notify.log`. Run the
+  install again to replace an older Run value. (#344)
 - A streamed request whose engine never got the card now ends with an error a client can read. The gateway sent
   the error object and `[DONE]` as one server-sent event, so a client read the two lines together, failed to parse
   them and reported "malformed server-sent event JSON" instead of the reason. They are now two events. (#346)
