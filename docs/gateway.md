@@ -333,8 +333,9 @@ curl -s -X DELETE http://127.0.0.1:9799/v1/berth/schedule/b4 -H "$K"
 - `PATCH /v1/berth/schedule/ID` moves a run. It takes `start`, `for`, `priority` and `note`, keeps the rest and
   keeps the ID. `DELETE` cancels a run. Both answer `200` with the booking.
 
-The gateway books, moves and cancels runs only. A priority change or downtime acts on everyone else's work, so it
-is the operator's: `berth schedule`, or a paired device in the harbor. `PATCH` or `DELETE` on one is a `403`. Any
+The gateway books, moves and cancels runs only. A priority change, downtime or a run that claims its hours acts on
+everyone else's work, so it is the operator's: `berth schedule`, or a paired device in the harbor. The gateway
+books no claim, and `PATCH` or `DELETE` on one of these is a `403`. Any
 holder of the key can change any run; per-device ownership comes with device keys.
 
 ## One URL per card

@@ -150,6 +150,7 @@ func TestCheckRefusesBadBookings(t *testing.T) {
 		{proto.Booking{Kind: proto.BookDown, Who: "a", Start: at(13, 0), End: at(13, 0).AddDate(0, 0, 8)}, "at most"},
 		{proto.Booking{Kind: proto.BookPriority, Who: "a", Engine: "e", Start: at(13, 0), End: at(14, 0)}, "names its priority"},
 		{proto.Booking{Kind: proto.BookRun, Who: "a", Engine: "e", Priority: "hold", Start: at(13, 0), End: at(14, 0)}, `priority "hold"`},
+		{proto.Booking{Kind: proto.BookPriority, Who: "a", Engine: "e", Priority: "batch", Claim: true, Start: at(13, 0), End: at(14, 0)}, "only a run booking claims"},
 	} {
 		if err := tc.b.Check(sat1200); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%+v: err = %v, want %q", tc.b, err, tc.want)

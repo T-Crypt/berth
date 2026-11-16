@@ -37,6 +37,9 @@ type Booking struct {
 	Start    time.Time   `json:"start" yaml:"start"`
 	End      time.Time   `json:"end" yaml:"end"`
 	Note     string      `json:"note,omitempty" yaml:"note,omitempty"`
+	// Claim lets a run's waiter drain any holder but a hold or a pinned
+	// one (a training, berth run --pinned), whatever the holder's class.
+	Claim bool `json:"claim,omitempty" yaml:"claim,omitempty"`
 }
 
 // Holds is whether t falls inside the booking.
@@ -86,6 +89,8 @@ func (b Booking) Check(now time.Time) error {
 		return fmt.Errorf("a priority booking names its priority: batch, interactive or foreground")
 	case b.Kind == BookDown && b.Priority != "":
 		return fmt.Errorf("downtime takes no priority")
+	case b.Claim && b.Kind != BookRun:
+		return fmt.Errorf("only a run booking claims its hours")
 	case b.Priority != "" && !slices.Contains(priorities, b.Priority):
 		return fmt.Errorf("priority %q: use batch, interactive or foreground", b.Priority)
 	case !b.End.After(b.Start):

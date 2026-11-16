@@ -105,6 +105,22 @@ func TestScheduleRoutesLeaveTheOperatorsBookings(t *testing.T) {
 			t.Errorf("%s downtime = %d %s, want 403", method, resp.StatusCode, body)
 		}
 	}
+
+	resp = call(t, "POST", srv.URL+"/v1/berth/schedule", `{"who":"agent","engine":"x","start":"`+now.Add(5*time.Hour).Format(time.RFC3339)+`","for":"30m","claim":true}`)
+	if made := decode[map[string][]proto.Booking](t, resp)["bookings"]; len(made) != 1 || made[0].Claim {
+		t.Fatalf("a claim in the body booked %+v (%d), want a run without one", made, resp.StatusCode)
+	}
+	claim, err := s.Book(proto.Booking{Card: "gpu0", Kind: proto.BookRun, Who: "operator", Engine: "x", Claim: true,
+		Start: now.Add(3 * time.Hour), End: now.Add(4 * time.Hour)}, 1, false, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, method := range []string{"PATCH", "DELETE"} {
+		resp := call(t, method, srv.URL+"/v1/berth/schedule/"+claim[0].ID, `{"for":"3h"}`)
+		if body := readAll(resp); resp.StatusCode != http.StatusForbidden || !strings.Contains(body, "only the operator") {
+			t.Errorf("%s claim = %d %s, want 403", method, resp.StatusCode, body)
+		}
+	}
 }
 
 func readAll(resp *http.Response) string {

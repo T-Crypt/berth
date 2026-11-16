@@ -93,6 +93,42 @@ func TestRunBookingKeepsItsHolderUntilItEnds(t *testing.T) {
 	}
 }
 
+// A batch run booking does not drain a foreground holder; one that claims
+// its hours does, and still leaves a hold alone.
+func TestClaimRunBookingDrainsAHigherHolder(t *testing.T) {
+	b, _ := startTurnBroker(t, procs.Map{})
+	b.SetBookings([]proto.Booking{book(b, "b1", proto.BookRun, "strata", "batch", 0, time.Hour)})
+	holder := must(t, acquire(b, Request{Engine: "strata-sc117", Priority: Foreground, Needs: 20 * GiB}))
+	w := acquireW(b, Request{Engine: "strata", Priority: Foreground, Needs: 20 * GiB})
+	pending(t, w.ch)
+	select {
+	case why := <-holder.Drains():
+		t.Fatalf("a batch run without a claim drained a foreground holder: %s", why)
+	default:
+	}
+
+	claim := book(b, "b1", proto.BookRun, "strata", "batch", 0, time.Hour)
+	claim.Claim = true
+	b.SetBookings([]proto.Booking{claim})
+	if got, want := drained(t, holder), "strata (batch) needs the card"; got != want {
+		t.Errorf("drain = %q, want %q", got, want)
+	}
+	holder.Release()
+	b.Tick(context.Background())
+	granted(t, b, "strata", w.ch)
+
+	b2, _ := startTurnBroker(t, procs.Map{})
+	b2.SetBookings([]proto.Booking{claim})
+	hold := must(t, acquire(b2, Request{Engine: "game", Priority: Hold, Needs: 20 * GiB}))
+	w2 := acquireW(b2, Request{Engine: "strata", Priority: Batch, Needs: 20 * GiB})
+	pending(t, w2.ch)
+	select {
+	case why := <-hold.Drains():
+		t.Fatalf("a claim drained a hold: %s", why)
+	default:
+	}
+}
+
 // A run booking puts its waiter ahead of an earlier foreground one.
 func TestRunBookingGoesFirstInLine(t *testing.T) {
 	b, _ := startTurnBroker(t, procs.Map{})

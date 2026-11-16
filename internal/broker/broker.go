@@ -1579,7 +1579,7 @@ func (b *Broker) evaluate(w *lease, now time.Time) (bool, string, []*lease) {
 			// for it to become parked (or fall back to a drain); evicting
 			// it mid-park would throw the park away.
 			pending = append(pending, h)
-		case h.pinned || h.prio > w.prio, w.prio != Hold && b.inRun(h, now) && !b.inRun(w, now):
+		case h.pinned || h.prio > w.prio && (h.prio == Hold || !b.claiming(w, now)), w.prio != Hold && b.inRun(h, now) && !b.inRun(w, now):
 			blockers = append(blockers, h)
 		case w.prio != Hold && h.inTurn(now):
 			// A minimum turn: the holder keeps the card until its turn

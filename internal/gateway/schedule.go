@@ -80,6 +80,9 @@ func (g *Gateway) runBooking(w http.ResponseWriter, r *http.Request) (proto.Book
 	case st.Bookings[i].Kind != proto.BookRun:
 		apiError(w, http.StatusForbidden, fmt.Sprintf("%s is a %s booking: only the operator changes it (berth schedule, or the harbor)", id, st.Bookings[i].Kind))
 		return proto.Booking{}, false
+	case st.Bookings[i].Claim:
+		apiError(w, http.StatusForbidden, fmt.Sprintf("%s claims its hours: only the operator changes it (berth schedule, or the harbor)", id))
+		return proto.Booking{}, false
 	}
 	return st.Bookings[i], true
 }

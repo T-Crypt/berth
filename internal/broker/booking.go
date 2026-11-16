@@ -6,7 +6,8 @@ package broker
 // The card's schedule. berthd's booking file says who has the card when,
 // and the broker reads it on every tick. A run booking is an engine's turn:
 // its waiter goes first, it runs at the booking's priority, and while it
-// holds the card nothing but a hold drains it. A priority booking moves an
+// holds the card nothing but a hold drains it. A run that claims its hours
+// also drains a holder of a higher class for its waiter. A priority booking moves an
 // engine to another class for its hours. Downtime takes no new work and
 // drains its holders at the start. An hour nobody booked runs as it always
 // did, by priority then arrival, so an unused booking leaves the card idle
@@ -55,6 +56,14 @@ func (b *Broker) booked(l *lease, now time.Time) (proto.Booking, bool) {
 func (b *Broker) inRun(l *lease, now time.Time) bool {
 	x, ok := b.booked(l, now)
 	return ok && x.Kind == proto.BookRun
+}
+
+// claiming is whether a run booking that claims its hours holds for l at
+// now: l's waiter may drain any holder but a hold or a pinned one, whatever
+// the holder's class.
+func (b *Broker) claiming(l *lease, now time.Time) bool {
+	x, ok := b.booked(l, now)
+	return ok && x.Kind == proto.BookRun && x.Claim
 }
 
 // bookedPrio is the class a booking gives: its own, and foreground for a
