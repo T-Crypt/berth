@@ -6,6 +6,14 @@ has a matching GitHub release whose body comes from its section below.
 
 ## [Unreleased]
 
+### Added
+
+- `berth schedule book --claim` books a run that claims its hours. While it lasts, the booked engine's waiter
+  drains any holder but a hold or a pinned lease, whatever the holder's priority. Before, a `batch` run lost its
+  hours to an idle `foreground` holder, and the workaround was a downtime booked just before it. The harbor's
+  booking form has the same choice. Only the operator books a claim; the gateway refuses to move or cancel one.
+  (#345)
+
 ### Fixed
 
 - On Windows, `berth service install --notify` no longer opens a console window at logon. The Run key started

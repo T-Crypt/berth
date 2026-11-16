@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/T-Crypt/berth/internal/proto"
 	"github.com/T-Crypt/berth/internal/schedule"
@@ -75,5 +76,21 @@ func TestScheduleAgainstADaemon(t *testing.T) {
 	code, out, _ = runCLI(t, "schedule", "--socket", sock)
 	if code != 0 || !strings.Contains(out, "nothing booked") || !strings.Contains(out, "RUNNING") {
 		t.Fatalf("board after cancel (exit %d): %s", code, out)
+	}
+
+	code, out, errOut = runCLI(t, "schedule", "book", "--who", "op", "--engine", "strata", "--priority", "batch", "--claim",
+		"--at", "now", "--for", "1h", "--socket", sock)
+	if code != 0 || !strings.Contains(out, "booked b2") {
+		t.Fatalf("book --claim (exit %d): %s %s", code, out, errOut)
+	}
+	if got := s.List(time.Now()); len(got) != 1 || !got[0].Claim {
+		t.Errorf("schedule after --claim = %+v, want one claiming run", got)
+	}
+	if code, out, _ = runCLI(t, "schedule", "--socket", sock); code != 0 || !strings.Contains(out, "run (claim)") {
+		t.Errorf("board (exit %d) does not show the claim: %s", code, out)
+	}
+	code, _, errOut = runCLI(t, "schedule", "book", "--who", "op", "--kind", "down", "--claim", "--at", "23:00", "--for", "1h", "--socket", sock)
+	if code != 1 || !strings.Contains(errOut, "only a run booking claims") {
+		t.Errorf("down --claim (exit %d): %s", code, errOut)
 	}
 }

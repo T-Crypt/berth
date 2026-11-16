@@ -187,7 +187,10 @@ three kinds:
 - `run` is an engine's turn. While it lasts, the engine's waiter goes first in line and runs at the booking's
   priority (foreground when the booking names none). It wins a tie against a holder that has no booking. Once it
   holds the card, nothing but a hold drains it until the booking ends. A minimum turn (`min_turn`) still protects
-  the holder it takes over from.
+  the holder it takes over from. A `batch` run does not drain a `foreground` holder, so an engine left idle at a
+  higher class keeps the card through the booked hours. Book the run with `--claim` to take them back: while it
+  lasts, the booked engine's waiter drains any holder but a hold or a pinned lease, whatever its class. A training
+  stays too. Only the operator books a claim; the gateway does not.
 - `priority` moves an engine to another class for set hours, such as llama-swap at batch while a training runs. It
   claims no time on the card, so it may overlap a run.
 - `down` is downtime. No new work starts, and holders drain at their usual boundary when it begins. A hold and a
@@ -200,6 +203,7 @@ everyone else, so a booking never keeps the card idle.
 berth schedule                       # what holds each card, the waiters in grant order, every booking
 berth schedule book --who pi-pocket --engine pocket-train --at 23:00 --for 5h --days 7 --priority batch
 berth schedule book --who training --engine sft --at "sun 18:00" --for 3h
+berth schedule book --who reviews --engine strata --priority batch --claim --at 00:00 --for 85m --days 7
 berth schedule book --who operator --kind priority --engine llama-swap --priority batch --at "sun 18:00" --for 3h
 berth schedule book --who operator --kind down --at "tue 04:00" --for 1h --note "driver update"
 berth schedule move b4 --at 01:00    # new hours, same ID; --for, --priority and --note change those

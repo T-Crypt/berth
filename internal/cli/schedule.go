@@ -50,7 +50,11 @@ func (v scheduleView) Human(c *Context, ok bool) error {
 		if x.Holds(v.b.Now) {
 			when += " (now)"
 		}
-		fmt.Fprintf(tw, "%s\t%s%s\t%s\t%s\t%s\t%s\t%s\n", x.ID, card(x.Card), x.Kind, x.Who, dash(x.Engine), dash(x.Priority), when, x.Note)
+		kind := string(x.Kind)
+		if x.Claim {
+			kind += " (claim)"
+		}
+		fmt.Fprintf(tw, "%s\t%s%s\t%s\t%s\t%s\t%s\t%s\n", x.ID, card(x.Card), kind, x.Who, dash(x.Engine), dash(x.Priority), when, x.Note)
 	}
 	return tw.Flush()
 }
@@ -84,6 +88,7 @@ func runSchedule(c *Context) int {
 	earliest := fs.Bool("earliest", false, "book: take the first free hours at or after --at")
 	card := fs.String("card", "", "book: the card (default the first)")
 	note := fs.String("note", "", "book, move: a note the board shows")
+	claim := fs.Bool("claim", false, "book: a run that claims its hours drains a holder of any class but a hold for its engine")
 	if code, done := c.ParseInterspersed(fs); done {
 		return code
 	}
@@ -99,7 +104,7 @@ func runSchedule(c *Context) int {
 			return c.fail(Failf("berth schedule book needs --at and --for").WithHint("%s", usage))
 		}
 		b := proto.Booking{Card: *card, Kind: proto.BookingKind(*kind), Who: *who, Engine: *engine, Priority: *prio,
-			Start: start, End: start.Add(*forFlag), Note: *note}
+			Start: start, End: start.Add(*forFlag), Note: *note, Claim: *claim}
 		if err := b.Check(now); err != nil {
 			return c.fail(Failf("%v", err).WithHint("%s", usage))
 		}

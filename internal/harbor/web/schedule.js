@@ -41,7 +41,9 @@ function explain(b) {
   switch (b.kind) {
     case "run":
       return eng + " goes first in line from " + from + " and runs at " + (b.priority || "foreground") +
-        "; until " + to + " nothing but a hold drains it. If it does not ask for the card, the card serves everyone else.";
+        "; until " + to + " nothing but a hold drains it." +
+        (b.claim ? " When it asks, any holder but a hold drains for it, whatever its class." : "") +
+        " If it does not ask for the card, the card serves everyone else.";
     case "priority":
       return eng + " runs at " + (b.priority || "?") + " from " + from + " to " + to + ", then back to its own class. It claims no time on the card.";
     case "down":
@@ -268,6 +270,7 @@ export function initSchedule({ demo }) {
     listRoot.replaceChildren(...bs.map((b) => {
       const row = el("div", "sq sw-engine sb-item sb-item-" + b.kind);
       const right = el("span", "sw-state", el("span", "sw-chip", KIND_WORD[b.kind]));
+      if (b.claim) right.append(el("span", "sw-chip", "CLAIM"));
       if (new Date(b.start) <= now) right.append(el("span", "sw-chip sw-pinned", "IN FORCE"));
       if (many) right.prepend(el("span", "sw-chip", b.card));
       row.append(el("div", "top", el("span", "name", b.id + " " + label(b)), right));
@@ -297,7 +300,7 @@ export function initSchedule({ demo }) {
     const b = {
       kind: f.kind.value, who: f.who.value.trim(), engine: f.engine.value.trim(), priority: f.priority.value,
       start: start.toISOString(), end: new Date(start.getTime() + Number(f.hours.value) * HOUR).toISOString(),
-      note: f.note.value.trim(), card: pick,
+      note: f.note.value.trim(), card: pick, claim: f.kind.value === "run" && f.claim.checked,
     };
     if (b.kind === "down") { b.engine = ""; b.priority = ""; }
     if (editing) b.id = editing.id;
@@ -308,6 +311,7 @@ export function initSchedule({ demo }) {
     const kind = form.elements.kind.value;
     form.querySelector(".sf-engine").hidden = kind === "down";
     form.querySelector(".sf-prio").hidden = kind === "down";
+    form.querySelector(".sf-claim").hidden = kind !== "run";
     form.querySelector(".sf-new").hidden = !!editing;
     try { explainEl.textContent = explain(formBooking()); } catch (e) { explainEl.textContent = ""; }
   }
@@ -327,6 +331,7 @@ export function initSchedule({ demo }) {
     f.hours.value = b ? String(Math.round(((new Date(b.end) - start) / HOUR) * 100) / 100) : "1";
     f.days.value = "1";
     f.earliest.checked = false;
+    f.claim.checked = !!(b && b.claim);
     f.note.value = b ? b.note || "" : "";
     f.kind.disabled = !!b;
     for (const x of form.querySelectorAll("input, select")) if (x !== f.kind) x.disabled = !paired;
