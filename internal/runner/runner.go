@@ -276,6 +276,32 @@ func Run(o Options) int {
 		return 127
 	}
 	afterStart(cmd)
+
+	// The record covers the whole life of the engine, not only the hours no
+	// daemon answers. berthd reads these records before it grants anything,
+	// so an engine still on the card keeps the card even when its run has not
+	// yet noticed the lost socket: the record is the only witness to it
+	// (#354). reason is "" while a lease holds.
+	started := time.Now()
+	childStart := procs.System{}.StartTime(cmd.Process.Pid)
+	self, selfStart := os.Getpid(), procs.System{}.StartTime(os.Getpid())
+	dir := runs.Dir(o.Socket)
+	writeRecord := func(reason string) {
+		_, err := runs.Write(dir, runs.Record{
+			Engine: o.Engine, PID: cmd.Process.Pid, Start: childStart, Started: started,
+			Reason: reason, Wrapper: self, WrapperStart: selfStart, Training: o.Training,
+		})
+		if err != nil {
+			fmt.Fprintf(o.Stderr, "berth: could not record the run: %v\n", err)
+		}
+	}
+	if conn == nil {
+		writeRecord(runs.ReasonStart)
+	} else {
+		writeRecord("")
+	}
+	defer runs.Remove(dir, cmd.Process.Pid)
+
 	if conn != nil {
 		_ = conn.Send(proto.Msg{Op: proto.OpAttach, PID: cmd.Process.Pid})
 	}
@@ -361,8 +387,9 @@ func Run(o Options) int {
 		}()
 	}
 
-	// Run returns only after the listener does, so an unprotected-run record
-	// it wrote is gone by then.
+	// Every iteration of the re-attach loop rewrites the record: the reason
+	// says whether the engine is unleased right now. Run removes it after the
+	// listener returns.
 	listening := make(chan struct{})
 	if raw != nil {
 		go func(c net.Conn) { <-done; c.Close() }(raw)
@@ -408,11 +435,10 @@ func Run(o Options) int {
 				say("UNPROTECTED: lost berthd (%v); %s keeps running without a lease, retrying", err, o.Engine)
 				reason = runs.ReasonLost
 			}
-			remove := record(o, cmd, reason)
+			writeRecord(reason)
 			line.adoptLends(o, say)
 			var lease string
 			conn, raw, lease = reattach(o, cmd, done, &cid, line)
-			remove()
 			if conn == nil {
 				return
 			}
@@ -423,6 +449,7 @@ func Run(o Options) int {
 			if ids := cid.list(); len(ids) > 0 {
 				_ = conn.Send(proto.Msg{Op: proto.OpAttach, PID: cmd.Process.Pid, Containers: ids})
 			}
+			writeRecord("")
 			say("re-attached %s as %s", o.Engine, lease)
 		}
 	}()
@@ -769,21 +796,6 @@ func slotsBusy(url, key string) (int, error) {
 		}
 	}
 	return n, nil
-}
-
-// record leaves a note beside the socket that this engine runs without a
-// lease, so berthd lists it instead of it being an anonymous squatter. It
-// returns the func that removes the note.
-func record(o Options, cmd *exec.Cmd, reason string) func() {
-	pid, self := cmd.Process.Pid, os.Getpid()
-	remove, err := runs.Write(runs.Dir(o.Socket), runs.Record{
-		Engine: o.Engine, PID: pid, Start: procs.System{}.StartTime(pid), Started: time.Now(), Reason: reason,
-		Wrapper: self, WrapperStart: procs.System{}.StartTime(self), Training: o.Training,
-	})
-	if err != nil {
-		fmt.Fprintf(o.Stderr, "berth: could not record the unprotected run: %v\n", err)
-	}
-	return remove
 }
 
 // visibleDevices is the CUDA_VISIBLE_DEVICES=UUID entry that keeps the

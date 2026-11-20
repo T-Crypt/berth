@@ -16,6 +16,10 @@ has a matching GitHub release whose body comes from its section below.
 
 ### Fixed
 
+- A `berth run` or `berth train` engine is always visible to a berthd that restarts. The run writes
+  its record when the engine starts, not only after its wrapper notices the lost socket, so a wrapper
+  that is stopped or slow cannot let the new daemon grant a second whole-card lease onto a live engine.
+  (#354)
 - `go test ./internal/cli` on a Windows machine with Berth installed no longer deletes the installed services'
   launchers (`units\*.vbs` in the state directory). Three service tests ran a real uninstall or install against
   the user's own state directory instead of a temporary one. (#351)

@@ -1,10 +1,12 @@
 // Copyright 2026 Trevin Tindall (T-Crypt)
 // SPDX-License-Identifier: Apache-2.0
 
-// Package runs records engines that started without a lease: berthd was
-// down (fail-open), or went away mid-run. The wrapper writes one small file
-// per run beside the socket, and berthd lists the live ones, so an
-// unprotected engine is never invisible.
+// Package runs records the engines a berth run starts, so a berthd that
+// starts beside them knows they exist. The wrapper writes one small file per
+// run beside the socket, and berthd lists the live ones. A run that lost its
+// daemon, or found none, is unprotected: its record carries a Reason and
+// status shows it. A run whose lease is live is recorded too, so a restarted
+// daemon can never miss an engine that may still hold the card.
 package runs
 
 import (
@@ -19,13 +21,19 @@ import (
 	"github.com/T-Crypt/berth/internal/fsx"
 )
 
-// Record is one unprotected run, identified by PID plus start time.
+// Record is one engine that a berth run started, identified by PID plus
+// start time.
 type Record struct {
 	Engine  string    `json:"engine"`
 	PID     int       `json:"pid"`
 	Start   uint64    `json:"pid_start"`
 	Started time.Time `json:"started"`
-	Reason  string    `json:"reason"`
+	// Reason says the engine runs without a lease: berthd went away mid-run,
+	// none answered at the start, or a keep-up drain left the server up.
+	// Empty while a lease holds it. A record with no reason is still read
+	// after a restart: its engine may hold the card, and berthd holds new
+	// grants until the run re-attaches or the window closes.
+	Reason string `json:"reason"`
 	// Wrapper is the berth run that wrote the record, the one process that
 	// can re-attach the engine. 0 in a record from before v0.5.1.
 	Wrapper      int    `json:"wrapper_pid,omitempty"`
@@ -35,6 +43,11 @@ type Record struct {
 	// berthd, and a new berthd refuses other requests until it re-attaches.
 	Training bool `json:"training,omitempty"`
 }
+
+// Unprotected is true for a record whose engine runs without a lease. A
+// record with no reason belongs to a run that holds, or held, a lease; it is
+// on disk so a daemon that starts later can see the engine.
+func (r Record) Unprotected() bool { return r.Reason != "" }
 
 // WrapperState is "alive" while the berth run that wrote r still runs,
 // "exited" once it is gone (or its PID is someone else's), and "" when the
@@ -85,6 +98,12 @@ func Write(dir string, r Record) (func(), error) {
 		return func() {}, err
 	}
 	return func() { os.Remove(p) }, nil
+}
+
+// Remove deletes the record for pid, if there is one. It is how a run that
+// recorded its engine for its whole life clears the record when it ends.
+func Remove(dir string, pid int) {
+	os.Remove(path(dir, pid))
 }
 
 // Training is a live training record in dir, and whether there is one.
