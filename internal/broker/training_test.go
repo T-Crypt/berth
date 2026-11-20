@@ -155,15 +155,17 @@ func TestTrainingLocksOutAQueuedGang(t *testing.T) {
 	}
 }
 
-// trainingLost is a node whose training (pid 200) lost the last daemon: its
-// record is on disk, and this daemon's re-attach window is long past.
-func trainingLost(t *testing.T) *Broker {
+// trainingLost is a node whose training (pid 200) ran under the last
+// daemon: its record is on disk, and this daemon's re-attach window is long
+// past. reason is the record's state, runs.ReasonLost once its berth run has
+// noticed the lost daemon and "" before that.
+func trainingLost(t *testing.T, reason string) *Broker {
 	t.Helper()
 	b, _, _ := setup(t, procs.Fake{Starts: map[int]uint64{200: 9}})
 	b.cfg.RunsDir = t.TempDir()
 	b.cfg.ReattachWindow = time.Nanosecond
 	if _, err := runs.Write(b.cfg.RunsDir, runs.Record{
-		Engine: "train-a", PID: 200, Start: 9, Started: time.Now(), Reason: runs.ReasonLost, Training: true,
+		Engine: "train-a", PID: 200, Start: 9, Started: time.Now(), Reason: reason, Training: true,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -175,24 +177,34 @@ func trainingLost(t *testing.T) *Broker {
 // A training that has not re-attached yet still locks the card after a
 // daemon restart, with no time limit: other requests are refused at once.
 func TestTrainingLocksTheCardUntilItReattaches(t *testing.T) {
-	b := trainingLost(t)
-	why := refusedNow(t, "a request before the training re-attaches", acquire(b, Request{Engine: "chat", Priority: Foreground, Wait: time.Hour}))
-	if !strings.Contains(why, "locked for training by train-a") {
-		t.Errorf("refusal %q does not name the training", why)
-	}
+	for _, tc := range []struct {
+		name   string
+		reason string
+	}{
+		{"its berth run noticed the lost daemon", runs.ReasonLost},
+		{"its berth run has not noticed yet", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := trainingLost(t, tc.reason)
+			why := refusedNow(t, "a request before the training re-attaches", acquire(b, Request{Engine: "chat", Priority: Foreground, Wait: time.Hour}))
+			if !strings.Contains(why, "locked for training by train-a") {
+				t.Errorf("refusal %q does not name the training", why)
+			}
 
-	l, err := b.Reattach(Request{Engine: "train-a", Training: true}, 200, 9)
-	if err != nil {
-		t.Fatalf("the training's re-attach: %v", err)
+			l, err := b.Reattach(Request{Engine: "train-a", Training: true}, 200, 9)
+			if err != nil {
+				t.Fatalf("the training's re-attach: %v", err)
+			}
+			refusedNow(t, "a request after the training re-attached", acquire(b, Request{Engine: "chat", Priority: Foreground, Wait: time.Hour}))
+			l.Release()
+		})
 	}
-	refusedNow(t, "a request after the training re-attached", acquire(b, Request{Engine: "chat", Priority: Foreground, Wait: time.Hour}))
-	l.Release()
 }
 
 // The lock ends with the training: once its process is gone, the record
 // goes and the card serves again.
 func TestTrainingRecordLocksOnlyWhileItsProcessLives(t *testing.T) {
-	b := trainingLost(t)
+	b := trainingLost(t, runs.ReasonLost)
 	b.tree = procs.Fake{Starts: map[int]uint64{}}
 	b.Tick(context.Background())
 	must(t, acquire(b, Request{Engine: "chat", Priority: Foreground}))

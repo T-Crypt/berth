@@ -363,10 +363,18 @@ func TestReattachAfterDaemonRestart(t *testing.T) {
 	eng, out := launch(runner.Options{Socket: sock, Engine: "llamacpp", Priority: "foreground",
 		Retry: 50 * time.Millisecond, Grace: 200 * time.Millisecond, Argv: []string{"sleep", "30"}})
 	waitFor(t, "grant", func() bool { return strings.Contains(out.String(), "granted") })
+	// The record covers the whole life of the engine (#354), so it exists
+	// before anything goes wrong: a daemon that restarts while this berth
+	// run has not yet noticed the lost socket still sees the engine.
+	waitFor(t, "live run record", func() bool {
+		list := runs.List(runs.Dir(sock), procs.System{}.StartTime)
+		return len(list) == 1 && list[0].Reason == "" && list[0].Wrapper == os.Getpid()
+	})
 
 	stop()
 	waitFor(t, "unprotected record", func() bool {
-		return len(runs.List(runs.Dir(sock), procs.System{}.StartTime)) == 1
+		list := runs.List(runs.Dir(sock), procs.System{}.StartTime)
+		return len(list) == 1 && list[0].Reason == runs.ReasonLost
 	})
 	if rec := runs.List(runs.Dir(sock), procs.System{}.StartTime)[0]; rec.WrapperState(procs.System{}.StartTime) != "alive" || rec.Wrapper != os.Getpid() {
 		t.Fatalf("record = %+v, want it to name this berth run (pid %d) as alive", rec, os.Getpid())
@@ -378,7 +386,12 @@ func TestReattachAfterDaemonRestart(t *testing.T) {
 	if len(st.Leases) != 1 || st.Leases[0].Engine != "llamacpp" || st.Leases[0].State != "active" || st.Leases[0].PID == 0 {
 		t.Fatalf("leases after re-attach = %+v", st.Leases)
 	}
-	waitFor(t, "record removed", func() bool { return len(runs.List(runs.Dir(sock), procs.System{}.StartTime)) == 0 })
+	// The record stays for the life of the run, no longer flagged lost: the
+	// next daemon restart needs it before the re-attach window closes again.
+	waitFor(t, "record cleared", func() bool {
+		list := runs.List(runs.Dir(sock), procs.System{}.StartTime)
+		return len(list) == 1 && list[0].Reason == ""
+	})
 
 	// The re-attached lease still drains like any other.
 	second, out2 := launch(runner.Options{Socket: sock, Engine: "comfyui", Priority: "foreground", Argv: []string{"true"}})
@@ -410,7 +423,12 @@ func TestRunStartedBeforeDaemonReattaches(t *testing.T) {
 	if len(st.Leases) != 1 || st.Leases[0].Engine != "gemma4" || st.Leases[0].State != "active" || st.Leases[0].PID == 0 {
 		t.Fatalf("leases after re-attach = %+v", st.Leases)
 	}
-	waitFor(t, "record removed", func() bool { return len(runs.List(runs.Dir(sock), procs.System{}.StartTime)) == 0 })
+	// The record stays for the life of the run, no longer flagged
+	// unprotected: the next daemon restart needs it too.
+	waitFor(t, "record cleared", func() bool {
+		list := runs.List(runs.Dir(sock), procs.System{}.StartTime)
+		return len(list) == 1 && list[0].Reason == ""
+	})
 
 	second, out2 := launch(runner.Options{Socket: sock, Engine: "comfyui", Priority: "foreground", Argv: []string{"true"}})
 	if code := <-eng; code != 128+15 {
@@ -419,6 +437,7 @@ func TestRunStartedBeforeDaemonReattaches(t *testing.T) {
 	if code := <-second; code != 0 {
 		t.Fatalf("second exit = %d; stderr:\n%s", code, out2.String())
 	}
+	waitFor(t, "record removed", func() bool { return len(runs.List(runs.Dir(sock), procs.System{}.StartTime)) == 0 })
 }
 
 // A run that found no daemon at its start holds new grants in the window
