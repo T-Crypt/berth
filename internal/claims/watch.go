@@ -42,6 +42,9 @@ type Watcher struct {
 
 	mu    sync.Mutex
 	holds map[string]*hold
+	// seen is when each hold's match was first seen, for rules with a settle
+	// time: the hold waits there until the process has lasted that long.
+	seen map[string]time.Time
 }
 
 type hold struct {
@@ -107,18 +110,23 @@ func (w *Watcher) Tick(ctx context.Context, now time.Time) {
 		case ActionHold:
 			h := w.holds[r.Name]
 			switch {
-			case len(m) > 0 && h == nil:
+			case len(m) > 0 && h == nil && w.settled(r, now):
 				w.start(ctx, r, m, now)
 				h = w.holds[r.Name]
-			case len(m) > 0:
+			case len(m) > 0 && h != nil:
 				h.lastSeen = now
-			case h != nil && now.Sub(h.lastSeen) >= r.Linger:
-				h.cancel()
-				delete(w.holds, r.Name)
-				w.Log.Info("claim ended", "claim", r.Name)
-				w.Cards[0].Note(proto.Event{Kind: proto.EvClaimEnded, Engine: "claim:" + r.Name,
-					Detail: fmt.Sprintf("gone for %s", r.Linger)})
-				h = nil
+			case len(m) == 0:
+				// The match is gone, so its settle clock is gone with it: a
+				// process that comes back starts the wait again.
+				delete(w.seen, r.Name)
+				if h != nil && now.Sub(h.lastSeen) >= r.Linger {
+					h.cancel()
+					delete(w.holds, r.Name)
+					w.Log.Info("claim ended", "claim", r.Name)
+					w.Cards[0].Note(proto.Event{Kind: proto.EvClaimEnded, Engine: "claim:" + r.Name,
+						Detail: fmt.Sprintf("gone for %s", r.Linger)})
+					h = nil
+				}
 			}
 			if h != nil {
 				st.Active, st.Lease = true, h.granted()
@@ -132,6 +140,24 @@ func (w *Watcher) Tick(ctx context.Context, now time.Time) {
 	for i, b := range w.Cards {
 		b.SetClaims(tracked, w.onCard(states, i))
 	}
+}
+
+// settled is whether a hold's match has lasted the rule's settle time. The
+// first scan starts the clock and holds nothing, so a short-lived helper does
+// not drain the holder (#337). Called with w.mu held.
+func (w *Watcher) settled(r *Rule, now time.Time) bool {
+	if r.Settle <= 0 {
+		return true
+	}
+	if w.seen == nil {
+		w.seen = map[string]time.Time{}
+	}
+	first, ok := w.seen[r.Name]
+	if !ok {
+		w.seen[r.Name] = now
+		return false
+	}
+	return now.Sub(first) >= r.Settle
 }
 
 // onCard is the claim states as card i reports them: a hold whose rule
