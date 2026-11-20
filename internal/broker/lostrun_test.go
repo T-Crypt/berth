@@ -88,6 +88,70 @@ func TestRefusalNamesTheWaitersOwnUnleasedRun(t *testing.T) {
 	})
 }
 
+// #354: a restarted daemon granted a second whole-card lease while the
+// first run's engine was still alive. Its berth run had not yet noticed the
+// lost socket, so no unprotected record existed. Every run now records its
+// engine from the moment the child starts, so a fresh daemon holds the card
+// until the run re-attaches or the window closes, whatever its berth run is
+// doing.
+func TestLiveRunHoldsTheCardUntilItReattaches(t *testing.T) {
+	b, _, _ := setup(t, procs.Fake{Starts: map[int]uint64{100: 1, 99: 5}})
+	b.cfg.RunsDir = t.TempDir()
+	b.cfg.ReattachWindow = time.Hour
+	// No reason: its berth run still believes the lease is live.
+	if _, err := runs.Write(b.cfg.RunsDir, runs.Record{
+		Engine: "qualification-active", PID: 100, Start: 1,
+		Wrapper: 99, WrapperStart: 5, Started: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	b.Tick(context.Background())
+
+	_, err := b.Acquire(context.Background(),
+		Request{Engine: "qualification-next", Pinned: true, Wait: 100 * time.Millisecond}, nil)
+	if err == nil {
+		t.Fatal("granted a second whole-card lease while the first run's engine is alive")
+	}
+	if !strings.Contains(err.Error(), "berthd restarted") || !strings.Contains(err.Error(), "1 running engine") {
+		t.Fatalf("refusal = %q, want the restart window named", err)
+	}
+
+	// Once it re-attaches, its own lease is what keeps the contender out.
+	if _, err := b.Reattach(Request{Engine: "qualification-active", Pinned: true}, 100, 1); err != nil {
+		t.Fatalf("re-attach: %v", err)
+	}
+	_, err = b.Acquire(context.Background(),
+		Request{Engine: "qualification-next", Pinned: true, Wait: 100 * time.Millisecond}, nil)
+	if err == nil {
+		t.Fatal("granted beside a live pinned lease")
+	}
+	if strings.Contains(err.Error(), "berthd restarted") {
+		t.Fatalf("refusal = %q; the re-attach window should not be the reason any more", err)
+	}
+}
+
+// A record for a run whose lease is live holds nothing: the engine is
+// accounted for by the lease, and the daemon grants as usual.
+func TestRecordForALeasedRunHoldsNothing(t *testing.T) {
+	b, _, _ := setup(t, procs.Fake{Starts: map[int]uint64{100: 1}})
+	b.cfg.RunsDir = t.TempDir()
+	b.cfg.ReattachWindow = time.Hour
+
+	l := must(t, acquire(b, Request{Engine: "a", Priority: Batch, Needs: GiB}))
+	l.Attach(100)
+	if _, err := runs.Write(b.cfg.RunsDir, runs.Record{
+		Engine: "a", PID: 100, Start: 1, Started: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	b.Tick(context.Background())
+	if n := b.reattaching(b.now()); n != 0 {
+		t.Fatalf("a leased run counts as due back %d time(s)", n)
+	}
+
+	must(t, acquire(b, Request{Engine: "b", Priority: Batch, Needs: GiB}))
+}
+
 // #300: an engine whose berth run has exited has nobody left to re-attach
 // it, and one whose berth run is alive should have. The daemon could not
 // tell the two apart, so the report could not say which one happened.

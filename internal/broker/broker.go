@@ -878,7 +878,7 @@ func (b *Broker) Tick(ctx context.Context) {
 		present[id] = true
 		scope := b.scopeOf(p.PID)
 		if l := b.owner(id, p, scope); l != nil {
-			if l.state != active && l.state != draining && b.runFor(p.PID) != nil {
+			if l.state != active && l.state != draining && b.leftBehind(p.PID) {
 				// A released lease keeps blocking while its processes hold
 				// memory, unless a run record says they were left behind on
 				// purpose (a keep-up drain): those processes fall through to
@@ -923,7 +923,10 @@ func (b *Broker) Tick(ctx context.Context) {
 		}
 		s := &squatter{id: id, proc: p, seen: now}
 		wrapper := ""
-		if run != nil {
+		if run != nil && run.Unprotected() {
+			// Only a run that says its engine is unleased is the squatter's
+			// owner. A leased run's stray process is not evidence that its
+			// berth run failed to re-attach.
 			s.run = run.Engine
 			wrapper = run.WrapperState(b.tree.StartTime)
 		}
@@ -1106,11 +1109,16 @@ func (b *Broker) runFor(pid int) *runs.Record {
 	return nil
 }
 
-// dueToReattach is true for a run that lost the previous daemon mid-run, or
-// found none at its start, while this daemon is young enough that its berth
-// run is still dialling, and it has not re-attached yet.
+// dueToReattach is true for a run that may still hold the card from the
+// last daemon: it has no lease here, and either the re-attach window is open
+// or it is a training, whose card is its own until it returns. Every record
+// counts, not only one whose berth run has already noticed the lost socket:
+// the record is written when the engine starts, so a run that is slow to
+// notice cannot hide its engine from a fresh daemon (#354).
 func (b *Broker) dueToReattach(r runs.Record, now time.Time) bool {
-	if r.Reason != runs.ReasonLost && r.Reason != runs.ReasonStart {
+	if r.Reason == runs.ReasonKeepUp {
+		// A keep-up drain left the server up with its models unloaded: the
+		// card is free on purpose, so the record holds nothing.
 		return false
 	}
 	// A training waits as long as its process lives: the card is its own
@@ -1135,6 +1143,15 @@ func (b *Broker) reattaching(now time.Time) int {
 		}
 	}
 	return n
+}
+
+// leftBehind is true for a process whose record says its engine runs
+// without a lease (a keep-up drain, or a run that lost its daemon). A
+// record with no reason belongs to a run whose lease is live; its processes
+// keep blocking until the driver shows the memory free.
+func (b *Broker) leftBehind(pid int) bool {
+	r := b.runFor(pid)
+	return r != nil && r.Unprotected()
 }
 
 func holding(l *lease) string {
