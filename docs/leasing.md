@@ -46,9 +46,11 @@
   keeps dialling, and re-attaches when a daemon answers, so a service that starts before
   berthd at boot ends up leased.
 - **Survives a daemon restart.** A running engine stays up when berthd restarts or is
-  upgraded; `berth run` dials the new daemon and re-attaches by PID plus start time. For
-  15 s after a start the daemon grants nothing new while such engines are still due back,
-  so nothing is loaded onto a card an engine already holds.
+  upgraded; `berth run` dials the new daemon and re-attaches by PID plus start time. Every
+  run records its engine from the moment the engine starts, so a daemon that comes up while
+  a run has not yet noticed the old one went away still sees that engine. For 15 s after a
+  start the daemon grants nothing new while such engines are still due back, so nothing is
+  loaded onto a card an engine already holds.
 - **ComfyUI at a job boundary.** `--drain-comfyui` waits until ComfyUI's queue is empty
   before stopping it; a job in progress is never cut off.
 - **No juggling.** Two engines at the same priority drain each other: the last one asked for

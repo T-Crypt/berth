@@ -129,6 +129,11 @@ func (b *Broker) Status() proto.Status {
 		st.Claims = append(st.Claims, c)
 	}
 	for _, r := range b.runs {
+		if !r.Unprotected() {
+			// A leased run's record is the daemon's witness after a restart,
+			// not an unprotected run.
+			continue
+		}
 		st.Unprotected = append(st.Unprotected, proto.Run{Engine: r.Engine, PID: r.PID, Reason: r.Reason, Age: now.Sub(r.Started).Seconds()})
 	}
 	return st
