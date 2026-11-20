@@ -53,6 +53,10 @@ type Rule struct {
 	Action        string        // hold | track
 	NeedsMiB      uint64        // hold only: 0 = the whole card
 	Linger        time.Duration // hold only: 0 = DefaultLinger
+	// Settle is how long a match must last before a hold starts, so a process
+	// that lives a few seconds (a screenshot harness, a launcher probe) never
+	// drains the holder. 0 = start on the first match. Hold only.
+	Settle time.Duration
 	// GPU is the cards a hold takes, as berth run --gpu names them; "" is
 	// every card. Cards is GPU resolved to positions in the watcher's
 	// cards, nil for every card.
@@ -84,7 +88,9 @@ func Builtin() []Rule {
 		// REAPER DAW is also "reaper" and never passes SteamLaunch (#171).
 		{Name: "steam-game", Parent: []string{"reaper"}, ParentCmdline: `(^|\s)SteamLaunch(\s|$)`, Action: ActionHold, Builtin: true},
 		{Name: "lutris-game", Parent: []string{"lutris-wrapper*"}, Action: ActionHold, Builtin: true},
-		{Name: "gamescope", Exe: []string{"gamescope"}, Action: ActionHold, Builtin: true},
+		// A headless gamescope is a capture or CI harness (a screenshot script
+		// runs one per frame), not a game: it holds nothing (#337).
+		{Name: "gamescope", Exe: []string{"gamescope"}, Not: `(^|\s)--backend[= ]headless(\s|$)`, Action: ActionHold, Builtin: true},
 		// Windows (and Proton, whose paths look the same): games by install folder.
 		// Wallpaper Engine and Lossless Scaling live in the Steam library but run all
 		// day beside other work; holding the card for them would starve every engine.
@@ -124,6 +130,12 @@ func (r *Rule) Compile() error {
 		if err := gpu.CheckCard(r.GPU); err != nil {
 			return fmt.Errorf("claim %q: %v", r.Name, err)
 		}
+	}
+	if r.Settle < 0 {
+		return fmt.Errorf("claim %q: settle is how long a hold waits before it drains, so it cannot be negative", r.Name)
+	}
+	if r.Settle > 0 && r.Action != ActionHold {
+		return fmt.Errorf("claim %q: settle names how long a hold waits before it drains; a %s claim drains nothing", r.Name, r.Action)
 	}
 	if len(r.Exe) == 0 && r.Cmdline == "" && len(r.Parent) == 0 {
 		return fmt.Errorf("claim %q: give exe, cmdline or parent to match on", r.Name)

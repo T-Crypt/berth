@@ -6,12 +6,19 @@ has a matching GitHub release whose body comes from its section below.
 
 ## [Unreleased]
 
+### Added
+
+- `settle = "5s"` on a `[[claim]]` hold makes the process last that long before the hold drains
+  anyone. A screenshot script or a launcher probe that runs for a few seconds no longer takes the
+  card from its holder. (#337)
+
 ### Fixed
 
-- A `berth run` or `berth train` engine is always visible to a berthd that restarts. The run writes
-  its record when the engine starts, not only after its wrapper notices the lost socket, so a wrapper
-  that is stopped or slow cannot let the new daemon grant a second whole-card lease onto a live engine.
-  (#354)
+- A headless `gamescope --backend headless`, the way a capture or CI harness runs it, no longer
+  holds the card through the built-in gamescope claim. (#337)
+- A berthd that restarts now sees a live `berth run` or `berth train` engine, even when its wrapper
+  has not yet noticed the lost socket. Before, it could grant a second whole-card lease onto that
+  engine. (#354)
 - `go test ./internal/cli` on a Windows machine with Berth installed no longer deletes the installed services'
   launchers (`units\*.vbs` in the state directory). Three service tests ran a real uninstall or install against
   the user's own state directory instead of a temporary one. (#351)

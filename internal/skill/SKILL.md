@@ -140,6 +140,7 @@ name = "training"
 cmdline = 'train\.py'     # regex on the command line (Windows: the exe's full path)
 action = "hold"           # hold: drain engines while it runs; track: just name its memory
 linger = "30s"
+settle = "5s"             # hold only: wait this long before draining; a short helper never takes the card
 gpu = "gpu1"              # hold only this card on a node with several; default every card
 
 [claims]
