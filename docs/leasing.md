@@ -130,13 +130,15 @@
 ## Games, apps and holds
 - **Claims cover work Berth does not start.** berthd scans the process table every 2 s.
   A *hold* claim keeps the card while its process runs: engines are drained and wait, with a
-  15 s linger so a launcher restarting the game does not bounce the card back. A *track*
-  claim names an app's card memory so it counts against the card without being reported as a
-  stowaway; nothing waits on it.
+  15 s linger so a launcher restarting the game does not bounce the card back. `settle` makes
+  the hold wait that long first, so a helper that lives a few seconds never drains anyone. A
+  *track* claim names an app's card memory so it counts against the card without being reported
+  as a stowaway; nothing waits on it.
 - **Built-in pack, on by default.** Holds: Steam games (anything under Steam's `reaper`),
   Lutris and gamescope on Linux; Steam libraries (`steamapps\common`), Epic, GOG, EA,
   Ubisoft, Xbox and Battle.net games on Windows, with launchers, Wallpaper Engine and
-  Lossless Scaling left out. Tracks: Blender, DaVinci Resolve, OBS, Kdenlive, Premiere,
+  Lossless Scaling left out. A headless gamescope, the way a capture or CI harness runs it,
+  holds nothing. Tracks: Blender, DaVinci Resolve, OBS, Kdenlive, Premiere,
   After Effects. `berth claims` shows every rule and what it matches now.
 - **Your own rules:**
 
@@ -146,6 +148,7 @@
   cmdline = 'train\.py'      # regex; on Windows it sees the exe's full path
   action = "hold"            # or "track"
   linger = "30s"
+  settle = "5s"              # hold only: wait this long before draining; a short helper never takes the card
   gpu = "gpu1"               # hold only these cards (names or PCI addresses, comma list); default every card
 
   [claims]

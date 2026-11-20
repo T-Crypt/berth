@@ -58,6 +58,21 @@ func TestBuiltinMatches(t *testing.T) {
 	}
 }
 
+// A headless gamescope is a capture or CI harness, not a game: it must not
+// take the card away from its holder (#337).
+func TestBuiltinGamescopeSkipsHeadless(t *testing.T) {
+	ps := []Proc{
+		{PID: 10, Name: "gamescope", Argv0: "gamescope", Parent: 1,
+			Cmdline: "gamescope --backend headless -W 1920 -H 1080 -- true"},
+		{PID: 11, Name: "gamescope", Argv0: "gamescope", Parent: 1,
+			Cmdline: "gamescope -w 2560 -h 1440 -f -- %command%"},
+	}
+	m := Match(compiled(t, Builtin()...), ps)
+	if got := pids(m["gamescope"]); len(got) != 1 || got[0] != 11 {
+		t.Fatalf("gamescope = %v, want [11]: the headless capture harness holds nothing", got)
+	}
+}
+
 func TestCmdlineAndFirstRuleWins(t *testing.T) {
 	rs := compiled(t,
 		Rule{Name: "training", Cmdline: `train\.py`, Action: ActionHold},
@@ -80,6 +95,8 @@ func TestCompileRejects(t *testing.T) {
 		{Name: "x", Parent: []string{"reaper"}, ParentCmdline: "("},
 		{Name: "x", Exe: []string{"a"}, GPU: "card 1"},
 		{Name: "x", Exe: []string{"a"}, GPU: "gpu1", Action: ActionTrack},
+		{Name: "x", Exe: []string{"a"}, Settle: -time.Second},
+		{Name: "x", Exe: []string{"a"}, Action: ActionTrack, Settle: time.Second},
 	} {
 		if err := r.Compile(); err == nil {
 			t.Errorf("%+v compiled", r)
@@ -113,6 +130,75 @@ func (f *fakeBroker) Note(e proto.Event) {
 	f.mu.Lock()
 	f.events = append(f.events, e.Kind)
 	f.mu.Unlock()
+}
+
+// #337: a hold waits for its match to last the rule's settle time before it
+// drains anyone. A process that lives a few seconds, a screenshot harness or
+// a launcher probe, never takes the card from its holder.
+func TestWatcherHoldSettles(t *testing.T) {
+	shot := []Proc{{PID: 10, Name: "python3", Argv0: "python3", Parent: 1, Cmdline: "python3 shot.py"}}
+	newWatcher := func(t *testing.T, procs *[]Proc) (*Watcher, *fakeBroker) {
+		t.Helper()
+		fb := &fakeBroker{held: make(chan struct{}, 4)}
+		w := &Watcher{Cards: []Broker{fb}, Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+			Scan: func() ([]Proc, error) { return *procs, nil }, holds: map[string]*hold{}}
+		w.Rules = compiled(t, Rule{Name: "shot", Cmdline: `shot\.py`, Settle: 3 * time.Second})
+		return w, fb
+	}
+	held := func(t *testing.T, fb *fakeBroker) bool {
+		t.Helper()
+		select {
+		case <-fb.held:
+			return true
+		case <-time.After(200 * time.Millisecond):
+			return false
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	t.Run("waits for the settle", func(t *testing.T) {
+		procs := shot
+		w, fb := newWatcher(t, &procs)
+		t0 := time.Now()
+		w.Tick(ctx, t0)
+		w.Tick(ctx, t0.Add(2*time.Second))
+		if held(t, fb) {
+			t.Fatal("hold started before the match settled")
+		}
+		w.Tick(ctx, t0.Add(3*time.Second))
+		if !held(t, fb) {
+			t.Fatal("hold did not start once the match settled")
+		}
+	})
+
+	t.Run("a gap restarts the clock", func(t *testing.T) {
+		procs := shot
+		w, fb := newWatcher(t, &procs)
+		t0 := time.Now()
+		w.Tick(ctx, t0)
+		procs = nil
+		w.Tick(ctx, t0.Add(2*time.Second))
+		procs = shot
+		w.Tick(ctx, t0.Add(3*time.Second))
+		w.Tick(ctx, t0.Add(5*time.Second))
+		if held(t, fb) {
+			t.Fatal("hold started on time that ran before the gap")
+		}
+		w.Tick(ctx, t0.Add(6*time.Second))
+		if !held(t, fb) {
+			t.Fatal("hold did not start once the match settled after the gap")
+		}
+	})
+}
+
+// A track claim names memory and drains nothing, so its settle time is a
+// contradiction the daemon refuses at load.
+func TestCompileRejectsSettleOnTrack(t *testing.T) {
+	r := Rule{Name: "x", Exe: []string{"a"}, Action: ActionTrack, Settle: time.Second}
+	if err := r.Compile(); err == nil || !strings.Contains(err.Error(), "settle") {
+		t.Fatalf("err = %v, want settle named", err)
+	}
 }
 
 // A hold starts on the first match, survives a gap shorter than the linger,
